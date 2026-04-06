@@ -136,17 +136,17 @@ describe('populist_rising', () => {
 });
 
 describe('false_lead', () => {
-  test('draws another card from the deck immediately via autoAdvance', () => {
-    // false_lead returns with phase still 'world' and no pendingAction,
-    // so autoAdvance loops and resolves the next card (fortification here)
+  test('logs message and advances to draw, leaving remaining deck intact', () => {
+    // false_lead pops itself and logs, but the next card stays in the deck
+    // for the next world phase (advanceToDrawPhase runs unconditionally)
     const s = makeState({
       phase: 'world', pendingAction: null,
       worldDeck: ['false_lead', 'fortification'],
     });
-    const { state, log } = autoAdvance({ state: s, log: [] });
+    const { state, log } = resolveWorldPhase(s);
     expect(log.some(l => l.includes('False Lead'))).toBe(true);
-    // fortification places peasants on all regions except the_barrens
-    expect(state.regions.norrsund!.tokens).toContain('peasant');
+    expect(state.phase).toBe('draw');
+    expect(state.worldDeck).toContain('fortification');
   });
 });
 
