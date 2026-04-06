@@ -391,6 +391,68 @@ When a dial instruction is revealed (during the Advance Threat Dials step), it m
 - **Score X VP:** Score X victory points.
 - **Upgrade Card:** Choose one of your unused upgrade cards and place it into play.
 
+### Threat Dial Progressions
+
+The threat value at each dial position and its effect. The dial starts at the "Start" position; each tick advances it clockwise to the next listed position.
+
+**Xarm**
+
+| Threat | Effect |
+|---|---|
+| 3 | Start |
+| 6 | Score 4 VP |
+| 12 | Upgrade Card |
+| 14 | Draw 2 Chaos Cards |
+| 17 | Score 4 VP |
+| 23 | Upgrade Card |
+| 28 | Upgrade Card |
+| 31 | Draw 2 Chaos Cards |
+| 32 | Draw 2 Chaos Cards |
+| — | Victory! |
+
+**Gormen**
+
+| Threat | Effect |
+|---|---|
+| 1 | Start |
+| 5 | Score 3 VP |
+| 10 | Remove 1 Corruption |
+| 13 | Upgrade Card |
+| 18 | Score 3 VP |
+| 22 | Upgrade Card |
+| 26 | Remove 2 Corruption |
+| 30 | Upgrade Card |
+| 33 | Score 3 VP |
+| 34 | Remove 2 Corruption |
+| — | Victory! |
+
+**Tenzen**
+
+| Threat | Effect |
+|---|---|
+| 2 | Start |
+| 7 | Place 1 Chaos Stone |
+| 9 | Upgrade Card |
+| 15 | Score 3 VP |
+| 20 | Upgrade Card |
+| 21 | Place 2 Chaos Stones |
+| 25 | Upgrade Card |
+| 29 | Score 5 VP |
+| — | Victory! |
+
+**Lasha**
+
+| Threat | Effect |
+|---|---|
+| 4 | Start |
+| 8 | Score 3 VP |
+| 11 | Upgrade Card |
+| 16 | Place 2 Nobles |
+| 19 | Upgrade Card |
+| 24 | Upgrade Card |
+| 27 | Remove 2 World Tokens |
+| — | Victory! |
+
 ### Dial Advancement Conditions (by Power)
 
 Each Power's condition is printed on its Power Sheet. The conditions are:
