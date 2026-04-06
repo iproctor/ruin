@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(brew install:*)",
+      "Bash(python3 -c \"import pdfminer\")",
+      "Bash(pip3 install:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(python3:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm install:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm --filter engine build)",
+      "Bash(pnpm --filter ai build)",
+      "Bash(grep -E \"case '\\(xarm|gormen|tenzen|lasha\\)_\" phases/*.ts)",
+      "Bash(pnpm test:*)",
+      "Bash(node --experimental-vm-modules ./node_modules/jest-cli/bin/jest.js)",
+      "Bash(ls node_modules/.bin/jest*)",
+      "Bash(node node_modules/jest/bin/jest.js --version)",
+      "Bash(node --experimental-vm-modules node_modules/jest/bin/jest.js)",
+      "Bash(node --experimental-vm-modules node_modules/jest/bin/jest.js --verbose)",
+      "Bash(node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage)",
+      "Bash(npx jest:*)"
+    ]
+  }
+}

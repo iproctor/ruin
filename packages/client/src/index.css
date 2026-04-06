@@ -1,0 +1,158 @@
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+/* ── Base dark theme ── */
+body {
+  background-color: #1a1a2e;
+  color: #eeeeee;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+a {
+  color: #a78bfa;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: opacity 0.15s;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: #7c3aed;
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #6d28d9;
+}
+
+button.secondary {
+  background: #2d2d4e;
+  color: #eee;
+  border: 1px solid #4a4a7a;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: #3a3a60;
+}
+
+button.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #991b1b;
+}
+
+input, select, textarea {
+  background: #16213e;
+  border: 1px solid #4a4a7a;
+  border-radius: 4px;
+  color: #eee;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.6rem;
+  width: 100%;
+  outline: none;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #7c3aed;
+}
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 0.25rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.error-msg {
+  color: #f87171;
+  font-size: 0.85rem;
+  margin-top: 0.4rem;
+}
+
+/* ── Power accent colors ── */
+.power-xarm   { color: #ef4444; }
+.power-gormen { color: #22c55e; }
+.power-tenzen { color: #a855f7; }
+.power-lasha  { color: #ec4899; }
+
+.power-bg-xarm   { background-color: #7f1d1d; }
+.power-bg-gormen { background-color: #14532d; }
+.power-bg-tenzen { background-color: #581c87; }
+.power-bg-lasha  { background-color: #831843; }
+
+.power-border-xarm   { border-color: #ef4444; }
+.power-border-gormen { border-color: #22c55e; }
+.power-border-tenzen { border-color: #a855f7; }
+.power-border-lasha  { border-color: #ec4899; }
+
+/* ── Layout helpers ── */
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.page-wide {
+  padding: 1rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card {
+  background: #16213e;
+  border: 1px solid #2d2d5e;
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.flex-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+h1 { font-size: 1.8rem; margin-bottom: 1rem; }
+h2 { font-size: 1.3rem; margin-bottom: 0.75rem; }
+h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }

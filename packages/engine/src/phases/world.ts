@@ -1,0 +1,374 @@
+import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
+import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER } from '../constants.js';
+import {
+  lowestThreatPower, addTokenToRegion, removeTokenFromRegion,
+  isWorldCardActive, updateRegion, updatePower, scoreVP,
+} from '../helpers.js';
+
+/** Draw the next world card and apply its immediate effects.
+ *  If the card requires a player choice, sets pendingAction and returns early.
+ *  Otherwise, fully resolves and advances to the draw phase. */
+export function resolveWorldPhase(state: GameState): { state: GameState; log: string[] } {
+  let log: string[] = [];
+  let s = state;
+
+  if (s.worldDeck.length === 0) {
+    // Deck exhausted — end condition handled by victory checker
+    return { state: { ...s, phase: 'draw' }, log };
+  }
+
+  const [cardId, ...remaining] = s.worldDeck;
+  s = { ...s, worldDeck: remaining };
+  log.push(`World card drawn: ${WORLD_CARD_BY_ID[cardId!]?.name ?? cardId}`);
+
+  const cardDef = WORLD_CARD_BY_ID[cardId!];
+  if (!cardDef) return { state: s, log };
+
+  // Remove comet-icon cards from track first
+  if (cardDef.hasCometIcon) {
+    const { slot1, slot2 } = s.worldTrack;
+    let removed: string[] = [];
+    if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
+      removed.push(slot1);
+      s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
+    }
+    if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
+      removed.push(slot2);
+      s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
+    }
+    if (removed.length) log.push(`Removed comet cards from track: ${removed.join(', ')}`);
+  }
+
+  // Apply immediate effects (non-choice ones first)
+  const result = applyWorldCardImmediate(s, cardId!, log);
+  s = result.state;
+  log = result.log;
+
+  if (result.needsChoice) {
+    // Set pendingAction and wait — caller must submit a WorldChoiceAction
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: lowestThreatPower(s),
+        actionKind: 'world_choice',
+        context: { cardId },
+      },
+    };
+    return { state: s, log };
+  }
+
+  // Place card on track (or discard)
+  s = placeOnTrackOrDiscard(s, cardId!);
+  s = advanceToDrawPhase(s);
+  return { state: s, log };
+}
+
+/** Apply a world choice action and continue. */
+export function applyWorldChoice(state: GameState, action: WorldChoiceAction): { state: GameState; log: string[] } {
+  let log: string[] = [];
+  let s: GameState = { ...state, pendingAction: null };
+  const { cardId, choices } = action;
+
+  const result = applyWorldCardChoice(s, cardId, choices, log);
+  s = result.state;
+  log = result.log;
+
+  s = placeOnTrackOrDiscard(s, cardId);
+  s = advanceToDrawPhase(s);
+  return { state: s, log };
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+function placeOnTrackOrDiscard(state: GameState, cardId: string): GameState {
+  const def = WORLD_CARD_BY_ID[cardId];
+  if (!def || def.timing === 'discard') return state;
+
+  // Shift slot1 → slot2, new card → slot1
+  const evicted = state.worldTrack.slot2;
+  return {
+    ...state,
+    worldTrack: { slot1: cardId, slot2: state.worldTrack.slot1 },
+    // evicted card is simply dropped (no side effects)
+  };
+}
+
+function advanceToDrawPhase(state: GameState): GameState {
+  return { ...state, phase: 'draw', pendingAction: null };
+}
+
+/** Apply the deterministic part of a card's immediate effect.
+ *  Returns needsChoice=true if a player decision is required. */
+function applyWorldCardImmediate(
+  state: GameState,
+  cardId: string,
+  log: string[],
+): { state: GameState; log: string[]; needsChoice: boolean } {
+  let s = state;
+
+  switch (cardId) {
+    case 'armistice': {
+      // Place Event on Almerida, Normagne, Norrsund
+      for (const r of ['almerida', 'normagne', 'norrsund'] as RegionId[]) {
+        s = addTokenIfAvailable(s, r, 'event', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'the_pardon': {
+      // Find first Peasant on board and replace with Noble (no player choice for auto)
+      // If multiple Peasants: lowest-threat player chooses — set needsChoice
+      const peasantRegions = REGION_ORDER.filter(r => s.regions[r]!.tokens.includes('peasant'));
+      if (peasantRegions.length === 0) return { state: s, log, needsChoice: false };
+      if (peasantRegions.length === 1) {
+        s = removeTokenFromRegion(s, peasantRegions[0]!, 'peasant');
+        s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
+        s = addTokenIfAvailable(s, peasantRegions[0]!, 'noble', log);
+        return { state: s, log, needsChoice: false };
+      }
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'frontier_settlement': {
+      // Place Ratmen on 2 regions — lowest threat player chooses
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'border_garrison': {
+      return { state: s, log, needsChoice: true }; // choose 2 regions for Peasant
+    }
+
+    case 'buried_cache': {
+      return { state: s, log, needsChoice: true }; // choose 2 regions for Chaos Stone
+    }
+
+    case 'grand_muster': {
+      return { state: s, log, needsChoice: true }; // choose regions for all three token types
+    }
+
+    case 'false_lead': {
+      // Draw another card immediately — caller handles this by re-running resolveWorldPhase
+      log.push('False Lead: drawing another World card.');
+      s = { ...s, phase: 'world' };
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'fortification': {
+      // Place Peasant on every region except The Barrens
+      for (const r of REGION_ORDER.filter(id => id !== 'the_barrens')) {
+        s = addTokenIfAvailable(s, r, 'peasant', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'populist_rising': {
+      // Score 1 VP per claimed Peasant; +3 VP for most
+      let maxClaimed = 0;
+      for (const p of s.activePowers) {
+        maxClaimed = Math.max(maxClaimed, s.powers[p]!.claimedPeasants);
+      }
+      for (const p of s.activePowers) {
+        const claimed = s.powers[p]!.claimedPeasants;
+        let vp = claimed;
+        if (claimed === maxClaimed && maxClaimed > 0) vp += 3;
+        s = scoreVP(s, p, vp);
+        if (vp > 0) log.push(`${p} scores ${vp} VP from Populist Rising (${claimed} claimed Peasants).`);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'diplomatic_envoy': {
+      // Place Noble on 3 different regions — choice required
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'strategic_vanguard': {
+      // Noble on Normagne + one other region
+      s = addTokenIfAvailable(s, 'normagne', 'noble', log);
+      return { state: s, log, needsChoice: true }; // choose the second region
+    }
+
+    case 'the_gambit': {
+      // Noble on (Norrsund+Volensk) OR (Talvimaa+Mittelreich) — choice required
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'war_zone': {
+      // Event on Mittelreich + one other — choice required
+      s = addTokenIfAvailable(s, 'mittelreich', 'event', log);
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'the_chokepoint': {
+      for (const r of ['the_barrens', 'mittelreich', 'toscavar'] as RegionId[]) {
+        s = addTokenIfAvailable(s, r, 'event', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'misdirection': {
+      for (const r of ['normagne', 'mittelreich', 'toscavar'] as RegionId[]) {
+        s = addTokenIfAvailable(s, r, 'event', log);
+      }
+      for (const r of REGION_ORDER) {
+        s = addTokenIfAvailable(s, r, 'peasant', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'the_exodus': {
+      return { state: s, log, needsChoice: true }; // choose which region gets Event token
+    }
+
+    case 'entanglement': {
+      return { state: s, log, needsChoice: true }; // choose pair: (Normagne+Mittelreich) or (Almerida+Toscavar)
+    }
+
+    case 'cleansing_wave': {
+      // Event on Normagne + adjacent region — Normagne is fixed, adjacent choice needed
+      s = addTokenIfAvailable(s, 'normagne', 'event', log);
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'the_hunt': {
+      for (const r of ['the_barrens', 'pelascos'] as RegionId[]) {
+        s = addTokenIfAvailable(s, r, 'hero', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'forward_scouts': {
+      // Place Hero on a region (or adjacent) with Chaos Stone — auto-pick first match or choice
+      const eligible = REGION_ORDER.filter(r =>
+        s.regions[r]!.tokens.includes('chaos_stone') ||
+        (ADJACENCY[r] ?? []).some(adj => s.regions[adj]!.tokens.includes('chaos_stone'))
+      );
+      if (eligible.length === 0) {
+        log.push('Forward Scouts: no Chaos Stone tokens on board. No effect.');
+        return { state: s, log, needsChoice: false };
+      }
+      return { state: s, log, needsChoice: true };
+    }
+
+    case 'the_exchange': {
+      return { state: s, log, needsChoice: true }; // choose region for 2 Chaos Stones
+    }
+
+    case 'noble_scrutiny': {
+      for (const r of ['normagne', 'mittelreich', 'almerida'] as RegionId[]) {
+        s = addTokenIfAvailable(s, r, 'noble', log);
+      }
+      return { state: s, log, needsChoice: false };
+    }
+
+    case 'kashnir_arms': // alias — same as noble_scrutiny placement
+      return { state: s, log, needsChoice: false };
+
+    default:
+      return { state: s, log, needsChoice: false };
+  }
+}
+
+/** Apply the player's choice for a world card immediate effect. */
+function applyWorldCardChoice(
+  state: GameState,
+  cardId: string,
+  choices: Record<string, unknown>,
+  log: string[],
+): { state: GameState; log: string[] } {
+  let s = state;
+
+  switch (cardId) {
+    case 'the_pardon': {
+      const regionId = choices['regionId'] as RegionId;
+      s = removeTokenFromRegion(s, regionId, 'peasant');
+      s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
+      s = addTokenIfAvailable(s, regionId, 'noble', log);
+      break;
+    }
+    case 'frontier_settlement': {
+      const [r1, r2] = choices['regions'] as RegionId[];
+      if (r1) s = addTokenIfAvailable(s, r1, 'ratmen', log);
+      if (r2) s = addTokenIfAvailable(s, r2, 'ratmen', log);
+      break;
+    }
+    case 'border_garrison': {
+      const [r1, r2] = choices['regions'] as RegionId[];
+      if (r1) s = addTokenIfAvailable(s, r1, 'peasant', log);
+      if (r2) s = addTokenIfAvailable(s, r2, 'peasant', log);
+      break;
+    }
+    case 'buried_cache': {
+      const [r1, r2] = choices['regions'] as RegionId[];
+      if (r1) s = addTokenIfAvailable(s, r1, 'chaos_stone', log);
+      if (r2) s = addTokenIfAvailable(s, r2, 'chaos_stone', log);
+      break;
+    }
+    case 'grand_muster': {
+      const { peasantRegions, nobleRegions, ratmenRegions } = choices as Record<string, RegionId[]>;
+      for (const r of peasantRegions ?? []) s = addTokenIfAvailable(s, r, 'peasant', log);
+      for (const r of nobleRegions ?? []) s = addTokenIfAvailable(s, r, 'noble', log);
+      for (const r of ratmenRegions ?? []) s = addTokenIfAvailable(s, r, 'ratmen', log);
+      break;
+    }
+    case 'strategic_vanguard': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'noble', log);
+      break;
+    }
+    case 'the_gambit': {
+      const pair = choices['pair'] as 'ab' | 'cd';
+      const regions: RegionId[] = pair === 'ab' ? ['norrsund', 'volensk'] : ['talvimaa', 'mittelreich'];
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
+      break;
+    }
+    case 'war_zone': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'event', log);
+      break;
+    }
+    case 'the_exodus': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'event', log);
+      break;
+    }
+    case 'entanglement': {
+      const pair = choices['pair'] as 'ab' | 'cd';
+      const regions: RegionId[] = pair === 'ab' ? ['normagne', 'mittelreich'] : ['almerida', 'toscavar'];
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);
+      break;
+    }
+    case 'cleansing_wave': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'event', log);
+      break;
+    }
+    case 'forward_scouts': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'hero', log);
+      break;
+    }
+    case 'the_exchange': {
+      const regionId = choices['regionId'] as RegionId;
+      s = addTokenIfAvailable(s, regionId, 'chaos_stone', log);
+      s = addTokenIfAvailable(s, regionId, 'chaos_stone', log);
+      break;
+    }
+    case 'diplomatic_envoy': {
+      const regions = choices['regions'] as RegionId[];
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
+      break;
+    }
+  }
+
+  return { state: s, log };
+}
+
+function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: string[]): GameState {
+  if (state.tokenSupply[token] <= 0) {
+    log.push(`Token supply exhausted: ${token}`);
+    return state;
+  }
+  const s = addTokenToRegion(state, regionId, token);
+  return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] - 1 } };
+}

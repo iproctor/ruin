@@ -1,0 +1,266 @@
+// ─── Core enumerations ────────────────────────────────────────────────────────
+
+export type Power = 'xarm' | 'gormen' | 'tenzen' | 'lasha';
+
+export type Phase =
+  | 'lobby'
+  | 'world'
+  | 'draw'
+  | 'summoning'
+  | 'battle'
+  | 'corruption'
+  | 'end'
+  | 'completed';
+
+export type RegionId =
+  | 'norrsund'
+  | 'talvimaa'
+  | 'volensk'
+  | 'mittelreich'
+  | 'normagne'
+  | 'almerida'
+  | 'toscavar'
+  | 'pelascos'
+  | 'the_barrens';
+
+export type FollowerClass = 'cultist' | 'warrior' | 'incarnation';
+export type TokenType = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen' | 'chaos_stone';
+export type PlayerType = 'human' | 'ai' | 'guest';
+
+export type WinCondition = 'threat_dial' | 'vp' | 'ruination' | 'world_exhausted';
+
+// ─── Follower instances ────────────────────────────────────────────────────────
+
+export interface FollowerInstance {
+  id: string;           // e.g. "xarm_cultist_1"
+  power: Power;
+  class: FollowerClass;
+  regionId: RegionId | null;  // null = in reserve
+  controlledBy: Power | null; // non-null when Enthrallment/Rapture active
+  tipped: boolean;            // killed this battle round, awaiting removal
+  protected: boolean;         // Fate's Aegis: cannot be killed in battle this round
+}
+
+// ─── Cards ────────────────────────────────────────────────────────────────────
+
+export interface PlayedCard {
+  cardId: string;
+  playedBy: Power;
+  slotIndex: 0 | 1;
+  persistNextRound: boolean; // Recursive Pattern
+}
+
+// ─── Regions ──────────────────────────────────────────────────────────────────
+
+export interface RegionState {
+  regionId: RegionId;
+  baseValue: number;          // initial Resistance = Conquest Value
+  resistance: number;         // modified by Ratmen, cards, etc.
+  conquestValue: number;      // modified by Noble tokens, cards, etc.
+  populous: boolean;
+  tokens: TokenType[];
+  placements: FollowerInstance[]; // followers currently here (redundant with FollowerInstance.regionId, kept for fast lookup)
+  chaosCards: (PlayedCard | null)[];  // length 2; null = empty slot
+  ruinationCardIndex: number | null;  // 1-5 if ruined, else null
+  corruptionTokens: Record<Power, number>;
+}
+
+// ─── Per-power state ──────────────────────────────────────────────────────────
+
+export interface PowerState {
+  power: Power;
+  playerType: PlayerType;
+  victoryPoints: number;
+  powerPoints: number;
+  basePowerPoints: number;    // highlighted value on track (increases with upgrades)
+  threatValue: number;
+  dialPosition: number;       // index into static dial progression array
+  dialCounters: number;       // advancement counters accumulated this round
+  hand: string[];             // card IDs — hidden from opponents
+  deckIds: string[];          // remaining deck (ordered)
+  discardIds: string[];
+  upgradesInPlay: string[];      // upgrade card IDs currently active
+  availableUpgradeIds: string[]; // upgrade cards not yet played
+  claimedPeasants: number;       // collected via battle (for Populist Rising)
+  passedSummoning: boolean;
+  followers: FollowerInstance[]; // all followers (on board + reserve)
+}
+
+// ─── Pending action ───────────────────────────────────────────────────────────
+
+export type ActionKind =
+  | 'tenzen_discard'
+  | 'summoning_action'         // summon figure, play card, or pass
+  | 'world_choice'             // lowest-threat player must choose token placement
+  | 'hero_removal'             // forced figure removal from Hero token
+  | 'world_card_effect'        // world card persistent effect requiring choice
+  | 'upgrade_choice'           // dial instruction: choose an upgrade card
+  | 'battle_hit_assignment'    // (future) interactive hit assignment
+  | 'corruption_harvest_choice'// Gormen chooses which figures to kill
+  | 'card_on_play_choice';     // on-play card effect requiring player choice
+
+export interface PendingAction {
+  waitingFor: Power;
+  actionKind: ActionKind;
+  context: Record<string, unknown>;
+}
+
+// ─── Battle state (transient, during battle phase) ────────────────────────────
+
+export interface BattleRoll {
+  power: Power;
+  regionId: RegionId;
+  dice: number[];
+  hits: number;
+  assignments: Array<{ followerId: string }>;
+}
+
+export interface BattleState {
+  regionOrder: RegionId[];          // remaining regions to resolve
+  currentRegionIndex: number;
+  log: string[];
+}
+
+// ─── World track ──────────────────────────────────────────────────────────────
+
+export interface WorldTrack {
+  slot1: string | null;   // card ID
+  slot2: string | null;
+}
+
+// ─── Token supply ─────────────────────────────────────────────────────────────
+
+export type TokenSupply = Record<TokenType, number>;
+
+// ─── Game state ───────────────────────────────────────────────────────────────
+
+export interface GameState {
+  gameId: string;
+  round: number;
+  phase: Phase;
+  playerCount: 2 | 3 | 4;
+  activePowers: Power[];
+
+  regions: Record<RegionId, RegionState>;
+  powers: Record<Power, PowerState>;
+
+  worldDeck: string[];      // remaining card IDs, face-down
+  worldTrack: WorldTrack;
+  ruinationCardsUsed: number; // 0–5
+
+  tokenSupply: TokenSupply;
+
+  // Turn coordination
+  pendingAction: PendingAction | null;
+  summoningOrder: Power[];  // active powers in power order
+  summoningIndex: number;   // index into summoningOrder for current turn
+
+  // Transient
+  battleState: BattleState | null;
+
+  // Replay / RNG
+  rngSeed: number;
+  actionCount: number;      // incremented per action, used as RNG offset
+
+  // Result
+  winners: Power[] | null;
+  winCondition: WinCondition | null;
+}
+
+// ─── Win result ───────────────────────────────────────────────────────────────
+
+export interface WinResult {
+  winners: Power[];
+  condition: WinCondition;
+}
+
+// ─── Actions ─────────────────────────────────────────────────────────────────
+
+export interface TenzenDiscardAction {
+  kind: 'tenzen_discard';
+  power: 'tenzen';
+  cardId: string | null;  // null = do not discard
+}
+
+export interface SummonFigureAction {
+  kind: 'summoning_summon_figure';
+  power: Power;
+  followerId: string;
+  toRegion: RegionId;
+}
+
+export interface PlayCardAction {
+  kind: 'summoning_play_card';
+  power: Power;
+  cardId: string;
+  toRegion: RegionId;
+  slotIndex: 0 | 1;
+}
+
+export interface SummoningPassAction {
+  kind: 'summoning_pass';
+  power: Power;
+}
+
+export interface WorldChoiceAction {
+  kind: 'world_choice';
+  power: Power;
+  cardId: string;
+  choices: Record<string, unknown>; // card-specific payload
+}
+
+export interface HeroRemovalAction {
+  kind: 'hero_removal';
+  power: Power;
+  followerId: string;
+  regionId: RegionId;
+}
+
+export interface WorldCardEffectAction {
+  kind: 'world_card_effect';
+  power: Power;
+  cardId: string;
+  choices: Record<string, unknown>;
+}
+
+export interface UpgradeChoiceAction {
+  kind: 'upgrade_choice';
+  power: Power;
+  upgradeCardId: string;
+}
+
+export interface CorruptionHarvestChoiceAction {
+  kind: 'corruption_harvest_choice';
+  power: 'gormen';
+  regionId: RegionId;
+  followerIds: string[]; // which enemy figures to kill (one per corruption token)
+}
+
+/**
+ * Generic on-play card choice. `choices` payload per cardId:
+ *   xarm_war_march:       { followerIds: string[] }          — up to 2 own figures to move in
+ *   tenzen_phase_shift:   { followerId: string, toRegion: RegionId }
+ *   tenzen_stolen_thoughts: { targetPower: Power }           — opponent to discard 2 cards
+ *   tenzen_fates_aegis:   { followerId: string }             — figure that cannot be killed
+ *   lasha_invisible_hand: { token: TokenType, fromRegion: RegionId, toRegion: RegionId }
+ *   lasha_enthrallment:   { followerId: string }             — enemy cultist to control
+ */
+export interface CardOnPlayChoiceAction {
+  kind: 'card_on_play_choice';
+  power: Power;
+  cardId: string;
+  regionId: RegionId;
+  choices: Record<string, unknown>;
+}
+
+export type Action =
+  | TenzenDiscardAction
+  | SummonFigureAction
+  | PlayCardAction
+  | SummoningPassAction
+  | WorldChoiceAction
+  | HeroRemovalAction
+  | WorldCardEffectAction
+  | UpgradeChoiceAction
+  | CorruptionHarvestChoiceAction
+  | CardOnPlayChoiceAction;
