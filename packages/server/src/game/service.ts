@@ -1,3 +1,4 @@
+import { Worker } from 'node:worker_threads';
 import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { createInitialState, applyAction, autoAdvance } from '@ruin/engine';
@@ -53,6 +54,56 @@ async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
     if (p.userId) map.set(p.power, p.userId);
   }
   return map;
+}
+
+/**
+ * Run MCTS in a worker thread so the event loop stays free during search.
+ * The worker inherits process.execArgv so tsx loaders are active in dev.
+ */
+function runMctsInWorker(state: GameState, power: Power): Promise<Action> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(
+      new URL('./workers/mctsWorker.js', import.meta.url),
+      { workerData: { state, power }, execArgv: process.execArgv },
+    );
+    worker.once('message', ({ ok, action, error }: { ok: boolean; action: Action; error: string }) => {
+      if (ok) resolve(action);
+      else reject(new Error(error));
+    });
+    worker.once('error', reject);
+    worker.once('exit', (code) => {
+      if (code !== 0) reject(new Error(`MCTS worker exited with code ${code}`));
+    });
+  });
+}
+
+/**
+ * If the game is waiting for an AI power, run MCTS and apply its action.
+ * Repeats until a human player must act or the game is over.
+ * Saves and broadcasts after each AI move so the log is visible in real time.
+ */
+async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameState> {
+  let current = state;
+
+  while (current.winners === null && current.pendingAction !== null) {
+    const { waitingFor } = current.pendingAction;
+    if (current.powers[waitingFor]?.playerType !== 'ai') break;
+
+    let action: Action;
+    try {
+      action = await runMctsInWorker(current, waitingFor);
+    } catch (err) {
+      console.error(`AI failed to pick action for ${waitingFor}:`, err);
+      break;
+    }
+
+    const { state: next } = applyAction(current, action);
+    await saveGame(gameId, next);
+    broadcast(gameId, { type: 'state', state: next });
+    current = next;
+  }
+
+  return current;
 }
 
 async function saveGame(gameId: string, state: GameState): Promise<void> {
@@ -112,6 +163,9 @@ export async function createGame(
     });
   }
 
+  // If the first pending action is for an AI player, run those turns now
+  await maybeRunAiTurns(gameId, state);
+
   return gameId;
 }
 
@@ -133,17 +187,13 @@ export async function applyPlayerAction(
   }
 
   // applyAction validates that the action is from the expected power
-  const { state: newState } = applyAction(state, action);
+  const { state: afterAction } = applyAction(state, action);
 
-  await saveGame(gameId, newState);
+  await saveGame(gameId, afterAction);
+  broadcast(gameId, { type: 'state', state: afterAction });
 
-  // Broadcast to SSE listeners — send the full state (each viewer's handler
-  // will apply masking when delivering to a specific user if needed; for SSE
-  // we broadcast the unmasked state and let the client ignore hidden fields,
-  // or broadcast a masked version per-connection. Since we have a single
-  // broadcast here we send the full state and rely on the client knowing only
-  // its own hand anyway.)
-  broadcast(gameId, { type: 'state', state: newState });
+  // Run any follow-on AI turns (saves + broadcasts after each one)
+  const newState = await maybeRunAiTurns(gameId, afterAction);
 
   return newState;
 }

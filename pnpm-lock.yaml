@@ -89,6 +89,9 @@ importers:
       '@aws-sdk/client-ses':
         specifier: ^3.0.0
         version: 3.1024.0
+      '@ruin/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@ruin/engine':
         specifier: workspace:*
         version: link:../engine
