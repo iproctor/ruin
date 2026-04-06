@@ -51,19 +51,28 @@ Actions that are interdependent are always resolved in **Power Order**:
 
 ### Followers by Power
 
-| Power | Cultists | Warriors | Greater Daemon |
+| Power | Cultists | Warriors | Incarnation |
 |---|---|---|---|
-| Xarm | 4 Blood Cultists | 6 Blood Warriors | 1 Blood Daemon |
-| Gormen | 6 Plague Cultists | 5 Plague Warriors | 1 Plague Daemon |
-| Tenzen | 8 Fate Cultists | 3 Fate Warriors | 1 Fate Daemon |
-| Lasha | 6 Desire Cultists | 3 Desire Warriors | 1 Desire Daemon |
+| Xarm | 4 Heartseekers | 6 Heartrippers | 1 Heartgrinder |
+| Gormen | 6 Plaguecarriers | 5 Plaguebringers | 1 Plaguefather |
+| Tenzen | 8 Apprentices | 3 Fractals | 1 Fatespinner |
+| Lasha | 6 Addicts | 3 Ravers | 1 The Rapture |
 
-Followers belong to one of three **classes**: **Cultists**, **Warriors**, and **Greater Daemons**.
+Followers belong to one of three **classes**: **Cultists**, **Warriors**, and **Incarnations**.
 
 Each follower has:
 - **Cost:** Power points required to summon
 - **Attack value:** Number of battle dice rolled in combat
 - **Defense value:** Number of hits required to kill it
+
+Base stats (Cost / Attack / Defense):
+
+| Power | Cultists | Warriors | Incarnation |
+|---|---|---|---|
+| Xarm | 1 / 0 / 1 | 2 / 2 / 1 | 3 / 4 / 3 |
+| Gormen | 1 / 0 / 1 | 1 / 1 / 1 | 3 / 3 / 3 |
+| Tenzen | 1 / 0 / 1 | 2 / 1 / 2 | 3 / 3 / 2 |
+| Lasha | 1 / 0 / 1 | 2 / 1 / 2 | 3 / 2 / 4 |
 
 ---
 
@@ -171,6 +180,8 @@ There is **no hand size limit**.
 
 Players may act **simultaneously** during the draw phase.
 
+**Tenzen special rule:** Tenzen always draws up to 5 cards in the draw phase (or 6 with the Deluge of Magic upgrade). Tenzen may discard 1 card from hand before drawing to make room or cycle unwanted cards.
+
 Power points are **never carried over** between rounds.
 
 ---
@@ -268,7 +279,7 @@ For each region (in Region Order), calculate each player's **Domination Value**:
 
 > **Domination Value = Sum of Chaos Card Costs (played in that region) + Quantity of figures (of any class) in that region**
 
-Note: Only the **quantity** of figures counts, not their summoning costs. A Greater Daemon counts the same as a Cultist.
+Note: Only the **quantity** of figures counts, not their summoning costs. A Incarnation counts the same as a Cultist.
 
 Note: Use the **printed cost** of each Chaos card, not the actual amount paid.
 
@@ -382,12 +393,12 @@ When a dial instruction is revealed (during the Advance Threat Dials step), it m
 
 ### Dial Advancement Conditions (by Power)
 
-Each Power's condition is printed on its Power Sheet. The thematic conditions are:
+Each Power's condition is printed on its Power Sheet. The conditions are:
 
-- **Xarm:** Gains a counter each time you kill 2+ enemy figures in the same region during the battle phase.
-- **Gormen:** Gains a counter each time you dominate a Populous region.
-- **Tenzen:** Gains a counter each time you place 2+ corruption tokens in a region that contains 2+ magic symbols and/or Chaos Stone tokens (combined).
-- **Lasha:** Gains a counter each time you place 2+ corruption tokens in the same region.
+- **Xarm:** Gains a counter each time you kill 1+ enemy figures in the same region during the battle phase.
+- **Gormen:** Gains a counter each time you place 2+ corruption tokens in a Populous region during the same phase.
+- **Tenzen:** Gains a counter each time you place 2+ corruption tokens in a region that contains 2+ combined magic symbols and/or Chaos Stone tokens during the same phase.
+- **Lasha:** Gains a counter each time you place 2+ corruption tokens in a region containing a Noble or Hero token during the same phase.
 
 ---
 
@@ -488,9 +499,9 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 - **Power of Blood:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
 
 **Follower Upgrades:**
-- **Blood Cultists Upgrade** *(Cost 1 / Attack 1 / Defense 1):* Blood Cultists gain an attack value of 1.
-- **Blood Warriors Upgrade** *(Cost 2 / Attack 2 / Defense 1):* You may place one corruption token for each enemy figure your Blood Warriors kill in the battle phase (including kills from explosions).
-- **Blood Daemon Upgrade** *(Cost 3 / Attack 4 / Defense 3):* When calculating your domination value in a region, a single Blood Daemon counts as four figures.
+- **Heartseekers Upgrade** *(Cost 1 / Attack 1 / Defense 1):* Heartseekers gain an attack value of 1.
+- **Heartrippers Upgrade** *(Cost 2 / Attack 2 / Defense 1):* You may place one corruption token for each enemy figure your Heartrippers kill in the battle phase (including kills from explosions).
+- **Heartgrinder Upgrade** *(Cost 3 / Attack 4 / Defense 3):* When calculating your domination value in a region, a single Heartgrinder counts as four figures.
 
 ---
 
@@ -501,9 +512,9 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 - **Power of Pestilence:** When you recover power points in the draw phase, gain two power points more than the highlighted value.
 
 **Follower Upgrades:**
-- **Plague Cultists Upgrade** *(Cost 1 / Attack 0 / Defense 1):* A Plague Cultist's cost is 0 if placed in a region where you have no other figures. A given Plague Cultist figure may only be summoned for free once per round.
-- **Plague Warriors Upgrade** *(Cost 1 / Attack 1 / Defense 1):* Each Plague Warrior counts as two figures toward your domination value in any region it occupies.
-- **Plague Daemon Upgrade** *(Cost 3 / Attack 3 / Defense 3):* Immediately place two corruption tokens in a region when you summon your Plague Daemon there.
+- **Plaguecarriers Upgrade** *(Cost 1 / Attack 0 / Defense 1):* A Plaguecarrier's cost is 0 if placed in a region where you have no other figures. A given Plaguecarrier may only be summoned for free once per round.
+- **Plaguebringers Upgrade** *(Cost 1 / Attack 1 / Defense 1):* Each Plaguebringer counts as two figures toward your domination value in any region it occupies.
+- **Plaguefather Upgrade** *(Cost 3 / Attack 3 / Defense 3):* Immediately place two corruption tokens in a region when you summon your Plaguefather there.
 
 ---
 
@@ -514,9 +525,9 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 - **Power of Magic:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
 
 **Follower Upgrades:**
-- **Fate Cultists Upgrade** *(Cost 1 / Attack 0 / Defense 1):* When summoned from the board (rather than from your stockpile), a Fate Cultist may bring one Chaos Stone token (if present) from its origin region to its destination region.
-- **Fate Warriors Upgrade** *(Cost 2 / Attack 1 / Defense 2):* When you play a Chaos card with a magic symbol, you may immediately summon a Fate Warrior to that region for 0 power points.
-- **Fate Daemon Upgrade** *(Cost 3 / Attack 3 / Defense 2):* Your Fate Daemon counts as two Chaos Stone tokens when determining whether a region is ruined and when calculating magic symbol counts for your dial advancement condition.
+- **Apprentices Upgrade** *(Cost 1 / Attack 0 / Defense 1):* When summoned from the board (rather than from your stockpile), an Apprentice may bring one Chaos Stone token (if present) from its origin region to its destination region.
+- **Fractals Upgrade** *(Cost 2 / Attack 1 / Defense 2):* When you play a Chaos card with a magic symbol, you may immediately summon a Fractal to that region for 0 power points.
+- **Fatespinner Upgrade** *(Cost 3 / Attack 3 / Defense 2):* Your Fatespinner counts as two Chaos Stone tokens when determining whether a region is ruined and when calculating magic symbol counts for your dial advancement condition.
 
 ---
 
@@ -527,9 +538,9 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 - **Power of Pleasure:** When you recover power points in the draw phase, gain one power point more than the highlighted value. If you also have **Power of Pain** in play, gain three points more (in total) instead.
 
 **Follower Upgrades:**
-- **Desire Cultists Upgrade** *(Cost 1 / Attack 0 / Defense 2):* Desire Cultists gain a defense value of 2.
-- **Desire Warriors Upgrade** *(Cost 2 / Attack 1 / Defense 2):* Desire Warriors also place corruption tokens during the corruption phase, as if they were Cultists.
-- **Desire Daemon Upgrade** *(Cost 3 / Attack 2 / Defense 4):* At the beginning of the battle phase, choose any enemy Cultist or Warrior in this region. You control it until the end of the round or until your Desire Daemon is killed, whichever comes first.
+- **Addicts Upgrade** *(Cost 1 / Attack 0 / Defense 2):* Addicts gain a defense value of 2.
+- **Ravers Upgrade** *(Cost 2 / Attack 1 / Defense 2):* Ravers also place corruption tokens during the corruption phase, as if they were Cultists.
+- **The Rapture Upgrade** *(Cost 3 / Attack 2 / Defense 4):* At the beginning of the battle phase, choose any enemy Cultist or Warrior in this region. You control it until the end of the round or until The Rapture is killed, whichever comes first.
 
 ---
 
@@ -553,9 +564,9 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 
 **Explosion:** A battle die roll of 6, granting one additional die to roll.
 
-**Follower:** Any plastic figure — Cultist, Warrior, or Greater Daemon.
+**Follower:** Any plastic figure — Cultist, Warrior, or Incarnation.
 
-**Greater Daemon:** The strongest class of follower.
+**Incarnation:** The strongest class of follower.
 
 **Hit:** A battle die result of 4, 5, or 6 that can damage an enemy figure.
 
