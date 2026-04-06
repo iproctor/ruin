@@ -488,6 +488,62 @@ In a 3-player game, the absent Power has no followers, cards, or corruption toke
 
 ---
 
+## Chaos Cards Reference
+
+Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 means the card contributes a magic symbol to its region while in play.
+
+### Xarm Chaos Cards
+
+| Card | Cost | Magic | Count | Effect |
+|---|---|---|---|---|
+| War Frenzy | 0 | — | 4 | At the start of battle, roll two dice and apply hits before normal battle dice are rolled. |
+| Scorched Earth | 1 | — | 4 | No corruption tokens may be placed in this region this round. |
+| Killing Ground | 1 | — | 3 | No figures other than yours may be summoned away from this region. |
+| Heart Offering | 1 | — | 3 | Each time you kill a figure here, draw a Chaos card. |
+| The Altar | 1 | — | 4 | When calculating your domination value in this region, count the sum of your figures' attack values instead of the quantity of figures. |
+| Undying Fury | 2 | — | 3 | During the battle phase, conduct an additional battle in this region. |
+| War March | 2 | — | 3 | Move up to two of your figures into this region from other regions. |
+
+### Gormen Chaos Cards
+
+| Card | Cost | Magic | Count | Effect |
+|---|---|---|---|---|
+| Pestilent Aura | 0 | ✦ | 4 | Each of your corruption tokens in this region adds one to your domination value. |
+| Rotting Grasp | 0 | — | 3 | Enemy figures' defense value is reduced by one (minimum 1). |
+| Epidemic | 1 | — | 4 | This region's Resistance is reduced by two. |
+| Blight Ward | 1 | — | 3 | Your figures' defense value is increased by one. |
+| Entropy | 1 | — | 2 | Remove one corruption token (any player) from this region. |
+| Plague Bloom | 2 | — | 3 | Remove any of your figures from this region; place one corruption token for every two figures removed. |
+| Corruption's Harvest | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. |
+| Death's Perfume | 3 | ✦ | 2 | If you dominate this region, place two corruption tokens here. |
+
+### Tenzen Chaos Cards
+
+| Card | Cost | Magic | Count | Effect |
+|---|---|---|---|---|
+| Null Weave | 0 | ✦ | 3 | The text effects of all other Chaos cards in this region are canceled. |
+| Fate's Aegis | 0 | — | 3 | Choose one of your figures; it cannot be killed in battle this round. |
+| Phase Shift | 1 | — | 4 | Move any Cultist or Warrior in this region to any other region. |
+| Stolen Thoughts | 1 | — | 3 | Choose one opponent with figures in this region; that opponent discards two Chaos cards. |
+| Stasis Web | 1 | ✦ | 3 | Opponents pay +2 power points to summon figures or play Chaos cards in this region. |
+| Recursive Pattern | 1 | ✦ | 3 | If you kill one or more figures in battle here, you may keep this card in hand rather than discarding it at end of round. |
+| Kaleidoscope | 2 | ✦ | 3 | During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region. |
+| Arcane Siphon | 0 | — | 2 | Each other player with at least one Cultist in this region loses one power point; you gain one power point. |
+
+### Lasha Chaos Cards
+
+| Card | Cost | Magic | Count | Effect |
+|---|---|---|---|---|
+| Hollow Pact | 0 | ✦ | 2 | Enemy figures contribute nothing to their owners' domination values in this region. |
+| Silent Taint | 0 | — | 4 | Place one corruption token in this region. This does not trigger your dial advancement condition. |
+| Sweet Deceit | 1 | — | 4 | For each Noble and Hero token in this region, add two to your domination value. |
+| The Invisible Hand | 1 | ✦ | 4 | Move a Peasant, Hero, or Noble token from this region to any other region. |
+| Enthrallment | 2 | ✦ | 4 | Choose one enemy Cultist in this region; you control it until this card is discarded. |
+| Euphoric Haze | 2 | — | 3 | No figures roll battle dice in this region this round. |
+| Debauched Court | 3 | — | 3 | If this region contains three or more corruption tokens when you play this card, reduce the cost by three. (The printed cost still counts toward domination.) |
+
+---
+
 ## Upgrade Cards Reference
 
 Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Follower Upgrades** (one per follower class). Stats are listed as **Cost / Attack / Defense**.
