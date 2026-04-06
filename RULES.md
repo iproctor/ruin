@@ -89,19 +89,34 @@ The map is divided into **nine regions**. Each region has:
 ### Region Order
 
 Activities affecting multiple regions are resolved in this order:
-1. Norrsund
-2. Talvimaa
-3. Volensk
-4. Mittelreich *(Populous)*
-5. Normagne *(Populous)*
-6. Almerida
-7. Toscavar
-8. Pelascos
-9. The Barrens
+
+| # | Region | Resistance/Conquest Value | Populous |
+|---|---|---|---|
+| 1 | Norrsund | 1 | |
+| 2 | Talvimaa | 1 | |
+| 3 | Volensk | 3 | ✓ |
+| 4 | Mittelreich | 5 | ✓ |
+| 5 | Normagne | 3 | ✓ |
+| 6 | Almerida | 4 | ✓ |
+| 7 | Toscavar | 2 | |
+| 8 | Pelascos | 1 | |
+| 9 | The Barrens | 1 | |
 
 ### Adjacencies
 
 Regions that share a border are **adjacent**. Adjacency is used to determine legal figure placement.
+
+| Region | Adjacent To |
+|---|---|
+| Norrsund | Talvimaa |
+| Talvimaa | Norrsund, Volensk |
+| Volensk | Talvimaa, Mittelreich |
+| Mittelreich | Volensk, Normagne, Pelascos |
+| Normagne | Mittelreich, Almerida, Toscavar |
+| Almerida | Normagne, Toscavar |
+| Toscavar | Normagne, Almerida, Pelascos |
+| Pelascos | Mittelreich, Toscavar, The Barrens |
+| The Barrens | Pelascos |
 
 ### The Threat Dials
 
@@ -171,8 +186,17 @@ Some World Cards bear a **Twin-Tailed Comet** icon. When a World Card that instr
 ## 2. Draw Phase
 
 Each player:
-- Draws Chaos cards from their own deck according to their Power Sheet's **Draw Phase instruction**.
-- Moves their Power Marker to the **highlighted starting space** on their power point track (or further if they have active upgrade cards granting bonus power points).
+- Draws 2 Chaos cards from their own deck. Exception: Tenzen draws up to 5 (see below).
+- Resets their Power Marker to their starting power points for the round (or higher if upgrade cards grant bonus points).
+
+Starting power points by Power:
+
+| Power | Base Power Points |
+|---|---|
+| Xarm | 7 |
+| Gormen | 6 |
+| Tenzen | 6 |
+| Lasha | 6 |
 
 If a player's Chaos deck is ever exhausted, they shuffle their discard pile to form a new deck.
 
@@ -180,7 +204,7 @@ There is **no hand size limit**.
 
 Players may act **simultaneously** during the draw phase.
 
-**Tenzen special rule:** Tenzen always draws up to 5 cards in the draw phase (or 6 with the Deluge of Magic upgrade). Tenzen may discard 1 card from hand before drawing to make room or cycle unwanted cards.
+**Tenzen special rule:** Tenzen draws up to 5 cards in the draw phase (or 6 with the Deluge of Magic upgrade), bringing their hand to that total rather than simply adding 2. Tenzen may discard 1 card from hand before drawing.
 
 Power points are **never carried over** between rounds.
 
@@ -476,6 +500,134 @@ Non-italicized text, active while the card remains on the World Track. Persisten
 - **During the "Resolve World Cards" step** of the End Phase (default), or
 - At the **specified time** if the card says so (e.g., "At the beginning of the battle phase…" or "While this card remains in play…").
 
+### World Cards Reference
+
+Cards marked **☄** bear the Twin-tailed Comet icon. Cards marked **[Discard]** are removed from the game after resolving rather than placed on the World Track. Count indicates number of copies in the full deck (28 total).
+
+---
+
+**Strategic Vanguard** (×1)
+*Place a Noble token on Normagne and a Noble token on any other region.*
+During the Resolve World Cards step: each player with 1 or more figures on Normagne must discard a Chaos card of their choice, if possible.
+
+---
+
+**Armistice** ☄ (×1)
+*Place an Event token on Almerida, Normagne, and Norrsund.*
+At the end of the battle phase: each player must remove one of their figures from each region containing an Event token, if possible.
+
+---
+
+**The Pardon** [Discard] (×1)
+*Choose a Peasant token on the board and replace it with a Noble token, if possible.*
+
+---
+
+**The Gambit** (×1)
+*Place a Noble token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.*
+During the Resolve World Cards step: the player with the lowest Threat places a Noble token on a region where there is already a Noble token, if possible.
+
+---
+
+**Frontier Settlement** [Discard] (×1)
+*Place a Ratmen token on 2 different regions.*
+
+---
+
+**War Zone** ☄ (×1)
+*Place an Event token on Mittelreich and an Event token on any other region.*
+While this card remains in play: no battles may take place in regions containing at least 1 Event token.
+
+---
+
+**False Lead** [Discard] (×1)
+*Discard this card from the game entirely, then draw and resolve another card from the top of the World Deck immediately. This brings the game one turn closer to the exhausted World Deck end condition.*
+
+---
+
+**The Chokepoint** ☄ (×1)
+*Place an Event token on The Barrens, Mittelreich, and Toscavar.*
+While this card remains in play: each player who battles in a region containing at least 1 Event token may only roll 1 battle die in total for that battle.
+
+---
+
+**Border Garrison** [Discard] (×1)
+*Place a Peasant token on 2 different regions.*
+
+---
+
+**Buried Cache** [Discard] (×2)
+*Place a Chaos Stone token on 2 different regions.*
+
+---
+
+**Misdirection** ☄ (×1)
+*Place an Event token on Normagne, Mittelreich, and Toscavar. Then place a Peasant token on every region.*
+During the Resolve World Cards step: remove one Peasant token from each region containing an Event token.
+
+---
+
+**Fortification** (×2)
+*Place a Peasant token on every region except The Barrens.*
+While this card remains in play: each Peasant token on the board increases the Resistance of its region by 1.
+
+---
+
+**Populist Rising** [Discard] (×4)
+*Each player immediately scores 1 VP for each Peasant token they have claimed. The player who has claimed the most Peasant tokens scores an additional 3 VP. Claimed Peasant tokens are not discarded.*
+
+---
+
+**Diplomatic Envoy** (×1)
+*Place a Noble token on 3 different regions.*
+During the Resolve World Cards step: the player with the lowest Threat removes 1 Noble token from the board.
+
+---
+
+**The Hunt** (×1)
+*Place a Hero token on The Barrens and Pelascos.*
+During the Resolve World Cards step: the player with the lowest Threat places a Hero token on any region containing at least 1 Chaos Stone token. If no Chaos Stone tokens are on the board, do nothing.
+
+---
+
+**The Exodus** ☄ (×1)
+*Place an Event token on any region.*
+During the Resolve World Cards step: remove all figures from each region containing at least 1 Event token (they return to their owners' stockpiles). Then move all Event tokens on the board to the region with the most corruption tokens.
+
+---
+
+**Grand Muster** [Discard] (×1)
+*Place a Peasant token on 2 different regions, then a Noble token on 2 different regions, then a Ratmen token on 2 different regions.*
+
+---
+
+**Entanglement** (×1)
+*Place a Hero token on Normagne and Mittelreich, OR on Almerida and Toscavar.*
+While this card remains in play: regions containing 1 or more Hero tokens have only 1 card space available instead of 2 (total across all players).
+
+---
+
+**Cleansing Wave** ☄ (×1)
+*Place an Event token on Normagne and an Event token on a region adjacent to Normagne.*
+During the Resolve World Cards step: remove all corruption tokens from each region containing at least 1 Event token.
+
+---
+
+**Forward Scouts** [Discard] (×2)
+*Place a Hero token on any region (or a region adjacent to a region) that contains 1 or more Chaos Stone tokens. If there are no Chaos Stone tokens on the board, do nothing.*
+
+---
+
+**The Exchange** (×1)
+*Place 2 Chaos Stone tokens on any region.*
+During the Resolve World Cards step: each player with at least 1 figure on a region containing at least 1 Chaos Stone token draws 1 Chaos card.
+
+---
+
+**Noble Scrutiny** (×1)
+*Place a Noble token on Normagne, Mittelreich, and Almerida.*
+During the Resolve World Cards step: in each region containing a Noble token, the player with the most VP removes 1 of their corruption tokens from that region, if they have one there.
+
 ---
 
 ## World Tokens
@@ -541,12 +693,53 @@ If a disabling effect and an enabling effect would apply to the same action simu
 
 ---
 
+## Card Interaction Rulings
+
+**The Altar + Heartgrinder upgrade:** When The Altar is active in a region, domination uses the sum of attack values instead of figure count. A Heartgrinder with the upgrade has an attack value of 4, so it contributes 4 to the sum — the "counts as 4 figures" wording on the upgrade is superseded by the attack value when The Altar is in effect.
+
+**Threat ties for World Phase decisions:** Threat values across the four Powers are designed to avoid ties at their starting positions. If a tie occurs due to card or dial effects, the tied player earlier in Power Order decides.
+
+---
+
 ## Player Count Notes
 
 - **4 players:** All four Powers play. 7-card World Deck.
-- **3 players:** One Power is absent. 8-card World Deck. Return unused components to the box.
+- **3 players:** Players choose which Power to omit. 8-card World Deck. Return that Power's components to the box.
 
-In a 3-player game, the absent Power has no followers, cards, or corruption tokens, but its Threat Dial position starts at its "Start" value for tie-breaking purposes (in practice, no Power Order actions are skipped for absent Powers).
+In a 3-player game, the absent Power has no presence on the board and takes no actions. Its Threat Dial sits at its Start value for tie-breaking purposes.
+
+---
+
+## Map Layout
+
+The nine regions correspond roughly to a map of Europe and the northern Mediterranean:
+
+| Region | Approximate Location |
+|---|---|
+| Norrsund | Scandinavia |
+| Talvimaa | Finland |
+| Volensk | Eastern Europe / Russia |
+| Mittelreich | Central Europe / Germany |
+| Normagne | France |
+| Almerida | Iberian Peninsula |
+| Toscavar | Italy |
+| Pelascos | Greece / Balkans |
+| The Barrens | North Africa / Middle East |
+
+---
+
+## Token Supply Limits
+
+Token supplies are fixed. If a token type is exhausted, no more may be placed until some are returned to the stockpile (e.g. by card effects or region ruination clearing corruption tokens). The fixed quantities are:
+
+| Token | Supply |
+|---|---|
+| Event | 6 |
+| Hero | 4 |
+| Noble | 6 |
+| Peasant | 20 |
+| Ratmen | 6 |
+| Chaos Stone | 14 |
 
 ---
 
@@ -576,7 +769,7 @@ Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 mea
 | Blight Ward | 1 | — | 3 | Your figures' defense value is increased by one. |
 | Entropy | 1 | — | 2 | Remove one corruption token (any player) from this region. |
 | Plague Bloom | 2 | — | 3 | Remove any of your figures from this region; place one corruption token for every two figures removed. |
-| Corruption's Harvest | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. |
+| Corruption's Harvest | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. You choose which figures to kill. |
 | Death's Perfume | 3 | ✦ | 2 | If you dominate this region, place two corruption tokens here. |
 
 ### Tenzen Chaos Cards
@@ -588,7 +781,7 @@ Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 mea
 | Phase Shift | 1 | — | 4 | Move any Cultist or Warrior in this region to any other region. |
 | Stolen Thoughts | 1 | — | 3 | Choose one opponent with figures in this region; that opponent discards two Chaos cards. |
 | Stasis Web | 1 | ✦ | 3 | Opponents pay +2 power points to summon figures or play Chaos cards in this region. |
-| Recursive Pattern | 1 | ✦ | 3 | If you kill one or more figures in battle here, you may keep this card in hand rather than discarding it at end of round. |
+| Recursive Pattern | 1 | ✦ | 3 | If you kill one or more figures in battle here, you may keep this card on the board rather than discarding it at end of round. It remains in its card space and its effects persist into the next round. |
 | Kaleidoscope | 2 | ✦ | 3 | During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region. |
 | Arcane Siphon | 0 | — | 2 | Each other player with at least one Cultist in this region loses one power point; you gain one power point. |
 
@@ -603,6 +796,62 @@ Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 mea
 | Enthrallment | 2 | ✦ | 4 | Choose one enemy Cultist in this region; you control it until this card is discarded. |
 | Euphoric Haze | 2 | — | 3 | No figures roll battle dice in this region this round. |
 | Debauched Court | 3 | — | 3 | If this region contains three or more corruption tokens when you play this card, reduce the cost by three. (The printed cost still counts toward domination.) |
+
+---
+
+## Ruination Cards Reference
+
+There are 5 ruination cards, used in order (card 1 first, card 5 last). Each card has two values:
+- **Ruiners score:** VP scored immediately by each player who placed corruption tokens in the region during the corruption step that triggered ruination.
+- **End-phase VP table:** VP scored in the end phase based on who has the most/second-most corruption tokens in the ruined region.
+
+| Card | Ruiners Score | Region | First | Second |
+|---|---|---|---|---|
+| 1 | 3 | Norrsund | 6 | 3 |
+| 1 | 3 | Talvimaa | 6 | 3 |
+| 1 | 3 | Volensk | 8 | 4 |
+| 1 | 3 | Mittelreich | 10 | 5 |
+| 1 | 3 | Normagne | 8 | 4 |
+| 1 | 3 | Almerida | 9 | 5 |
+| 1 | 3 | Toscavar | 7 | 3 |
+| 1 | 3 | Pelascos | 7 | 3 |
+| 1 | 3 | The Barrens | 6 | 3 |
+| 2 | 4 | Norrsund | 7 | 3 |
+| 2 | 4 | Talvimaa | 7 | 3 |
+| 2 | 4 | Volensk | 9 | 4 |
+| 2 | 4 | Mittelreich | 11 | 5 |
+| 2 | 4 | Normagne | 9 | 4 |
+| 2 | 4 | Almerida | 10 | 5 |
+| 2 | 4 | Toscavar | 8 | 4 |
+| 2 | 4 | Pelascos | 8 | 4 |
+| 2 | 4 | The Barrens | 7 | 3 |
+| 3 | 4 | Norrsund | 7 | 3 |
+| 3 | 4 | Talvimaa | 7 | 3 |
+| 3 | 4 | Volensk | 9 | 4 |
+| 3 | 4 | Mittelreich | 11 | 5 |
+| 3 | 4 | Normagne | 9 | 4 |
+| 3 | 4 | Almerida | 10 | 5 |
+| 3 | 4 | Toscavar | 8 | 4 |
+| 3 | 4 | Pelascos | 8 | 4 |
+| 3 | 4 | The Barrens | 7 | 3 |
+| 4 | 5 | Norrsund | 8 | 4 |
+| 4 | 5 | Talvimaa | 8 | 4 |
+| 4 | 5 | Volensk | 10 | 5 |
+| 4 | 5 | Mittelreich | 12 | 6 |
+| 4 | 5 | Normagne | 10 | 5 |
+| 4 | 5 | Almerida | 11 | 5 |
+| 4 | 5 | Toscavar | 9 | 4 |
+| 4 | 5 | Pelascos | 9 | 4 |
+| 4 | 5 | The Barrens | 8 | 4 |
+| 5 | 5 | Norrsund | 8 | 4 |
+| 5 | 5 | Talvimaa | 8 | 4 |
+| 5 | 5 | Volensk | 10 | 5 |
+| 5 | 5 | Mittelreich | 12 | 6 |
+| 5 | 5 | Normagne | 10 | 5 |
+| 5 | 5 | Almerida | 11 | 5 |
+| 5 | 5 | Toscavar | 9 | 4 |
+| 5 | 5 | Pelascos | 9 | 4 |
+| 5 | 5 | The Barrens | 8 | 4 |
 
 ---
 
