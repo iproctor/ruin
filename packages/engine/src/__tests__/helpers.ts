@@ -95,7 +95,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       allPowers.map(p => [p, makePowerState(p)]),
     ) as Record<Power, PowerState>,
     worldDeck: [],
-    worldTrack: { slot1: null, slot2: null },
+    worldTrack: { slot1: null, slot2: null, discardCard: null },
     ruinationCardsUsed: 0,
     tokenSupply: { event: 6, hero: 4, noble: 6, peasant: 20, ratmen: 6, chaos_stone: 14 },
     pendingAction: {

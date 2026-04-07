@@ -4,6 +4,7 @@ import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
 import { CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
+import FollowerTooltip from './FollowerTooltip.js';
 import type { DragItem } from '../types/drag.js';
 
 interface TableauProps {
@@ -41,7 +42,7 @@ function HandCard({
 }) {
   const def = CARD_BY_ID[cardId];
   const color = POWER_COLORS[power];
-  const name = def ? shortCardName(def.name) : cardId;
+  const name = def ? (def.shortName ?? shortCardName(def.name)) : cardId;
   const cost = def?.cost ?? '?';
   const hasMagic = def?.hasMagicSymbol ?? false;
 
@@ -71,7 +72,7 @@ function HandCard({
       onMouseLeave={() => onHover(null, 0, 0)}
       style={{
         position: 'relative',
-        width: 58,
+        width: 64,
         height: 76,
         background: isSelected ? '#1e1433' : '#13121f',
         border: `1.5px ${isPending ? 'dashed' : 'solid'} ${borderColor}`,
@@ -142,12 +143,15 @@ function ReserveFollower({
   followerClass,
   power,
   isSummoningTurn,
+  upgradesInPlay,
 }: {
   followerId: string;
   followerClass: FollowerClass;
   power: Power;
   isSummoningTurn: boolean;
+  upgradesInPlay: string[];
 }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
   const color = POWER_COLORS[power];
   const dragData: DragItem = { kind: 'reserve_follower', followerId, followerClass, power };
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -158,12 +162,12 @@ function ReserveFollower({
 
   const shape =
     followerClass === 'incarnation' ? (
-      <svg width={14} height={14} viewBox="0 0 14 14">
-        <polygon points="7,1 13,13 1,13" fill={color} opacity={0.9} />
-      </svg>
-    ) : followerClass === 'warrior' ? (
       <svg width={12} height={12} viewBox="0 0 12 12">
         <rect x={1} y={1} width={10} height={10} fill={color} opacity={0.9} rx={1} />
+      </svg>
+    ) : followerClass === 'warrior' ? (
+      <svg width={14} height={14} viewBox="0 0 14 14">
+        <polygon points="7,1 13,13 1,13" fill={color} opacity={0.9} />
       </svg>
     ) : (
       <svg width={8} height={14} viewBox="0 0 8 14">
@@ -176,6 +180,9 @@ function ReserveFollower({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onMouseEnter={e => setTooltip({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setTooltip({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setTooltip(null)}
       style={{
         cursor: isSummoningTurn ? 'grab' : 'default',
         opacity: isDragging ? 0.35 : 1,
@@ -186,6 +193,15 @@ function ReserveFollower({
       }}
     >
       {shape}
+      {tooltip && !isDragging && (
+        <FollowerTooltip
+          power={power}
+          followerClass={followerClass}
+          upgradesInPlay={upgradesInPlay}
+          x={tooltip.x}
+          y={tooltip.y}
+        />
+      )}
     </div>
   );
 }
@@ -218,12 +234,12 @@ function Stockpile({
       // Show greyed-out count
       const icon =
         cls === 'incarnation' ? (
-          <svg width={14} height={14} viewBox="0 0 14 14">
-            <polygon points="7,1 13,13 1,13" fill="#334155" opacity={0.6} />
-          </svg>
-        ) : cls === 'warrior' ? (
           <svg width={12} height={12} viewBox="0 0 12 12">
             <rect x={1} y={1} width={10} height={10} fill="#334155" opacity={0.6} rx={1} />
+          </svg>
+        ) : cls === 'warrior' ? (
+          <svg width={14} height={14} viewBox="0 0 14 14">
+            <polygon points="7,1 13,13 1,13" fill="#334155" opacity={0.6} />
           </svg>
         ) : (
           <svg width={8} height={14} viewBox="0 0 8 14">
@@ -248,6 +264,7 @@ function Stockpile({
           followerClass={cls}
           power={power}
           isSummoningTurn={isSummoningTurn}
+          upgradesInPlay={ps.upgradesInPlay}
         />
         <span style={{ fontSize: '0.7rem', color, fontWeight: 700 }}>{count}</span>
       </div>
@@ -275,7 +292,7 @@ function pendingLabel(action: Action): string {
   }
   if (action.kind === 'summoning_play_card') {
     const def = CARD_BY_ID[action.cardId];
-    const name = def ? shortCardName(def.name) : action.cardId;
+    const name = def ? (def.shortName ?? shortCardName(def.name)) : action.cardId;
     return `→ Play ${name} to ${action.toRegion}`;
   }
   return `→ ${action.kind}`;

@@ -17,28 +17,28 @@ describe('chaos card removal', () => {
   test('chaos cards are moved to owning power discard at end of round', () => {
     let s = placeCard(
       makeState({ phase: 'end', pendingAction: null }),
-      'xarm_scorched_earth', 'xarm', 'norrsund',
+      'xarm_war_cry', 'xarm', 'norrsund',
     );
     const { state } = resolveEndPhase(s);
     expect(state.regions.norrsund!.chaosCards[0]).toBeNull();
-    expect(state.powers.xarm!.discardIds).toContain('xarm_scorched_earth');
+    expect(state.powers.xarm!.discardIds).toContain('xarm_war_cry');
   });
 
   test('Recursive Pattern is kept when persistNextRound is true', () => {
     let s = placeCard(
       makeState({ phase: 'end', pendingAction: null }),
-      'tenzen_recursive_pattern', 'tenzen', 'norrsund', 0, { persistNextRound: true },
+      'tenzen_persistence_matrix', 'tenzen', 'norrsund', 0, { persistNextRound: true },
     );
     const { state } = resolveEndPhase(s);
     const card = state.regions.norrsund!.chaosCards[0];
-    expect(card?.cardId).toBe('tenzen_recursive_pattern');
+    expect(card?.cardId).toBe('tenzen_persistence_matrix');
     expect(card?.persistNextRound).toBe(false); // flag reset
   });
 
   test('Recursive Pattern is discarded when persistNextRound is false', () => {
     let s = placeCard(
       makeState({ phase: 'end', pendingAction: null }),
-      'tenzen_recursive_pattern', 'tenzen', 'norrsund', 0, { persistNextRound: false },
+      'tenzen_persistence_matrix', 'tenzen', 'norrsund', 0, { persistNextRound: false },
     );
     const { state } = resolveEndPhase(s);
     expect(state.regions.norrsund!.chaosCards[0]).toBeNull();
@@ -51,7 +51,7 @@ describe('Enthrallment release', () => {
   test('controlled enemy cultist is released when Enthrallment is discarded', () => {
     let s = makeState({ phase: 'end', pendingAction: null });
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund', { controlledBy: 'lasha' });
-    s = placeCard(s, 'lasha_enthrallment', 'lasha', 'norrsund');
+    s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
     const { state, log } = resolveEndPhase(s);
     // Controlled gormen cultist should be released
     expect(log.some(l => l.includes('Enthrallment discarded'))).toBe(true);
@@ -200,12 +200,12 @@ describe('threat dial advancement', () => {
 describe('world card persistent effects during end phase', () => {
   test('Strategic Vanguard: players with figures on Normagne discard a card', () => {
     let s = makeState({ phase: 'end', pendingAction: null });
-    s = setWorldCard(s, 'strategic_vanguard');
+    s = setWorldCard(s, 'normagne_heir');
     s = placeFollower(s, 'xarm', 'cultist', 'normagne');
-    s = giveCards(s, 'xarm', ['xarm_scorched_earth']);
+    s = giveCards(s, 'xarm', ['xarm_war_cry']);
     const { state, log } = resolveEndPhase(s);
     expect(log.some(l => l.includes('Strategic Vanguard'))).toBe(true);
-    expect(state.powers.xarm!.hand).not.toContain('xarm_scorched_earth');
+    expect(state.powers.xarm!.hand).not.toContain('xarm_war_cry');
   });
 
   test('Cleansing Wave: removes all corruption from event regions', () => {
@@ -282,33 +282,33 @@ describe('draw phase', () => {
 
 describe('draw phase upgrades', () => {
   test('Xarm Deluge of Ferocity: +1 extra card drawn', () => {
-    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'xarm', 'xarm_deluge_of_ferocity');
+    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'xarm', 'xarm_flood_of_ferocity');
     s = giveInDeck(s, 'xarm', ['a', 'b', 'c', 'd']);
     const { state } = beginDrawPhase(s);
     expect(state.powers.xarm!.hand.length).toBe(3); // 2 + 1 bonus
   });
 
   test('Xarm Power of Blood: +1 extra power point', () => {
-    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'xarm', 'xarm_power_of_blood');
+    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'xarm', 'xarm_power_of_war');
     const { state } = beginDrawPhase(s);
     expect(state.powers.xarm!.powerPoints).toBe(BASE_POWER_POINTS.xarm + 1);
   });
 
   test('Gormen Power of Pestilence: +2 extra power points', () => {
-    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'gormen', 'gormen_power_of_pestilence');
+    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'gormen', 'gormen_power_of_decay');
     const { state } = beginDrawPhase(s);
     expect(state.powers.gormen!.powerPoints).toBe(BASE_POWER_POINTS.gormen + 2);
   });
 
   test('Tenzen Deluge of Magic: draws to 6 instead of 5', () => {
-    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'tenzen', 'tenzen_deluge_of_magic');
+    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'tenzen', 'tenzen_flood_of_magic');
     s = giveInDeck(s, 'tenzen', ['t1', 't2', 't3', 't4', 't5', 't6']);
     const { state } = beginDrawPhase(s);
     expect(state.powers.tenzen!.hand.length).toBe(6);
   });
 
   test('Tenzen Power of Magic: +1 extra power point', () => {
-    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'tenzen', 'tenzen_power_of_magic');
+    let s = withUpgrade(makeState({ phase: 'draw', pendingAction: null }), 'tenzen', 'tenzen_power_of_fate');
     const { state } = beginDrawPhase(s);
     expect(state.powers.tenzen!.powerPoints).toBe(BASE_POWER_POINTS.tenzen + 1);
   });
@@ -329,15 +329,15 @@ describe('draw phase upgrades', () => {
 
   test('Tenzen discard then draw — discarded card goes to discard pile', () => {
     let s = makeState({ phase: 'draw', pendingAction: null });
-    s = giveCards(s, 'tenzen', ['tenzen_null_weave', 'tenzen_stasis_web', 'tenzen_phase_shift',
-      'tenzen_recursive_pattern', 'tenzen_kaleidoscope']);
-    s = giveInDeck(s, 'tenzen', ['tenzen_fates_aegis']);
+    s = giveCards(s, 'tenzen', ['tenzen_changer_of_fate', 'tenzen_stasis_web', 'tenzen_teleport',
+      'tenzen_persistence_matrix', 'tenzen_shimmer']);
+    s = giveInDeck(s, 'tenzen', ['tenzen_fate_shield']);
     const { state: withPending } = beginDrawPhase(s);
     // Must discard
     const { state } = applyTenzenDiscard(withPending, {
-      kind: 'tenzen_discard', power: 'tenzen', cardId: 'tenzen_null_weave',
+      kind: 'tenzen_discard', power: 'tenzen', cardId: 'tenzen_changer_of_fate',
     });
-    expect(state.powers.tenzen!.discardIds).toContain('tenzen_null_weave');
-    expect(state.powers.tenzen!.hand).not.toContain('tenzen_null_weave');
+    expect(state.powers.tenzen!.discardIds).toContain('tenzen_changer_of_fate');
+    expect(state.powers.tenzen!.hand).not.toContain('tenzen_changer_of_fate');
   });
 });

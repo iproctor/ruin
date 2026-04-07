@@ -61,10 +61,10 @@ export default function Hand({ hand, selectedCardId, onSelectCard }: HandProps) 
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 transition: 'all 0.1s',
-                minWidth: 90,
+                minWidth: 98,
               }}
             >
-              {formatCardId(cardId)}
+              {CARD_BY_ID[cardId]?.shortName ?? CARD_BY_ID[cardId]?.name ?? formatCardId(cardId)}
             </button>
           );
         })}

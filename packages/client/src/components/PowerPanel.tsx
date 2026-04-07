@@ -1,10 +1,17 @@
+import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { GameState, Power } from '@ruin/engine';
+import { UPGRADE_BY_ID } from '@ruin/engine';
 
 const POWER_LABELS: Record<Power, string> = {
   xarm:   'Xarm',
   gormen: 'Gormen',
   tenzen: 'Tenzen',
   lasha:  'Lasha',
+};
+
+const POWER_COLORS: Record<Power, string> = {
+  xarm: '#ef4444', gormen: '#22c55e', tenzen: '#a855f7', lasha: '#ec4899',
 };
 
 interface PowerPanelProps {
@@ -15,6 +22,7 @@ interface PowerPanelProps {
 
 export default function PowerPanel({ power, state, isMe }: PowerPanelProps) {
   const ps = state.powers[power];
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
   if (!ps) return null;
 
   const isWaiting =
@@ -23,6 +31,7 @@ export default function PowerPanel({ power, state, isMe }: PowerPanelProps) {
   const reserveCount = ps.followers.filter((f) => f.regionId === null).length;
   const boardCount = ps.followers.filter((f) => f.regionId !== null).length;
   const handSize = ps.hand.length;
+  const color = POWER_COLORS[power];
 
   return (
     <div
@@ -33,8 +42,12 @@ export default function PowerPanel({ power, state, isMe }: PowerPanelProps) {
         borderRadius: 6,
         padding: '0.5rem 0.6rem',
         fontSize: '0.8rem',
+        cursor: 'default',
       }}
       className={`power-border-${power}`}
+      onMouseEnter={e => setTooltip({ x: e.clientX, y: e.clientY })}
+      onMouseMove={e => setTooltip({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setTooltip(null)}
     >
       <div
         style={{
@@ -76,8 +89,55 @@ export default function PowerPanel({ power, state, isMe }: PowerPanelProps) {
 
       {ps.upgradesInPlay.length > 0 && (
         <div style={{ marginTop: '0.3rem', fontSize: '0.73rem', color: '#818cf8' }}>
-          Upgrades: {ps.upgradesInPlay.map((u) => u.replace(/_/g, ' ')).join(', ')}
+          {ps.upgradesInPlay.length} upgrade{ps.upgradesInPlay.length !== 1 ? 's' : ''}
         </div>
+      )}
+
+      {tooltip && createPortal(
+        <div style={{
+          position: 'fixed',
+          left: Math.min(tooltip.x + 14, window.innerWidth - 260),
+          top: Math.min(tooltip.y + 14, window.innerHeight - 200),
+          width: 245,
+          background: '#0d0d1f',
+          border: `1px solid ${color}`,
+          borderRadius: 8,
+          padding: '10px 12px',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          boxShadow: `0 0 14px ${color}44`,
+          fontSize: '0.78rem',
+          lineHeight: 1.5,
+          color: '#e5e7eb',
+        }}>
+          <div style={{ fontWeight: 700, color: '#fff', marginBottom: 6, fontSize: '0.9rem' }}>
+            {POWER_LABELS[power]}
+          </div>
+
+          {ps.claimedPeasants > 0 && (
+            <div style={{ marginBottom: 6, color: '#fbbf24' }}>
+              Peasant tokens: <strong>{ps.claimedPeasants}</strong>
+            </div>
+          )}
+
+          {ps.upgradesInPlay.length === 0 ? (
+            <div style={{ color: '#4b5563', fontSize: '0.73rem' }}>No upgrades</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {ps.upgradesInPlay.map(uid => {
+                const u = UPGRADE_BY_ID[uid];
+                if (!u) return null;
+                return (
+                  <div key={uid} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 5 }}>
+                    <div style={{ fontWeight: 600, color, marginBottom: 2 }}>{u.name}</div>
+                    <div style={{ color: '#d1d5db', fontSize: '0.72rem' }}>{u.effect}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   );

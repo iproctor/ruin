@@ -107,10 +107,10 @@ describe('upgrade_choice action', () => {
     const { state } = applyAction(s, {
       kind: 'upgrade_choice',
       power: 'xarm',
-      upgradeCardId: 'xarm_power_of_blood',
+      upgradeCardId: 'xarm_power_of_war',
     });
-    expect(state.powers.xarm!.upgradesInPlay).toContain('xarm_power_of_blood');
-    expect(state.powers.xarm!.availableUpgradeIds).not.toContain('xarm_power_of_blood');
+    expect(state.powers.xarm!.upgradesInPlay).toContain('xarm_power_of_war');
+    expect(state.powers.xarm!.availableUpgradeIds).not.toContain('xarm_power_of_war');
   });
 
   test('upgrade_choice for unavailable upgrade throws', () => {
@@ -123,7 +123,7 @@ describe('upgrade_choice action', () => {
       },
     });
     expect(() =>
-      applyAction(s, { kind: 'upgrade_choice', power: 'xarm', upgradeCardId: 'xarm_power_of_blood' }),
+      applyAction(s, { kind: 'upgrade_choice', power: 'xarm', upgradeCardId: 'xarm_power_of_war' }),
     ).toThrow();
   });
 });

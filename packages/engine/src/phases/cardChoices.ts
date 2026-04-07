@@ -20,7 +20,7 @@ export function applyCardOnPlayChoice(
   switch (cardId) {
     // ── Xarm: War March ───────────────────────────────────────────────────────
     // Move up to 2 own figures from any adjacent region into this region
-    case 'xarm_war_march': {
+    case 'xarm_call_to_war': {
       const followerIds = (choices['followerIds'] as string[] | undefined) ?? [];
       for (const fId of followerIds.slice(0, 2)) {
         const figure = findFigureAnywhere(s, fId);
@@ -48,7 +48,7 @@ export function applyCardOnPlayChoice(
 
     // ── Tenzen: Phase Shift ───────────────────────────────────────────────────
     // Move a Cultist or Warrior in this region to any other region
-    case 'tenzen_phase_shift': {
+    case 'tenzen_teleport': {
       const followerId = choices['followerId'] as string;
       const toRegion = choices['toRegion'] as RegionId;
       const figure = s.regions[regionId]!.placements.find(f => f.id === followerId);
@@ -70,7 +70,7 @@ export function applyCardOnPlayChoice(
 
     // ── Tenzen: Stolen Thoughts ───────────────────────────────────────────────
     // Queue a forced discard on the target — they choose on their next summoning turn
-    case 'tenzen_stolen_thoughts': {
+    case 'tenzen_the_meddling_of_rats': {
       const targetPower = choices['targetPower'] as Power;
       const current = s.powers[targetPower]!.pendingForcedDiscards;
       s = updatePower(s, targetPower, { pendingForcedDiscards: current + 2 });
@@ -80,7 +80,7 @@ export function applyCardOnPlayChoice(
 
     // ── Tenzen: Fate's Aegis ─────────────────────────────────────────────────
     // Chosen figure cannot be killed in battle this round
-    case 'tenzen_fates_aegis': {
+    case 'tenzen_fate_shield': {
       const followerId = choices['followerId'] as string;
       const figure = s.regions[regionId]!.placements.find(f => f.id === followerId);
       if (figure) {
@@ -101,7 +101,7 @@ export function applyCardOnPlayChoice(
 
     // ── Lasha: Invisible Hand ─────────────────────────────────────────────────
     // Move a Peasant, Hero, or Noble token from this region to any other region
-    case 'lasha_invisible_hand': {
+    case 'lasha_hidden_influence': {
       const token = choices['token'] as TokenType;
       const fromRegion = (choices['fromRegion'] as RegionId | undefined) ?? regionId;
       const toRegion = choices['toRegion'] as RegionId;
@@ -122,7 +122,7 @@ export function applyCardOnPlayChoice(
 
     // ── Lasha: Enthrallment ───────────────────────────────────────────────────
     // Choose one enemy Cultist in this region; Lasha controls it
-    case 'lasha_enthrallment': {
+    case 'lasha_narcotic_musk': {
       const followerId = choices['followerId'] as string;
       const figure = s.regions[regionId]!.placements.find(f =>
         f.id === followerId && f.class === 'cultist' &&

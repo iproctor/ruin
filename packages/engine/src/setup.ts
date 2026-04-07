@@ -103,14 +103,14 @@ export function createInitialState(config: GameConfig): GameState {
 
   return {
     gameId,
-    round: 0,
+    round: 1,
     phase: 'world',
     playerCount: activePowers.length as 2 | 3 | 4,
     activePowers,
     regions,
     powers,
     worldDeck,
-    worldTrack: { slot1: null, slot2: null },
+    worldTrack: { slot1: null, slot2: null, discardCard: null },
     ruinationCardsUsed: 0,
     tokenSupply,
     pendingAction: null,

@@ -62,21 +62,21 @@ describe('summoning_action', () => {
   });
 
   test('includes play_card actions when power has cards in hand', () => {
-    const s = giveCards(makeState(), 'xarm', ['xarm_scorched_earth']);
+    const s = giveCards(makeState(), 'xarm', ['xarm_war_cry']);
     const actions = getLegalActions(s, 'xarm');
     const plays = actions.filter(a => a.kind === 'summoning_play_card');
     expect(plays.length).toBeGreaterThan(0);
   });
 
   test('does not include play_card if card is too expensive', () => {
-    let s = giveCards(makeState(), 'xarm', ['xarm_war_march']); // cost 2
+    let s = giveCards(makeState(), 'xarm', ['xarm_call_to_war']); // cost 2
     s = setPP(s, 'xarm', 1); // only 1 PP
     const actions = getLegalActions(s, 'xarm');
-    expect(actions.some(a => a.kind === 'summoning_play_card' && (a as any).cardId === 'xarm_war_march')).toBe(false);
+    expect(actions.some(a => a.kind === 'summoning_play_card' && (a as any).cardId === 'xarm_call_to_war')).toBe(false);
   });
 
   test('Killing Ground filters out non-Xarm move actions', () => {
-    let s = placeCard(makeState(), 'xarm_killing_ground', 'xarm', 'norrsund');
+    let s = placeCard(makeState(), 'xarm_carnage_trap', 'xarm', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = makeState({
       ...s,
@@ -84,7 +84,7 @@ describe('summoning_action', () => {
       summoningIndex: 1,
     });
     // Ensure the killing ground card is in norrsund
-    s = placeCard(s, 'xarm_killing_ground', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_carnage_trap', 'xarm', 'norrsund');
     // Place gormen cultist in norrsund
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const actions = getLegalActions(s, 'gormen');
@@ -101,14 +101,14 @@ describe('summoning_action', () => {
 
 describe('tenzen_discard', () => {
   test('returns null option plus each card in hand', () => {
-    let s = giveCards(makeState(), 'tenzen', ['tenzen_null_weave', 'tenzen_stasis_web']);
+    let s = giveCards(makeState(), 'tenzen', ['tenzen_changer_of_fate', 'tenzen_stasis_web']);
     s = {
       ...s,
       pendingAction: { waitingFor: 'tenzen', actionKind: 'tenzen_discard', context: {} },
     };
     const actions = getLegalActions(s, 'tenzen');
     expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === null)).toBe(true);
-    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_null_weave')).toBe(true);
+    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_changer_of_fate')).toBe(true);
     expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_stasis_web')).toBe(true);
   });
 });
@@ -154,7 +154,7 @@ describe('card_on_play_choice', () => {
       pendingAction: {
         waitingFor: 'xarm',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'xarm_war_march', regionId: 'norrsund' },
+        context: { cardId: 'xarm_call_to_war', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'xarm');
@@ -168,23 +168,23 @@ describe('card_on_play_choice', () => {
       pendingAction: {
         waitingFor: 'tenzen',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'tenzen_phase_shift', regionId: 'norrsund' },
+        context: { cardId: 'tenzen_teleport', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'tenzen');
     expect(actions.some(a =>
-      a.kind === 'card_on_play_choice' && (a as any).cardId === 'tenzen_phase_shift',
+      a.kind === 'card_on_play_choice' && (a as any).cardId === 'tenzen_teleport',
     )).toBe(true);
   });
 
   test("Stolen Thoughts returns opponent targets", () => {
-    let s = giveCards(makeState(), 'xarm', ['xarm_scorched_earth']);
+    let s = giveCards(makeState(), 'xarm', ['xarm_war_cry']);
     s = {
       ...s,
       pendingAction: {
         waitingFor: 'tenzen',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'tenzen_stolen_thoughts', regionId: 'norrsund' },
+        context: { cardId: 'tenzen_the_meddling_of_rats', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'tenzen');
@@ -200,12 +200,12 @@ describe('card_on_play_choice', () => {
       pendingAction: {
         waitingFor: 'tenzen',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'tenzen_fates_aegis', regionId: 'norrsund' },
+        context: { cardId: 'tenzen_fate_shield', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'tenzen');
     expect(actions.some(a =>
-      a.kind === 'card_on_play_choice' && (a as any).cardId === 'tenzen_fates_aegis',
+      a.kind === 'card_on_play_choice' && (a as any).cardId === 'tenzen_fate_shield',
     )).toBe(true);
   });
 
@@ -216,7 +216,7 @@ describe('card_on_play_choice', () => {
       pendingAction: {
         waitingFor: 'lasha',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'lasha_invisible_hand', regionId: 'norrsund' },
+        context: { cardId: 'lasha_hidden_influence', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'lasha');
@@ -231,12 +231,12 @@ describe('card_on_play_choice', () => {
       pendingAction: {
         waitingFor: 'lasha',
         actionKind: 'card_on_play_choice',
-        context: { cardId: 'lasha_enthrallment', regionId: 'norrsund' },
+        context: { cardId: 'lasha_narcotic_musk', regionId: 'norrsund' },
       },
     };
     const actions = getLegalActions(s, 'lasha');
     expect(actions.some(a =>
-      a.kind === 'card_on_play_choice' && (a as any).cardId === 'lasha_enthrallment',
+      a.kind === 'card_on_play_choice' && (a as any).cardId === 'lasha_narcotic_musk',
     )).toBe(true);
   });
 });

@@ -13,14 +13,14 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
   const notRuined = REGION_ORDER.filter(r => state.regions[r]!.ruinationCardIndex === null);
 
   switch (cardId) {
-    case 'the_pardon':
+    case 'purchased_title':
       return notRuined.filter(r => state.regions[r]!.tokens.includes('peasant'));
 
-    case 'strategic_vanguard':
+    case 'normagne_heir':
       // Noble already placed on Normagne; choose any other region
       return notRuined.filter(r => r !== 'normagne');
 
-    case 'war_zone':
+    case 'mittelreich_diplomacy':
       // Event already placed on Mittelreich; choose any other region
       return notRuined.filter(r => r !== 'mittelreich');
 
@@ -35,7 +35,7 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
         (ADJACENCY[r] ?? []).some(adj => state.regions[adj]!.tokens.includes('chaos_stone'))
       );
 
-    case 'the_gambit':
+    case 'northern_heir':
       // Persistent effect: Noble on region that already has a Noble
       return notRuined.filter(r => state.regions[r]!.tokens.includes('noble'));
 
@@ -50,7 +50,8 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
  *  Otherwise, fully resolves and advances to the draw phase. */
 export function resolveWorldPhase(state: GameState): { state: GameState; log: string[] } {
   let log: string[] = [];
-  let s = state;
+  // Clear previous round's discard card
+  let s: GameState = { ...state, worldTrack: { ...state.worldTrack, discardCard: null } };
 
   if (s.worldDeck.length === 0) {
     // Deck exhausted — end condition handled by victory checker
@@ -122,14 +123,14 @@ export function applyWorldChoice(state: GameState, action: WorldChoiceAction): {
 
 function placeOnTrackOrDiscard(state: GameState, cardId: string): GameState {
   const def = WORLD_CARD_BY_ID[cardId];
-  if (!def || def.timing === 'discard') return state;
+  if (!def || def.timing === 'discard') {
+    return { ...state, worldTrack: { ...state.worldTrack, discardCard: cardId } };
+  }
 
   // Shift slot1 → slot2, new card → slot1
-  const evicted = state.worldTrack.slot2;
   return {
     ...state,
-    worldTrack: { slot1: cardId, slot2: state.worldTrack.slot1 },
-    // evicted card is simply dropped (no side effects)
+    worldTrack: { ...state.worldTrack, slot1: cardId, slot2: state.worldTrack.slot1 },
   };
 }
 
@@ -147,7 +148,7 @@ function applyWorldCardImmediate(
   let s = state;
 
   switch (cardId) {
-    case 'armistice': {
+    case 'eastern_armistice': {
       // Place Event on Almerida, Normagne, Norrsund
       for (const r of ['almerida', 'normagne', 'norrsund'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'event', log);
@@ -155,7 +156,7 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: false };
     }
 
-    case 'the_pardon': {
+    case 'purchased_title': {
       // Find first Peasant on board and replace with Noble (no player choice for auto)
       // If multiple Peasants: lowest-threat player chooses — set needsChoice
       const peasantRegions = REGION_ORDER.filter(r => s.regions[r]!.tokens.includes('peasant'));
@@ -169,16 +170,16 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: true };
     }
 
-    case 'frontier_settlement': {
+    case 'ratmen_incursion': {
       // Place Ratmen on 2 regions — lowest threat player chooses
       return { state: s, log, needsChoice: true };
     }
 
-    case 'border_garrison': {
+    case 'peasant_prosperity': {
       return { state: s, log, needsChoice: true }; // choose 2 regions for Peasant
     }
 
-    case 'buried_cache': {
+    case 'chaos_storm': {
       return { state: s, log, needsChoice: true }; // choose 2 regions for Chaos Stone
     }
 
@@ -186,14 +187,14 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: true }; // choose regions for all three token types
     }
 
-    case 'false_lead': {
+    case 'accelerating_doom': {
       // Draw another card immediately — caller handles this by re-running resolveWorldPhase
       log.push('False Lead: drawing another World card.');
       s = { ...s, phase: 'world' };
       return { state: s, log, needsChoice: false };
     }
 
-    case 'fortification': {
+    case 'raise_the_militia': {
       // Place Peasant on every region except The Barrens
       for (const r of REGION_ORDER.filter(id => id !== 'the_barrens')) {
         s = addTokenIfAvailable(s, r, 'peasant', log);
@@ -201,7 +202,7 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: false };
     }
 
-    case 'populist_rising': {
+    case 'peasant_harvest': {
       // Score 1 VP per claimed Peasant; +3 VP for most
       let maxClaimed = 0;
       for (const p of s.activePowers) {
@@ -212,7 +213,7 @@ function applyWorldCardImmediate(
         let vp = claimed;
         if (claimed === maxClaimed && maxClaimed > 0) vp += 3;
         s = scoreVP(s, p, vp);
-        if (vp > 0) log.push(`${p} scores ${vp} VP from Populist Rising (${claimed} claimed Peasants).`);
+        if (vp > 0) log.push(`${p} scores ${vp} VP from Peasant Harvest (${claimed} claimed Peasants).`);
       }
       return { state: s, log, needsChoice: false };
     }
@@ -222,18 +223,18 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: true };
     }
 
-    case 'strategic_vanguard': {
+    case 'normagne_heir': {
       // Noble on Normagne + one other region
       s = addTokenIfAvailable(s, 'normagne', 'noble', log);
       return { state: s, log, needsChoice: true }; // choose the second region
     }
 
-    case 'the_gambit': {
+    case 'northern_heir': {
       // Noble on (Norrsund+Volensk) OR (Talvimaa+Mittelreich) — choice required
       return { state: s, log, needsChoice: true };
     }
 
-    case 'war_zone': {
+    case 'mittelreich_diplomacy': {
       // Event on Mittelreich + one other — choice required
       s = addTokenIfAvailable(s, 'mittelreich', 'event', log);
       return { state: s, log, needsChoice: true };
@@ -246,7 +247,7 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: false };
     }
 
-    case 'misdirection': {
+    case 'central_overpopulation': {
       for (const r of ['normagne', 'mittelreich', 'toscavar'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'event', log);
       }
@@ -256,11 +257,11 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: false };
     }
 
-    case 'the_exodus': {
+    case 'great_exorcism': {
       return { state: s, log, needsChoice: true }; // choose which region gets Event token
     }
 
-    case 'entanglement': {
+    case 'heroes_of_order': {
       return { state: s, log, needsChoice: true }; // choose pair: (Normagne+Mittelreich) or (Almerida+Toscavar)
     }
 
@@ -270,7 +271,7 @@ function applyWorldCardImmediate(
       return { state: s, log, needsChoice: true };
     }
 
-    case 'the_hunt': {
+    case 'chaos_countermeasures': {
       for (const r of ['the_barrens', 'pelascos'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'hero', log);
       }
@@ -319,26 +320,26 @@ function applyWorldCardChoice(
   let s = state;
 
   switch (cardId) {
-    case 'the_pardon': {
+    case 'purchased_title': {
       const regionId = choices['regionId'] as RegionId;
       s = removeTokenFromRegion(s, regionId, 'peasant');
       s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
       s = addTokenIfAvailable(s, regionId, 'noble', log);
       break;
     }
-    case 'frontier_settlement': {
+    case 'ratmen_incursion': {
       const [r1, r2] = choices['regions'] as RegionId[];
       if (r1) s = addTokenIfAvailable(s, r1, 'ratmen', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'ratmen', log);
       break;
     }
-    case 'border_garrison': {
+    case 'peasant_prosperity': {
       const [r1, r2] = choices['regions'] as RegionId[];
       if (r1) s = addTokenIfAvailable(s, r1, 'peasant', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'peasant', log);
       break;
     }
-    case 'buried_cache': {
+    case 'chaos_storm': {
       const [r1, r2] = choices['regions'] as RegionId[];
       if (r1) s = addTokenIfAvailable(s, r1, 'chaos_stone', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'chaos_stone', log);
@@ -351,28 +352,28 @@ function applyWorldCardChoice(
       for (const r of ratmenRegions ?? []) s = addTokenIfAvailable(s, r, 'ratmen', log);
       break;
     }
-    case 'strategic_vanguard': {
+    case 'normagne_heir': {
       const regionId = choices['regionId'] as RegionId;
       s = addTokenIfAvailable(s, regionId, 'noble', log);
       break;
     }
-    case 'the_gambit': {
+    case 'northern_heir': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['norrsund', 'volensk'] : ['talvimaa', 'mittelreich'];
       for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
       break;
     }
-    case 'war_zone': {
+    case 'mittelreich_diplomacy': {
       const regionId = choices['regionId'] as RegionId;
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
-    case 'the_exodus': {
+    case 'great_exorcism': {
       const regionId = choices['regionId'] as RegionId;
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
-    case 'entanglement': {
+    case 'heroes_of_order': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['normagne', 'mittelreich'] : ['almerida', 'toscavar'];
       for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);

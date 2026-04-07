@@ -20,8 +20,6 @@ import { gameInviteEmail } from '../email/templates/gameInvite.js';
 
 const router: ReturnType<typeof Router> = Router();
 
-const VALID_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
-
 // ---------------------------------------------------------------------------
 // POST /api/games — create game
 // ---------------------------------------------------------------------------
@@ -101,7 +99,33 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/games/:id/action — apply an action
 // ---------------------------------------------------------------------------
-const actionSchema = z.object({ action: z.record(z.unknown()) });
+const zPower = z.enum(['xarm', 'gormen', 'tenzen', 'lasha']);
+const zRegionId = z.enum([
+  'norrsund', 'talvimaa', 'volensk', 'mittelreich',
+  'normagne', 'almerida', 'toscavar', 'pelascos', 'the_barrens',
+]);
+const zTokenType = z.enum(['event', 'hero', 'noble', 'peasant', 'ratmen', 'chaos_stone']);
+const zChoices = z.record(z.unknown());
+
+const zAction = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('tenzen_discard'),            power: z.literal('tenzen'), cardId: z.string().nullable() }),
+  z.object({ kind: z.literal('summoning_summon_figure'),   power: zPower, followerId: z.string(), toRegion: zRegionId }),
+  z.object({ kind: z.literal('summoning_play_card'),       power: zPower, cardId: z.string(), toRegion: zRegionId, slotIndex: z.union([z.literal(0), z.literal(1)]) }),
+  z.object({ kind: z.literal('summoning_pass'),            power: zPower }),
+  z.object({ kind: z.literal('world_choice'),              power: zPower, cardId: z.string(), choices: zChoices }),
+  z.object({ kind: z.literal('hero_removal'),              power: zPower, followerId: z.string(), regionId: zRegionId }),
+  z.object({ kind: z.literal('world_card_effect'),         power: zPower, cardId: z.string(), choices: zChoices }),
+  z.object({ kind: z.literal('upgrade_choice'),            power: zPower, upgradeCardId: z.string() }),
+  z.object({ kind: z.literal('corruption_harvest_choice'), power: z.literal('gormen'), regionId: zRegionId, followerIds: z.array(z.string()) }),
+  z.object({ kind: z.literal('card_on_play_choice'),       power: zPower, cardId: z.string(), regionId: zRegionId, choices: zChoices }),
+  z.object({ kind: z.literal('forced_discard'),            power: zPower, cardIds: z.array(z.string()) }),
+  z.object({ kind: z.literal('battle_hit_assignment'),     power: zPower, regionId: zRegionId, followerIds: z.array(z.string()), peasantsToTake: z.number().int().min(0).optional() }),
+  z.object({ kind: z.literal('dial_place_token'),          power: zPower, regionId: zRegionId }),
+  z.object({ kind: z.literal('dial_remove_corruption'),    power: zPower, regionId: zRegionId }),
+  z.object({ kind: z.literal('dial_remove_world_token'),   power: zPower, regionId: zRegionId, tokenType: zTokenType }),
+]);
+
+const actionSchema = z.object({ action: zAction });
 
 router.post('/:id/action', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -113,12 +137,8 @@ router.post('/:id/action', requireAuth, async (req, res) => {
     return;
   }
 
-  const action = parsed.data.action as unknown as Action;
-  const actionPower = (action as { power?: string }).power;
-  if (!actionPower || !VALID_POWERS.includes(actionPower as Power)) {
-    res.status(400).json({ error: 'Action must include a valid power field' });
-    return;
-  }
+  const action = parsed.data.action as Action;
+  const actionPower = action.power;
 
   const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
   const powerPlayer = allPlayers.find((p) => p.power === actionPower);

@@ -37,7 +37,7 @@ export function applySummonFigure(
   // Killing Ground: non-Xarm figures cannot be moved away from a region with this card
   if (follower.regionId !== null) {
     const fromRegion = follower.regionId;
-    const killingGround = s.regions[fromRegion]!.chaosCards.some(c => c?.cardId === 'xarm_killing_ground');
+    const killingGround = s.regions[fromRegion]!.chaosCards.some(c => c?.cardId === 'xarm_carnage_trap');
     if (killingGround && (follower.controlledBy ?? follower.power) !== 'xarm') {
       throw new Error(`Killing Ground: ${power} figures cannot be moved away from ${fromRegion}`);
     }
@@ -183,18 +183,18 @@ function hasOnPlayChoiceTarget(
 ): boolean {
   const region = state.regions[regionId]!;
   switch (cardId) {
-    case 'xarm_war_march':
+    case 'xarm_call_to_war':
       // Any own figure on the board in a different region
       return state.powers[power]!.followers.some(f => f.regionId !== null && f.regionId !== regionId);
-    case 'tenzen_phase_shift':
+    case 'tenzen_teleport':
       return region.placements.some(f => f.class === 'cultist' || f.class === 'warrior');
-    case 'tenzen_stolen_thoughts':
+    case 'tenzen_the_meddling_of_rats':
       return state.activePowers.some(p => p !== power && state.powers[p]!.hand.length > 0);
-    case 'tenzen_fates_aegis':
+    case 'tenzen_fate_shield':
       return region.placements.some(f => (f.controlledBy ?? f.power) === power);
-    case 'lasha_invisible_hand':
+    case 'lasha_hidden_influence':
       return region.tokens.some(t => t === 'peasant' || t === 'hero' || t === 'noble');
-    case 'lasha_enthrallment':
+    case 'lasha_narcotic_musk':
       return region.placements.some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
     default:
       return false;
@@ -339,7 +339,7 @@ function getCardCost(state: GameState, power: Power, cardId: string, toRegion: R
   let cost = def.cost;
 
   // Lasha Debauched Court: -3 if region has 3+ corruption tokens
-  if (cardId === 'lasha_debauched_court') {
+  if (cardId === 'lasha_debauched_royalty') {
     const totalCorr = Object.values(state.regions[toRegion]!.corruptionTokens).reduce((a, b) => a + b, 0);
     if (totalCorr >= 3) cost = Math.max(0, cost - 3);
   }
@@ -356,12 +356,12 @@ function getCardCost(state: GameState, power: Power, cardId: string, toRegion: R
 
 /** Cards whose on-play effect requires a follow-up player choice (card_on_play_choice action). */
 const NEEDS_PLAY_CHOICE = new Set([
-  'xarm_war_march',
-  'tenzen_phase_shift',
-  'tenzen_stolen_thoughts',
-  'tenzen_fates_aegis',
-  'lasha_invisible_hand',
-  'lasha_enthrallment',
+  'xarm_call_to_war',
+  'tenzen_teleport',
+  'tenzen_the_meddling_of_rats',
+  'tenzen_fate_shield',
+  'lasha_hidden_influence',
+  'lasha_narcotic_musk',
 ]);
 
 export function needsOnPlayChoice(cardId: string): boolean {
@@ -377,17 +377,17 @@ function applyOnPlayEffect(
 ): GameState {
   let s = state;
   switch (cardId) {
-    case 'xarm_war_march':
-    case 'tenzen_phase_shift':
-    case 'tenzen_stolen_thoughts':
-    case 'tenzen_fates_aegis':
-    case 'lasha_invisible_hand':
-    case 'lasha_enthrallment': {
+    case 'xarm_call_to_war':
+    case 'tenzen_teleport':
+    case 'tenzen_the_meddling_of_rats':
+    case 'tenzen_fate_shield':
+    case 'lasha_hidden_influence':
+    case 'lasha_narcotic_musk': {
       // These require a follow-up card_on_play_choice action.
       // pendingAction is set by applyPlayCard after calling this function.
       break;
     }
-    case 'gormen_entropy': {
+    case 'gormen_decay': {
       // Remove one corruption token from any player in this region
       const region = s.regions[regionId]!;
       for (const p of s.activePowers) {
@@ -401,11 +401,11 @@ function applyOnPlayEffect(
       }
       break;
     }
-    case 'gormen_plague_bloom':
+    case 'gormen_vile_consumption':
       // No on-play effect. Effect fires at end of corruption phase (after corruption
       // placement, before ruination check) — handled in resolveCorruption.
       break;
-    case 'tenzen_arcane_siphon': {
+    case 'tenzen_siphon_power': {
       const region = s.regions[regionId]!;
       let gained = 0;
       for (const p of s.activePowers) {
@@ -422,7 +422,7 @@ function applyOnPlayEffect(
       }
       break;
     }
-    case 'lasha_silent_taint': {
+    case 'lasha_depraved_infiltration': {
       s = updateRegion(s, regionId, {
         corruptionTokens: {
           ...s.regions[regionId]!.corruptionTokens,
@@ -432,7 +432,7 @@ function applyOnPlayEffect(
       log.push(`Lasha Silent Taint: 1 corruption token placed in ${regionId} (no dial trigger).`);
       break;
     }
-    case 'lasha_debauched_court': {
+    case 'lasha_debauched_royalty': {
       // Cost reduction applied above; no additional effect on play
       break;
     }

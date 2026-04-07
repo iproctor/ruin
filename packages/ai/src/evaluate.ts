@@ -89,10 +89,10 @@ export function evaluateState(state: GameState, power: Power): number {
           // Instead we rely on the card IDs containing known magic-symbol card names.
           // Tenzen magic-symbol cards: null_weave, stasis_web, recursive_pattern, kaleidoscope
           if (
-            card.cardId === 'tenzen_null_weave' ||
+            card.cardId === 'tenzen_changer_of_fate' ||
             card.cardId === 'tenzen_stasis_web' ||
-            card.cardId === 'tenzen_recursive_pattern' ||
-            card.cardId === 'tenzen_kaleidoscope'
+            card.cardId === 'tenzen_persistence_matrix' ||
+            card.cardId === 'tenzen_shimmer'
           ) {
             magicSymbolCount += 1;
           }

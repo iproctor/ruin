@@ -39,7 +39,11 @@
       "Bash(node --experimental-vm-modules packages/engine/node_modules/jest/bin/jest.js --testPathPattern=battle --no-coverage --rootDir packages/engine)",
       "Bash(node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern=battle --no-coverage)",
       "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(npm run:*)",
+      "Bash(sed:*)",
+      "Bash(perl -pi -e ':*)",
+      "Bash(pnpm headless:*)"
     ]
   }
 }

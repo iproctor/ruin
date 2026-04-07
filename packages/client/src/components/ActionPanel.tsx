@@ -50,14 +50,7 @@ export default function ActionPanel({
   const myState = state.powers[myPower];
 
   return (
-    <div
-      style={{
-        background: '#16213e',
-        border: '2px solid #312e81',
-        borderRadius: 8,
-        padding: '0.75rem',
-      }}
-    >
+    <div>
       <div style={{ fontSize: '0.8rem', color: '#818cf8', fontWeight: 700, marginBottom: '0.5rem' }}>
         Your turn — {formatId(pending.actionKind)}
       </div>
@@ -364,7 +357,7 @@ function TenzenDiscardPanel({
         {visibleCards.map((cardId) => (
           <button
             key={cardId}
-            className="danger"
+            className="primary"
             onClick={() =>
               onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })
             }
@@ -386,6 +379,8 @@ function TenzenDiscardPanel({
 
 // ── World choice ──────────────────────────────────────────────────────────────
 
+const WORLD_TWO_REGION_CARDS = new Set(['peasant_prosperity', 'ratmen_incursion', 'chaos_storm']);
+
 function WorldChoicePanel({
   state,
   myPower,
@@ -398,21 +393,32 @@ function WorldChoicePanel({
   onAction: (action: Action) => void;
 }) {
   const [selectedRegion, setSelectedRegion] = useState<RegionId | null>(null);
+  const [selectedRegions, setSelectedRegions] = useState<RegionId[]>([]);
   const cardId = (context['cardId'] as string | undefined) ?? '';
 
-  function handleSubmit() {
-    if (!selectedRegion) return;
-    onAction({
-      kind: 'world_choice',
-      power: myPower,
-      cardId,
-      choices: { regionId: selectedRegion },
+  const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
+  const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
+  const isTwoRegion = WORLD_TWO_REGION_CARDS.has(cardId);
+
+  function toggleRegion(r: RegionId) {
+    setSelectedRegions(prev => {
+      if (prev.includes(r)) return prev.filter(x => x !== r);
+      if (prev.length >= 2) return prev;
+      return [...prev, r];
     });
   }
 
-  const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
+  function handleSubmit() {
+    if (isTwoRegion) {
+      if (selectedRegions.length === 0) return;
+      onAction({ kind: 'world_choice', power: myPower, cardId, choices: { regions: selectedRegions } });
+    } else {
+      if (!selectedRegion) return;
+      onAction({ kind: 'world_choice', power: myPower, cardId, choices: { regionId: selectedRegion } });
+    }
+  }
 
-  const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
+  const regions = allowedRegions ?? ALL_REGIONS;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -432,12 +438,42 @@ function WorldChoicePanel({
         </div>
       )}
       <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
-        Choose a region:
+        {isTwoRegion ? 'Choose up to 2 regions:' : 'Choose a region:'}
       </div>
-      <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} allowedRegions={allowedRegions} />
-      {selectedRegion && (
+      {isTwoRegion ? (
+        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+          {regions.map(r => {
+            const sel = selectedRegions.includes(r);
+            const disabled = !sel && selectedRegions.length >= 2;
+            return (
+              <button
+                key={r}
+                onClick={() => toggleRegion(r)}
+                disabled={disabled}
+                style={{
+                  background: sel ? '#312e81' : '#1e1e3a',
+                  border: `2px solid ${sel ? '#818cf8' : '#3a3a6e'}`,
+                  borderRadius: 5,
+                  padding: '0.3rem 0.5rem',
+                  color: sel ? '#c4b5fd' : disabled ? '#555' : '#ddd',
+                  fontSize: '0.8rem',
+                  cursor: disabled ? 'default' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {REGION_LABELS[r]}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} allowedRegions={allowedRegions} />
+      )}
+      {(isTwoRegion ? selectedRegions.length > 0 : selectedRegion) && (
         <button className="primary" onClick={handleSubmit}>
-          Confirm: {REGION_LABELS[selectedRegion]}
+          Confirm{isTwoRegion
+            ? `: ${selectedRegions.map(r => REGION_LABELS[r]).join(', ')}`
+            : `: ${REGION_LABELS[selectedRegion!]}`}
         </button>
       )}
     </div>
@@ -532,6 +568,11 @@ function UpgradeChoicePanel({
     return <p style={{ color: '#aaa', fontSize: '0.8rem' }}>No upgrades available.</p>;
   }
 
+  const POWER_COLORS: Record<Power, string> = {
+    xarm: '#ef4444', gormen: '#22c55e', tenzen: '#a855f7', lasha: '#ec4899',
+  };
+  const powerColor = POWER_COLORS[myPower];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>Choose an upgrade:</div>
@@ -541,15 +582,21 @@ function UpgradeChoicePanel({
           return (
             <button
               key={upgradeId}
-              className="primary"
               onClick={() =>
                 onAction({ kind: 'upgrade_choice', power: myPower, upgradeCardId: upgradeId })
               }
-              style={{ textAlign: 'left', padding: '0.4rem 0.6rem' }}
+              style={{
+                textAlign: 'left', padding: '0.4rem 0.6rem',
+                background: 'transparent',
+                border: `2px solid ${powerColor}`,
+                borderRadius: 6, cursor: 'pointer', width: '100%',
+              }}
             >
-              <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{def?.name ?? formatId(upgradeId)}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.85rem', color: powerColor }}>
+                {def?.name ?? formatId(upgradeId)}
+              </div>
               {def?.effect && (
-                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: '#c4b5fd', marginTop: '0.15rem' }}>
+                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: '#d1d5db', marginTop: '0.15rem' }}>
                   {def.effect}
                 </div>
               )}
@@ -638,22 +685,22 @@ export function CardOnPlayChoicePanel({
         {cardTitle}
       </div>
 
-      {cardId === 'tenzen_stolen_thoughts' && regionId && (
+      {cardId === 'tenzen_the_meddling_of_rats' && regionId && (
         <StolenThoughtsPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
       )}
-      {cardId === 'lasha_invisible_hand' && regionId && (
+      {cardId === 'lasha_hidden_influence' && regionId && (
         <InvisibleHandPanel state={state} regionId={regionId} onSubmit={submit} />
       )}
-      {cardId === 'xarm_war_march' && regionId && (
+      {cardId === 'xarm_call_to_war' && regionId && (
         <WarMarchPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
       )}
-      {cardId === 'tenzen_phase_shift' && regionId && (
+      {cardId === 'tenzen_teleport' && regionId && (
         <PhaseShiftPanel state={state} regionId={regionId} onSubmit={submit} />
       )}
-      {cardId === 'tenzen_fates_aegis' && regionId && (
+      {cardId === 'tenzen_fate_shield' && regionId && (
         <FatesAegisPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
       )}
-      {cardId === 'lasha_enthrallment' && regionId && (
+      {cardId === 'lasha_narcotic_musk' && regionId && (
         <EnthrallmentPanel state={state} regionId={regionId} onSubmit={submit} />
       )}
 
@@ -1002,9 +1049,11 @@ function BattleHitAssignmentPanel({
   onAction: (action: Action) => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedPeasants, setSelectedPeasants] = useState(0);
 
   const regionId = context['regionId'] as RegionId | undefined;
   const hitsRemaining = (context['hitsRemaining'] as number | undefined) ?? 0;
+  const peasantsAvailable = (context['peasantsAvailable'] as number | undefined) ?? 0;
   if (!regionId) return null;
   const safeRegionId: RegionId = regionId;
 
@@ -1023,11 +1072,10 @@ function BattleHitAssignmentPanel({
     );
     let d = isUpgraded ? def.upgraded.defense : def.base.defense;
 
-    // Card modifiers in the region
     const regionCards = state.regions[safeRegionId]!.chaosCards;
-    const rottingGrasp = regionCards.some(c => c?.cardId === 'gormen_rotting_grasp');
-    const blightWard   = regionCards.some(c => c?.cardId === 'gormen_blight_ward');
-    const nullWeave    = regionCards.some(c => c?.cardId === 'tenzen_null_weave');
+    const rottingGrasp = regionCards.some(c => c?.cardId === 'gormen_pestilent_touch');
+    const blightWard   = regionCards.some(c => c?.cardId === 'gormen_rain_of_bile');
+    const nullWeave    = regionCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
 
     if (!nullWeave) {
       if (blightWard   && (fig.controlledBy ?? fig.power) === 'gormen') d += 1;
@@ -1037,26 +1085,25 @@ function BattleHitAssignmentPanel({
     return d;
   }
 
-  function toggle(id: string) {
+  const figureHitsUsed = Array.from(selectedIds).reduce((sum, fid) => {
+    const f = targets.find(t => t.id === fid);
+    return sum + (f ? getDefense(f) : 0);
+  }, 0);
+  const totalHitsUsed = figureHitsUsed + selectedPeasants;
+  const hitsLeft = hitsRemaining - totalHitsUsed;
+
+  function toggleFigure(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
       } else {
-        const newTotal = Array.from(next).reduce((sum, fid) => {
-          const f = targets.find(t => t.id === fid);
-          return sum + (f ? getDefense(f) : 0);
-        }, 0) + getDefense(targets.find(t => t.id === id)!);
-        if (newTotal <= hitsRemaining) next.add(id);
+        const cost = getDefense(targets.find(t => t.id === id)!);
+        if (cost <= hitsLeft) next.add(id);
       }
       return next;
     });
   }
-
-  const selectedDefenseTotal = Array.from(selectedIds).reduce((sum, id) => {
-    const f = targets.find(t => t.id === id);
-    return sum + (f ? getDefense(f) : 0);
-  }, 0);
 
   function handleConfirm() {
     onAction({
@@ -1064,26 +1111,55 @@ function BattleHitAssignmentPanel({
       power: myPower,
       regionId: safeRegionId,
       followerIds: Array.from(selectedIds),
+      peasantsToTake: selectedPeasants,
     });
     setSelectedIds(new Set());
+    setSelectedPeasants(0);
   }
+
+  const kills = selectedIds.size;
+  const confirmLabel = kills === 0 && selectedPeasants === 0
+    ? 'Apply hits (no kills)'
+    : [
+        kills > 0 ? `Kill ${kills} figure${kills > 1 ? 's' : ''}` : '',
+        selectedPeasants > 0 ? `Claim ${selectedPeasants} peasant${selectedPeasants > 1 ? 's' : ''}` : '',
+      ].filter(Boolean).join(' + ');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
         Battle in {REGION_LABELS[safeRegionId]} — {hitsRemaining} hit(s) to assign
-        ({selectedDefenseTotal}/{hitsRemaining} defense used):
+        ({totalHitsUsed}/{hitsRemaining} used):
       </div>
+      {peasantsAvailable > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <span style={{ fontSize: '0.8rem', color: '#fbbf24' }}>Peasants ({peasantsAvailable}):</span>
+          <button
+            className="secondary"
+            style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}
+            disabled={selectedPeasants === 0}
+            onClick={() => setSelectedPeasants(p => Math.max(0, p - 1))}
+          >−</button>
+          <span style={{ fontSize: '0.8rem', minWidth: 16, textAlign: 'center' }}>{selectedPeasants}</span>
+          <button
+            className="secondary"
+            style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}
+            disabled={selectedPeasants >= peasantsAvailable || selectedPeasants >= hitsLeft}
+            onClick={() => setSelectedPeasants(p => p + 1)}
+          >+</button>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-        {targets.length === 0 && (
+        {targets.length === 0 && peasantsAvailable === 0 && (
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No valid targets.</span>
         )}
         {targets.map(f => (
           <button
             key={f.id}
             className={selectedIds.has(f.id) ? 'danger' : 'secondary'}
-            onClick={() => toggle(f.id)}
+            onClick={() => toggleFigure(f.id)}
             style={{ fontSize: '0.8rem' }}
+            disabled={!selectedIds.has(f.id) && getDefense(f) > hitsLeft}
           >
             {POWER_LABELS_LOCAL[f.controlledBy ?? f.power] ?? f.power} {formatId(f.class)}
             <span style={{ color: '#94a3b8', marginLeft: 4 }}>def {getDefense(f)}</span>
@@ -1091,7 +1167,7 @@ function BattleHitAssignmentPanel({
         ))}
       </div>
       <button className="danger" onClick={handleConfirm}>
-        {selectedIds.size === 0 ? 'Apply hits (no kills)' : `Kill ${selectedIds.size} figure${selectedIds.size > 1 ? 's' : ''}`}
+        {confirmLabel}
       </button>
     </div>
   );

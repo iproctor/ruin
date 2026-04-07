@@ -16,7 +16,7 @@ describe('basic domination', () => {
     // norrsund baseValue=1, so domination=1 > resistance=1 only when card cost is added
     // With 1 cultist and 1 chaos card (cost 1), domination = 2 > resistance = 1
     let s = placeFollower(makeState({ phase: 'corruption', pendingAction: null }), 'xarm', 'cultist', 'norrsund');
-    s = placeCard(s, 'xarm_scorched_earth', 'xarm', 'norrsund'); // cost 1
+    s = placeCard(s, 'xarm_war_cry', 'xarm', 'norrsund'); // cost 1
     const vpBefore = s.powers.xarm!.victoryPoints;
     const { state } = resolveCorruptionPhase(s);
     expect(state.powers.xarm!.victoryPoints).toBeGreaterThan(vpBefore);
@@ -38,7 +38,7 @@ describe('basic domination', () => {
     // norrsund base 1, + 1 noble = conquest 2
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    s = placeCard(s, 'xarm_the_altar', 'xarm', 'norrsund'); // cost 1, gives dom = attack sum = 2+1 = 3
+    s = placeCard(s, 'xarm_the_red_throne', 'xarm', 'norrsund'); // cost 1, gives dom = attack sum = 2+1 = 3
     s = addToken(s, 'norrsund', 'noble');
     const vpBefore = s.powers.xarm!.victoryPoints;
     const { state } = resolveCorruptionPhase(s);
@@ -54,7 +54,7 @@ describe('Xarm The Altar (attack sum for domination)', () => {
     // 1 warrior (attack 2) + Altar (cost 1) = domination 3 vs resistance 1
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    s = placeCard(s, 'xarm_the_altar', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_the_red_throne', 'xarm', 'norrsund');
     const vpBefore = s.powers.xarm!.victoryPoints;
     const { state } = resolveCorruptionPhase(s);
     expect(state.powers.xarm!.victoryPoints).toBeGreaterThan(vpBefore);
@@ -105,7 +105,7 @@ describe('Lasha Sweet Deceit (+2 per Noble and Hero token)', () => {
     s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'noble');
     s = addToken(s, 'norrsund', 'hero');
-    s = placeCard(s, 'lasha_sweet_deceit', 'lasha', 'norrsund');
+    s = placeCard(s, 'lasha_sweet_lies', 'lasha', 'norrsund');
     // domination = 1 (cultist) + 1 (card cost) + 4 (2 nobles/heroes × 2) = 6 > resistance 1
     const vpBefore = s.powers.lasha!.victoryPoints;
     const { state } = resolveCorruptionPhase(s);
@@ -125,7 +125,7 @@ describe('Gormen Epidemic (-2 resistance)', () => {
     s = placeFollower(s, 'gormen', 'warrior', 'mittelreich');
     s = placeFollower(s, 'gormen', 'warrior', 'mittelreich');
     s = placeFollower(s, 'gormen', 'warrior', 'mittelreich');
-    s = placeCard(s, 'gormen_epidemic', 'gormen', 'mittelreich');
+    s = placeCard(s, 'gormen_pandemic', 'gormen', 'mittelreich');
     // domination = 3 + 1 (card cost) = 4 > resistance = 5 - 2 = 3
     const vpBefore = s.powers.gormen!.victoryPoints;
     const { state, log } = resolveCorruptionPhase(s);
@@ -140,7 +140,7 @@ describe('Tenzen Kaleidoscope (-1 cultist for opponents)', () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
     // Xarm has 1 cultist → normally places 1 token; with Kaleidoscope → 0 tokens
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
-    s = placeCard(s, 'tenzen_kaleidoscope', 'tenzen', 'norrsund');
+    s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'norrsund');
     const corrBefore = s.regions.norrsund!.corruptionTokens.xarm;
     const { state } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.xarm).toBe(corrBefore); // no increase
@@ -150,7 +150,7 @@ describe('Tenzen Kaleidoscope (-1 cultist for opponents)', () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
     s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
-    s = placeCard(s, 'tenzen_kaleidoscope', 'tenzen', 'norrsund');
+    s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'norrsund');
     const corrBefore = s.regions.norrsund!.corruptionTokens.tenzen;
     const { state } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.tenzen).toBe(corrBefore + 2);
@@ -164,7 +164,7 @@ describe('Xarm Scorched Earth (no corruption tokens in region)', () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'xarm_scorched_earth', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_war_cry', 'xarm', 'norrsund');
     const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
     const { state, log } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
@@ -191,7 +191,7 @@ describe("Gormen Death's Perfume (+2 corruption on win)", () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
     s = placeCard(s, 'gormen_deaths_perfume', 'gormen', 'norrsund');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund', 1);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
     const { state } = resolveCorruptionPhase(s);
     // Null Weave cancels Death's Perfume, so no extra tokens even on domination win
@@ -241,7 +241,7 @@ describe('dial advancement counters', () => {
     s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'chaos_stone');
     s = addToken(s, 'norrsund', 'chaos_stone');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund'); // hasMagicSymbol = true
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund'); // hasMagicSymbol = true
     const countersBefore = s.powers.tenzen!.dialCounters;
     const { state } = resolveCorruptionPhase(s);
     expect(state.powers.tenzen!.dialCounters).toBeGreaterThan(countersBefore);
@@ -286,7 +286,7 @@ describe('ruination', () => {
 describe('Gormen Provender of Ruin (+3 VP on any ruination)', () => {
   test('+3 VP when any region is ruined, for all powers with this upgrade', () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
-    s = withUpgrade(s, 'gormen', 'gormen_provender_of_ruin');
+    s = withUpgrade(s, 'gormen', 'gormen_provender_of_rot');
     s = addCorruption(s, 'norrsund', 'xarm', 11);
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund'); // triggers ruination
     const vpBefore = s.powers.gormen!.victoryPoints;

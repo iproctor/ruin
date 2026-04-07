@@ -20,7 +20,7 @@ export function getRegionDominationLeader(state: GameState, regionId: RegionId):
 
 /** Returns the true current resistance for a region, accounting for all card/world-card effects. */
 export function getRegionResistance(state: GameState, regionId: RegionId): number {
-  const nullWeave = state.regions[regionId]!.chaosCards.some(c => c?.cardId === 'tenzen_null_weave');
+  const nullWeave = state.regions[regionId]!.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
   return calcResistance(state, regionId, nullWeave);
 }
 
@@ -31,7 +31,7 @@ export function getRegionDomination(
 ): { leader: Power | null; value: number } {
   const region = state.regions[regionId]!;
   if (region.ruinationCardIndex !== null) return { leader: null, value: 0 };
-  const nullWeave = regionCardActive(state, regionId, 'tenzen_null_weave');
+  const nullWeave = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
   const domValues = new Map<Power, number>();
   // Compute for all active powers, plus any power with a presence in the region
   // that might not be in activePowers (e.g. figures from card effects)
@@ -87,7 +87,7 @@ function resolveDomination(
     // Ruined regions skip domination
     if (isRuined(region)) continue;
 
-    const nullWeave = regionCardActive(s, regionId, 'tenzen_null_weave');
+    const nullWeave = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     // Calculate domination value per power
     const domValues = new Map<Power, number>();
@@ -167,7 +167,7 @@ function calcDomination(
   let figureValue: number;
 
   // Xarm Altar: use sum of attack values instead of count
-  const altarActive = !nullWeave && regionCardActive(state, regionId, 'xarm_the_altar');
+  const altarActive = !nullWeave && regionCardActive(state, regionId, 'xarm_the_red_throne');
   if (altarActive && power === 'xarm') {
     figureValue = figures.reduce((sum, f) => {
       const def = FOLLOWERS[f.power as Power]![f.class]!;
@@ -205,7 +205,7 @@ function calcDomination(
   }
 
   // Lasha Sweet Deceit: +2 per Noble and Hero token
-  if (!nullWeave && power === 'lasha' && regionCardActive(state, regionId, 'lasha_sweet_deceit')) {
+  if (!nullWeave && power === 'lasha' && regionCardActive(state, regionId, 'lasha_sweet_lies')) {
     const nobles = region.tokens.filter(t => t === 'noble').length;
     const heroes = region.tokens.filter(t => t === 'hero').length;
     bonus += (nobles + heroes) * 2;
@@ -227,12 +227,12 @@ function calcResistance(
   resistance -= ratmen;
 
   // Gormen Epidemic: -2
-  if (!nullWeave && regionCardActive(state, regionId, 'gormen_epidemic')) {
+  if (!nullWeave && regionCardActive(state, regionId, 'gormen_pandemic')) {
     resistance -= 2;
   }
 
   // Fortification world card: +1 per peasant
-  if (isWorldCardActive(state, 'fortification')) {
+  if (isWorldCardActive(state, 'raise_the_militia')) {
     const peasants = region.tokens.filter(t => t === 'peasant').length;
     resistance += peasants;
   }
@@ -264,14 +264,14 @@ function resolveCorruption(
 
     // Ruined or scorched regions skip corruption placement
     if (isRuined(region)) continue;
-    if (regionCardActive(s, regionId, 'xarm_scorched_earth')) {
+    if (regionCardActive(s, regionId, 'xarm_war_cry')) {
       log.push(`${regionId}: Scorched Earth — no corruption tokens placed.`);
       continue;
     }
 
     // Track who places tokens this step (for dial advancement and ruiner scoring)
     const placedBy = new Set<Power>();
-    const nullWeave = regionCardActive(s, regionId, 'tenzen_null_weave');
+    const nullWeave = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     for (const power of s.activePowers) {
       const tokensToPlace = corruptionTokensToPlace(s, regionId, power, nullWeave);
@@ -292,7 +292,7 @@ function resolveCorruption(
 
     // Gormen Plague Bloom: after corruption placement, remove Gormen figures and
     // place 1 corruption token per 2 figures removed (before ruination check).
-    if (!nullWeave && regionCardActive(s, regionId, 'gormen_plague_bloom')) {
+    if (!nullWeave && regionCardActive(s, regionId, 'gormen_vile_consumption')) {
       const gormenFigures = s.regions[regionId]!.placements.filter(f => f.power === 'gormen');
       if (gormenFigures.length > 0) {
         const tokensToPlace = Math.floor(gormenFigures.length / 2);
@@ -346,7 +346,7 @@ function corruptionTokensToPlace(
 
   // Tenzen Kaleidoscope: one cultist per opponent doesn't count
   let reduction = 0;
-  if (!nullWeave && regionCardActive(state, regionId, 'tenzen_kaleidoscope') && power !== 'tenzen') {
+  if (!nullWeave && regionCardActive(state, regionId, 'tenzen_shimmer') && power !== 'tenzen') {
     reduction = 1;
   }
 
@@ -432,7 +432,7 @@ function applyRuination(
 
   // Gormen Provender of Ruin upgrade: +3 VP on any ruination
   for (const power of s.activePowers) {
-    if (s.powers[power]!.upgradesInPlay.includes('gormen_provender_of_ruin')) {
+    if (s.powers[power]!.upgradesInPlay.includes('gormen_provender_of_rot')) {
       s = scoreVP(s, power, 3);
       log.push(`Gormen Provender of Ruin: ${power} scores 3 VP.`);
     }

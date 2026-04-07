@@ -46,14 +46,14 @@ function DragGhost({ item }: { item: DragItem }) {
       </div>
     );
   }
-  const shape = item.followerClass === 'incarnation' ? '▲'
-              : item.followerClass === 'warrior'     ? '■'
+  const shape = item.followerClass === 'incarnation' ? '■'
+              : item.followerClass === 'warrior'     ? '▲'
               :                                        '▌';
   return (
     <div style={{
       width: 32, height: 32,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: item.followerClass === 'incarnation' ? '1.4rem' : '1.1rem',
+      fontSize: item.followerClass === 'warrior' ? '1.4rem' : '1.1rem',
       color, opacity: 0.9,
       filter: `drop-shadow(0 0 6px ${color})`,
       pointerEvents: 'none',

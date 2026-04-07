@@ -158,13 +158,13 @@ function removeChaosCards(
       if (slot === null || slot === undefined) continue;
 
       // Recursive Pattern: if Tenzen killed in this region, keep it
-      if (slot.cardId === 'tenzen_recursive_pattern' && slot.persistNextRound) {
+      if (slot.cardId === 'tenzen_persistence_matrix' && slot.persistNextRound) {
         newSlots[i as 0 | 1] = { ...slot, persistNextRound: false };
         continue;
       }
 
       // Enthrallment: when discarded, release the controlled cultist
-      if (slot.cardId === 'lasha_enthrallment') {
+      if (slot.cardId === 'lasha_narcotic_musk') {
         // Find a lasha-controlled enemy cultist in this region and release it
         const controlled = s.regions[regionId]!.placements.find(
           f => f.controlledBy === 'lasha' && f.power !== 'lasha' && f.class === 'cultist'
@@ -276,7 +276,7 @@ function applyWorldCardPersistentEffect(
   const highest = highestThreatPower(s);
 
   switch (cardId) {
-    case 'strategic_vanguard': {
+    case 'normagne_heir': {
       // Each player with 1+ figures on Normagne discards a chaos card
       for (const power of s.activePowers) {
         const hasFigures = s.regions['normagne']!.placements.some(
@@ -295,7 +295,7 @@ function applyWorldCardPersistentEffect(
       break;
     }
 
-    case 'the_gambit': {
+    case 'northern_heir': {
       // Lowest threat player places a Noble on a region already containing a Noble
       const nobleRegions = REGION_ORDER.filter(r =>
         s.regions[r]!.tokens.includes('noble')
@@ -326,7 +326,7 @@ function applyWorldCardPersistentEffect(
       break;
     }
 
-    case 'the_hunt': {
+    case 'chaos_countermeasures': {
       // Lowest threat places a Hero on any region with 1+ Chaos Stone
       const eligible = REGION_ORDER.filter(r =>
         s.regions[r]!.tokens.includes('chaos_stone')
@@ -341,7 +341,7 @@ function applyWorldCardPersistentEffect(
       break;
     }
 
-    case 'the_exodus': {
+    case 'great_exorcism': {
       // Remove all figures from regions with Event tokens;
       // then move all Event tokens to region with most corruption
       const eventRegions = REGION_ORDER.filter(r =>
@@ -389,7 +389,7 @@ function applyWorldCardPersistentEffect(
       break;
     }
 
-    case 'misdirection': {
+    case 'central_overpopulation': {
       // Remove 1 Peasant from each region with an Event token
       for (const regionId of REGION_ORDER) {
         const region = s.regions[regionId]!;

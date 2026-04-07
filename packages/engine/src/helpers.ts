@@ -125,7 +125,7 @@ export function cardSlotsAvailable(state: GameState, regionId: RegionId): number
 
   // Entanglement: regions with Hero tokens have only 1 slot
   const hasHero = region.tokens.includes('hero');
-  const entanglementActive = isWorldCardActive(state, 'entanglement');
+  const entanglementActive = isWorldCardActive(state, 'heroes_of_order');
   const maxSlots = (hasHero && entanglementActive) ? 1 : 2;
 
   const filled = region.chaosCards.filter(c => c !== null).length;

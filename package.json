@@ -2,9 +2,10 @@
   "name": "ruin",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter server dev",
+    "dev": "pnpm --parallel --filter '{engine,ai,server}' dev",
     "build": "pnpm --filter engine build && pnpm --filter ai build && pnpm --filter client build && pnpm --filter server build",
-    "test": "pnpm --filter engine test"
+    "test": "pnpm --filter engine test",
+    "headless": "tsx packages/server/src/scripts/headless-game.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

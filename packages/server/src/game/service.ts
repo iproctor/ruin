@@ -77,7 +77,7 @@ async function saveGame(gameId: string, state: GameState, extraLog: string[]): P
 function runMctsInWorker(state: GameState, power: Power): Promise<Action> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
-      new URL('./workers/mctsWorker.js', import.meta.url),
+      new URL(`../workers/mctsWorker${import.meta.url.endsWith('.ts') ? '.ts' : '.js'}`, import.meta.url),
       { workerData: { state, power }, execArgv: process.execArgv },
     );
     worker.once('message', ({ ok, action, error }: { ok: boolean; action: Action; error: string }) => {

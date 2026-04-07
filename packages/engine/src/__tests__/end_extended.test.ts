@@ -53,10 +53,10 @@ describe('victory detection at end of resolveEndPhase', () => {
 
 // ─── World card persistent effects ───────────────────────────────────────────
 
-describe('the_gambit persistent effect (end phase)', () => {
+describe('northern_heir persistent effect (end phase)', () => {
   test('places an additional Noble on a region that already has a Noble', () => {
     let s = endState();
-    s = setWorldCard(s, 'the_gambit');
+    s = setWorldCard(s, 'northern_heir');
     s = addToken(s, 'norrsund', 'noble');
     const { state } = resolveEndPhase(s);
     const nobles = state.regions.norrsund!.tokens.filter(t => t === 'noble');
@@ -65,7 +65,7 @@ describe('the_gambit persistent effect (end phase)', () => {
 
   test('does nothing when no Noble tokens are on the board', () => {
     let s = endState();
-    s = setWorldCard(s, 'the_gambit');
+    s = setWorldCard(s, 'northern_heir');
     // No nobles anywhere — should not crash
     const { state } = resolveEndPhase(s);
     expect(state.phase).not.toBe('completed');
@@ -82,10 +82,10 @@ describe('diplomatic_envoy persistent effect (end phase)', () => {
   });
 });
 
-describe('the_hunt persistent effect (end phase)', () => {
+describe('chaos_countermeasures persistent effect (end phase)', () => {
   test('places a Hero on the first region containing a Chaos Stone', () => {
     let s = endState();
-    s = setWorldCard(s, 'the_hunt');
+    s = setWorldCard(s, 'chaos_countermeasures');
     s = addToken(s, 'volensk', 'chaos_stone');
     const { state } = resolveEndPhase(s);
     expect(state.regions.volensk!.tokens).toContain('hero');
@@ -93,7 +93,7 @@ describe('the_hunt persistent effect (end phase)', () => {
 
   test('does nothing when no Chaos Stones are on the board', () => {
     let s = endState();
-    s = setWorldCard(s, 'the_hunt');
+    s = setWorldCard(s, 'chaos_countermeasures');
     const { state } = resolveEndPhase(s);
     // No crash, no hero placed
     for (const r of Object.values(state.regions)) {
@@ -102,10 +102,10 @@ describe('the_hunt persistent effect (end phase)', () => {
   });
 });
 
-describe('the_exodus persistent effect (end phase)', () => {
+describe('great_exorcism persistent effect (end phase)', () => {
   test('removes figures from event regions and moves events to most-corrupt region', () => {
     let s = endState();
-    s = setWorldCard(s, 'the_exodus');
+    s = setWorldCard(s, 'great_exorcism');
     // norrsund has an event token and an xarm cultist
     s = addToken(s, 'norrsund', 'event');
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
@@ -122,10 +122,10 @@ describe('the_exodus persistent effect (end phase)', () => {
   });
 });
 
-describe('misdirection persistent effect (end phase)', () => {
+describe('central_overpopulation persistent effect (end phase)', () => {
   test('removes a Peasant from each region containing an Event token', () => {
     let s = endState();
-    s = setWorldCard(s, 'misdirection');
+    s = setWorldCard(s, 'central_overpopulation');
     s = addToken(s, 'norrsund', 'event');
     s = addToken(s, 'norrsund', 'peasant');
     const { state, log } = resolveEndPhase(s);
@@ -135,7 +135,7 @@ describe('misdirection persistent effect (end phase)', () => {
 
   test('does not remove Peasant from regions without an Event token', () => {
     let s = endState();
-    s = setWorldCard(s, 'misdirection');
+    s = setWorldCard(s, 'central_overpopulation');
     s = addToken(s, 'norrsund', 'peasant'); // no event token
     const { state } = resolveEndPhase(s);
     expect(state.regions.norrsund!.tokens).toContain('peasant');
@@ -178,7 +178,7 @@ describe('the_exchange persistent effect (end phase)', () => {
     s = setWorldCard(s, 'the_exchange');
     s = addToken(s, 'norrsund', 'chaos_stone');
     // lasha has no figure in norrsund
-    s = giveInDeck(s, 'lasha', ['lasha_enthrallment']);
+    s = giveInDeck(s, 'lasha', ['lasha_narcotic_musk']);
     const before = s.powers.lasha!.hand.length;
     const { state } = resolveEndPhase(s);
     expect(state.powers.lasha!.hand.length).toBe(before);
@@ -264,7 +264,7 @@ describe('dial instruction: draw_chaos_cards (Xarm pos 3, threat 14)', () => {
     // Xarm dial: pos 2 → pos 3 = draw_chaos_cards 2
     let s = endState();
     s = setDial(s, 'xarm', 2, 1);
-    s = giveInDeck(s, 'xarm', ['xarm_war_frenzy', 'xarm_war_march']);
+    s = giveInDeck(s, 'xarm', ['xarm_war_frenzy', 'xarm_call_to_war']);
     const { state } = resolveEndPhase(s);
     expect(state.powers.xarm!.hand.length).toBe(2);
   });

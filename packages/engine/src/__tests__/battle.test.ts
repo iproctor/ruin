@@ -177,7 +177,7 @@ describe('Euphoric Haze (no dice)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'lasha_euphoric_haze', 'lasha', 'norrsund');
+    s = placeCard(s, 'lasha_ecstasy', 'lasha', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     const hitLogs = log.filter(l => l.includes('→') && l.includes('hit'));
     expect(hitLogs).toHaveLength(0);
@@ -192,7 +192,7 @@ describe('War Zone (no battle if event token)', () => {
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'event');
-    s = setWorldCard(s, 'war_zone');
+    s = setWorldCard(s, 'mittelreich_diplomacy');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     const norrsundBattleLogs = log.filter(l => l.startsWith('norrsund:'));
     expect(norrsundBattleLogs).toHaveLength(0);
@@ -254,7 +254,7 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund', 1);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     expect(log.some(l => l.includes('War Frenzy'))).toBe(false);
   });
@@ -267,7 +267,7 @@ describe('Undying Fury (second battle round)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'xarm_undying_fury', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     expect(log.some(l => l.includes('Undying Fury extra battle'))).toBe(true);
   });
@@ -276,7 +276,7 @@ describe('Undying Fury (second battle round)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 5 });
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'xarm_undying_fury', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.phase).not.toBe('battle');
   });
@@ -289,7 +289,7 @@ describe('Gormen Rotting Grasp (-1 defense to non-Gormen)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 99 });
     for (let i = 1; i <= 5; i++) s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    s = placeCard(s, 'gormen_rotting_grasp', 'gormen', 'norrsund');
+    s = placeCard(s, 'gormen_pestilent_touch', 'gormen', 'norrsund');
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.phase).not.toBe('battle');
   });
@@ -298,8 +298,8 @@ describe('Gormen Rotting Grasp (-1 defense to non-Gormen)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    s = placeCard(s, 'gormen_rotting_grasp', 'gormen', 'norrsund');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund', 1);
+    s = placeCard(s, 'gormen_pestilent_touch', 'gormen', 'norrsund');
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     expect(() => autoResolveBattle(resolveBattlePhase(s))).not.toThrow();
   });
 });
@@ -311,7 +311,7 @@ describe('Gormen Blight Ward (+1 defense to Gormen figures)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    s = placeCard(s, 'gormen_blight_ward', 'gormen', 'norrsund');
+    s = placeCard(s, 'gormen_rain_of_bile', 'gormen', 'norrsund');
     expect(() => autoResolveBattle(resolveBattlePhase(s))).not.toThrow();
   });
 });
@@ -323,11 +323,11 @@ describe("Xarm Heart Offering (draw card on kill)", () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 7777 });
     for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'xarm_heart_offering', 'xarm', 'norrsund');
+    s = placeCard(s, 'xarm_ritual_death', 'xarm', 'norrsund');
     s = {
       ...s, powers: {
         ...s.powers,
-        xarm: { ...s.powers.xarm!, deckIds: ['xarm_scorched_earth', 'xarm_war_frenzy'] },
+        xarm: { ...s.powers.xarm!, deckIds: ['xarm_war_cry', 'xarm_war_frenzy'] },
       },
     };
     const handBefore = s.powers.xarm!.hand.length;
@@ -346,12 +346,12 @@ describe('Tenzen Recursive Pattern (persist if Tenzen killed)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 5555 });
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'tenzen', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = placeCard(s, 'tenzen_recursive_pattern', 'tenzen', 'norrsund');
+    s = placeCard(s, 'tenzen_persistence_matrix', 'tenzen', 'norrsund');
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
     const killed = log.some(l => l.includes('tenzen kills gormen'));
     if (killed) {
       // Card persists on the board (Tenzen had 4 warriors, Gormen only 1 — Tenzen survives)
-      const card = state.regions.norrsund!.chaosCards.find(c => c?.cardId === 'tenzen_recursive_pattern');
+      const card = state.regions.norrsund!.chaosCards.find(c => c?.cardId === 'tenzen_persistence_matrix');
       if (card) expect(card.persistNextRound).toBe(true);
     }
   });
@@ -365,7 +365,7 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = addToken(s, 'norrsund', 'peasant');
     s = addCorruption(s, 'norrsund', 'gormen', 2);
-    s = placeCard(s, 'gormen_corruptions_harvest', 'gormen', 'norrsund');
+    s = placeCard(s, 'gormen_inevitable_rot', 'gormen', 'norrsund');
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.pendingAction?.actionKind).toBe('corruption_harvest_choice');
     expect(state.pendingAction?.waitingFor).toBe('gormen');
@@ -376,7 +376,7 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = addToken(s, 'norrsund', 'peasant');
     s = addCorruption(s, 'norrsund', 'gormen', 2);
-    s = placeCard(s, 'gormen_corruptions_harvest', 'gormen', 'norrsund');
+    s = placeCard(s, 'gormen_inevitable_rot', 'gormen', 'norrsund');
     const { state: withPending } = autoResolveBattle(resolveBattlePhase(s));
     expect(withPending.pendingAction?.actionKind).toBe('corruption_harvest_choice');
     const targets = withPending.regions.norrsund!.placements
@@ -399,7 +399,7 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = addToken(s, 'norrsund', 'peasant');
-    s = placeCard(s, 'gormen_corruptions_harvest', 'gormen', 'norrsund');
+    s = placeCard(s, 'gormen_inevitable_rot', 'gormen', 'norrsund');
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.pendingAction?.actionKind).not.toBe('corruption_harvest_choice');
   });
@@ -412,8 +412,8 @@ describe('Tenzen Null Weave (cancels all other card text)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = addCorruption(s, 'norrsund', 'gormen', 3);
-    s = placeCard(s, 'gormen_corruptions_harvest', 'gormen', 'norrsund');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund', 1);
+    s = placeCard(s, 'gormen_inevitable_rot', 'gormen', 'norrsund');
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.pendingAction?.actionKind).not.toBe('corruption_harvest_choice');
   });
@@ -423,7 +423,7 @@ describe('Tenzen Null Weave (cancels all other card text)', () => {
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
-    s = placeCard(s, 'tenzen_null_weave', 'tenzen', 'norrsund', 1);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     expect(log.some(l => l.includes('War Frenzy'))).toBe(false);
   });
@@ -447,7 +447,7 @@ describe("Lasha Rapture upgrade (auto-control enemy at battle start)", () => {
 describe('Armistice (remove 1 figure per event region post-battle)', () => {
   test('each player removes 1 figure from event region after battle', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
-    s = setWorldCard(s, 'armistice');
+    s = setWorldCard(s, 'eastern_armistice');
     s = addToken(s, 'norrsund', 'event');
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');

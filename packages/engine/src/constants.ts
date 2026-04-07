@@ -139,6 +139,7 @@ export interface CardDef {
   id: string;
   power: Power;
   name: string;
+  shortName?: string;
   cost: number;
   hasMagicSymbol: boolean;
   count: number;         // copies in the deck
@@ -148,42 +149,42 @@ export interface CardDef {
 
 export const CHAOS_CARDS: CardDef[] = [
   // ── Xarm ──────────────────────────────────────────────────────────────────
-  { id: 'xarm_war_frenzy',    power: 'xarm', name: 'War Frenzy',    cost: 0, hasMagicSymbol: false, count: 4, timing: 'beginning_of_battle', effect: 'At the start of battle, roll two dice and apply hits before normal battle dice are rolled.' },
-  { id: 'xarm_scorched_earth',power: 'xarm', name: 'Scorched Earth', cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'No corruption tokens may be placed in this region this round.' },
-  { id: 'xarm_killing_ground',power: 'xarm', name: 'Killing Ground', cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures other than yours may be summoned away from this region.' },
-  { id: 'xarm_heart_offering',power: 'xarm', name: 'Heart Offering', cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Each time you kill a figure here, draw a Chaos card.' },
-  { id: 'xarm_the_altar',     power: 'xarm', name: 'The Altar',      cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'When calculating your domination value in this region, count the sum of your figures\' attack values instead of the quantity of figures.' },
-  { id: 'xarm_undying_fury',  power: 'xarm', name: 'Undying Fury',   cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'During the battle phase, conduct an additional battle in this region.' },
-  { id: 'xarm_war_march',     power: 'xarm', name: 'War March',      cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Move up to two of your figures into this region from other regions.' },
+  { id: 'xarm_war_frenzy',    power: 'xarm', name: 'War Frenzy', shortName: 'Frenzy',   cost: 0, hasMagicSymbol: false, count: 4, timing: 'beginning_of_battle', effect: 'At the start of battle, roll two dice and apply hits before normal battle dice are rolled.' },
+  { id: 'xarm_war_cry',power: 'xarm', name: 'War Cry', shortName: 'Cry', cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'No corruption tokens may be placed in this region this round.' },
+  { id: 'xarm_carnage_trap',power: 'xarm', name: 'Carnage Trap', shortName: 'Carnage', cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures other than yours may be summoned away from this region.' },
+  { id: 'xarm_ritual_death',power: 'xarm', name: 'Ritual Death', shortName: 'Ritual', cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Each time you kill a figure here, draw a Chaos card.' },
+  { id: 'xarm_the_red_throne',     power: 'xarm', name: 'The Red Throne', shortName: 'Throne',      cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'When calculating your domination value in this region, count the sum of your figures\' attack values instead of the quantity of figures.' },
+  { id: 'xarm_bloody_rebirth',  power: 'xarm', name: 'Bloody Rebirth', shortName: 'Rebirth',  cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'During the battle phase, conduct an additional battle in this region.' },
+  { id: 'xarm_call_to_war',     power: 'xarm', name: 'Call to War', shortName: 'Call',     cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Move up to two of your figures into this region from other regions.' },
 
   // ── Gormen ────────────────────────────────────────────────────────────────
-  { id: 'gormen_pestilent_aura',       power: 'gormen', name: 'Pestilent Aura',       cost: 0, hasMagicSymbol: true,  count: 4, timing: 'persistent', effect: 'Each of your corruption tokens in this region adds one to your domination value.' },
-  { id: 'gormen_rotting_grasp',        power: 'gormen', name: 'Rotting Grasp',        cost: 0, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Enemy figures\' defense value is reduced by one (minimum 1).' },
-  { id: 'gormen_epidemic',             power: 'gormen', name: 'Epidemic',             cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'This region\'s Resistance is reduced by two.' },
-  { id: 'gormen_blight_ward',          power: 'gormen', name: 'Blight Ward',          cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Your figures\' defense value is increased by one.' },
-  { id: 'gormen_entropy',              power: 'gormen', name: 'Entropy',              cost: 1, hasMagicSymbol: false, count: 2, timing: 'on_play', effect: 'Remove one corruption token (any player) from this region.' },
-  { id: 'gormen_plague_bloom',         power: 'gormen', name: 'Plague Bloom',         cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Remove any of your figures from this region; place one corruption token for every two figures removed.' },
-  { id: 'gormen_corruptions_harvest',  power: 'gormen', name: 'Corruption\'s Harvest', cost: 2, hasMagicSymbol: false, count: 3, timing: 'end_of_battle', effect: 'After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. Gormen chooses which figures to kill.' },
-  { id: 'gormen_deaths_perfume',       power: 'gormen', name: 'Death\'s Perfume',      cost: 3, hasMagicSymbol: true,  count: 2, timing: 'persistent', effect: 'If you dominate this region, place two corruption tokens here.' },
+  { id: 'gormen_pestilent_aura',       power: 'gormen', name: 'Pestilent Aura', shortName: 'Aura',      cost: 0, hasMagicSymbol: true,  count: 4, timing: 'persistent', effect: 'Each of your corruption tokens in this region adds one to your domination value.' },
+  { id: 'gormen_pestilent_touch',        power: 'gormen', name: 'Pestilent Touch', shortName: 'Touch',        cost: 0, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Enemy figures\' defense value is reduced by one (minimum 1).' },
+  { id: 'gormen_pandemic',             power: 'gormen', name: 'Pandemic', shortName: 'Pandemic',             cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'This region\'s Resistance is reduced by two.' },
+  { id: 'gormen_rain_of_bile',          power: 'gormen', name: 'Rain of Bile', shortName: 'Rain',          cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Your figures\' defense value is increased by one.' },
+  { id: 'gormen_decay',              power: 'gormen', name: 'Decay', shortName: 'Decay',              cost: 1, hasMagicSymbol: false, count: 2, timing: 'on_play', effect: 'Remove one corruption token (any player) from this region.' },
+  { id: 'gormen_vile_consumption',         power: 'gormen', name: 'Vile Consumption', shortName: 'Consumption',         cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Remove any of your figures from this region; place one corruption token for every two figures removed.' },
+  { id: 'gormen_inevitable_rot',  power: 'gormen', name: 'Inevitable Rot', shortName: 'Rot', cost: 2, hasMagicSymbol: false, count: 3, timing: 'end_of_battle', effect: 'After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. Gormen chooses which figures to kill.' },
+  { id: 'gormen_deaths_perfume',       power: 'gormen', name: 'Death\'s Perfume', shortName: 'Perfume',      cost: 3, hasMagicSymbol: true,  count: 2, timing: 'persistent', effect: 'If you dominate this region, place two corruption tokens here.' },
 
   // ── Tenzen ────────────────────────────────────────────────────────────────
-  { id: 'tenzen_null_weave',       power: 'tenzen', name: 'Null Weave',       cost: 0, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'The text effects of all other Chaos cards in this region are canceled.' },
-  { id: 'tenzen_fates_aegis',      power: 'tenzen', name: 'Fate\'s Aegis',    cost: 0, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Choose one of your figures; it cannot be killed in battle this round.' },
-  { id: 'tenzen_phase_shift',      power: 'tenzen', name: 'Phase Shift',      cost: 1, hasMagicSymbol: false, count: 4, timing: 'on_play', effect: 'Move any Cultist or Warrior in this region to any other region.' },
-  { id: 'tenzen_stolen_thoughts',  power: 'tenzen', name: 'Stolen Thoughts',  cost: 1, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Choose one opponent with figures in this region; that opponent discards two Chaos cards.' },
-  { id: 'tenzen_stasis_web',       power: 'tenzen', name: 'Stasis Web',       cost: 1, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'Opponents pay +2 power points to summon figures or play Chaos cards in this region.' },
-  { id: 'tenzen_recursive_pattern',power: 'tenzen', name: 'Recursive Pattern',cost: 1, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'If you kill one or more figures in battle here, you may keep this card on the board rather than discarding it at end of round.' },
-  { id: 'tenzen_kaleidoscope',     power: 'tenzen', name: 'Kaleidoscope',     cost: 2, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region.' },
-  { id: 'tenzen_arcane_siphon',    power: 'tenzen', name: 'Arcane Siphon',    cost: 0, hasMagicSymbol: false, count: 2, timing: 'on_play', effect: 'Each other player with at least one Cultist in this region loses one power point; you gain one power point.' },
+  { id: 'tenzen_changer_of_fate',       power: 'tenzen', name: 'Changer of Fate', shortName: 'Changer',       cost: 0, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'The text effects of all other Chaos cards in this region are canceled.' },
+  { id: 'tenzen_fate_shield',      power: 'tenzen', name: 'Fate Shield', shortName: 'Shield',    cost: 0, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Choose one of your figures; it cannot be killed in battle this round.' },
+  { id: 'tenzen_teleport',      power: 'tenzen', name: 'Teleport', shortName: 'Teleport',      cost: 1, hasMagicSymbol: false, count: 4, timing: 'on_play', effect: 'Move any Cultist or Warrior in this region to any other region.' },
+  { id: 'tenzen_the_meddling_of_rats',  power: 'tenzen', name: 'The Meddling of Rats', shortName: 'Meddling',  cost: 1, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'Choose one opponent with figures in this region; that opponent discards two Chaos cards.' },
+  { id: 'tenzen_stasis_web',       power: 'tenzen', name: 'Stasis Web', shortName: 'Statis',       cost: 1, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'Opponents pay +2 power points to summon figures or play Chaos cards in this region.' },
+  { id: 'tenzen_persistence_matrix',power: 'tenzen', name: 'Persistence Matrix', shortName: 'Persistence', cost: 1, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'If you kill one or more figures in battle here, you may keep this card on the board rather than discarding it at end of round.' },
+  { id: 'tenzen_shimmer',     power: 'tenzen', name: 'Shimmer', shortName: 'Shimmer',     cost: 2, hasMagicSymbol: true,  count: 3, timing: 'persistent', effect: 'During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region.' },
+  { id: 'tenzen_siphon_power',    power: 'tenzen', name: 'Siphon Power', shortName: 'Siphon',    cost: 0, hasMagicSymbol: false, count: 2, timing: 'on_play', effect: 'Each other player with at least one Cultist in this region loses one power point; you gain one power point.' },
 
   // ── Lasha ─────────────────────────────────────────────────────────────────
-  { id: 'lasha_hollow_pact',    power: 'lasha', name: 'Hollow Pact',    cost: 0, hasMagicSymbol: true,  count: 2, timing: 'persistent', effect: 'Enemy figures contribute nothing to their owners\' domination values in this region.' },
-  { id: 'lasha_silent_taint',   power: 'lasha', name: 'Silent Taint',   cost: 0, hasMagicSymbol: false, count: 4, timing: 'on_play', effect: 'Place one corruption token in this region. This does not trigger your dial advancement condition.' },
-  { id: 'lasha_sweet_deceit',   power: 'lasha', name: 'Sweet Deceit',   cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'For each Noble and Hero token in this region, add two to your domination value.' },
-  { id: 'lasha_invisible_hand', power: 'lasha', name: 'The Invisible Hand', cost: 1, hasMagicSymbol: true, count: 4, timing: 'on_play', effect: 'Move a Peasant, Hero, or Noble token from this region to any other region.' },
-  { id: 'lasha_enthrallment',   power: 'lasha', name: 'Enthrallment',   cost: 2, hasMagicSymbol: true,  count: 4, timing: 'persistent', effect: 'Choose one enemy Cultist in this region; you control it until this card is discarded.' },
-  { id: 'lasha_euphoric_haze',  power: 'lasha', name: 'Euphoric Haze',  cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures roll battle dice in this region this round.' },
-  { id: 'lasha_debauched_court',power: 'lasha', name: 'Debauched Court',cost: 3, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'If this region contains three or more corruption tokens when you play this card, reduce the cost by three. The printed cost still counts toward domination.' },
+  { id: 'lasha_hollow_pact',    power: 'lasha', name: 'Hollow Pact', shortName: 'Pact',    cost: 0, hasMagicSymbol: true,  count: 2, timing: 'persistent', effect: 'Enemy figures contribute nothing to their owners\' domination values in this region.' },
+  { id: 'lasha_depraved_infiltration',   power: 'lasha', name: 'Depraved Infiltration', shortName: 'Infiltration',   cost: 0, hasMagicSymbol: false, count: 4, timing: 'on_play', effect: 'Place one corruption token in this region. This does not trigger your dial advancement condition.' },
+  { id: 'lasha_sweet_lies',   power: 'lasha', name: 'Sweet Lies', shortName: 'Lies',   cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'For each Noble and Hero token in this region, add two to your domination value.' },
+  { id: 'lasha_hidden_influence', power: 'lasha', name: 'Hidden Influence', shortName: 'Influence', cost: 1, hasMagicSymbol: true, count: 4, timing: 'on_play', effect: 'Move a Peasant, Hero, or Noble token from this region to any other region.' },
+  { id: 'lasha_narcotic_musk',   power: 'lasha', name: 'Narcotic Musk', shortName: 'Musk',   cost: 2, hasMagicSymbol: true,  count: 4, timing: 'persistent', effect: 'Choose one enemy Cultist in this region; you control it until this card is discarded.' },
+  { id: 'lasha_ecstasy',  power: 'lasha', name: 'Ecstasy', shortName: 'Ecstasy',  cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures roll battle dice in this region this round.' },
+  { id: 'lasha_debauched_royalty',power: 'lasha', name: 'Debauched Royalty', shortName: 'Royalty', cost: 3, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'If this region contains three or more corruption tokens when you play this card, reduce the cost by three. The printed cost still counts toward domination.' },
 ];
 
 // ─── Upgrade card definitions ─────────────────────────────────────────────────
@@ -204,22 +205,22 @@ export interface UpgradeDef {
 
 export const UPGRADES: UpgradeDef[] = [
   // ── Xarm ──────────────────────────────────────────────────────────────────
-  { id: 'xarm_deluge_of_ferocity', power: 'xarm', name: 'Deluge of Ferocity', upgradeType: 'power',      effect: 'Draw one additional Chaos card in each draw phase.', powerBonus: { extraDraw: 1 } },
-  { id: 'xarm_power_of_blood',     power: 'xarm', name: 'Power of Blood',     upgradeType: 'power',      effect: 'Gain one extra power point in the draw phase.', powerBonus: { extraPowerPoints: 1 } },
+  { id: 'xarm_flood_of_ferocity', power: 'xarm', name: 'Flood of Ferocity', upgradeType: 'power',      effect: 'Draw one additional Chaos card in each draw phase.', powerBonus: { extraDraw: 1 } },
+  { id: 'xarm_power_of_war',     power: 'xarm', name: 'Power of War',     upgradeType: 'power',      effect: 'Gain one extra power point in the draw phase.', powerBonus: { extraPowerPoints: 1 } },
   { id: 'xarm_heartseekers_up',    power: 'xarm', name: 'Heartseekers Upgrade',upgradeType: 'cultist',   effect: 'Heartseekers gain attack 1.', newStats: { attack: 1 } },
   { id: 'xarm_heartrippers_up',    power: 'xarm', name: 'Heartrippers Upgrade',upgradeType: 'warrior',   effect: 'Place one corruption token for each enemy figure your Heartrippers kill in the battle phase (including explosions).' },
   { id: 'xarm_heartgrinder_up',    power: 'xarm', name: 'Heartgrinder Upgrade',upgradeType: 'incarnation',effect: 'A single Heartgrinder counts as four figures for domination value.' },
 
   // ── Gormen ────────────────────────────────────────────────────────────────
-  { id: 'gormen_provender_of_ruin',  power: 'gormen', name: 'Provender of Ruin',    upgradeType: 'power',      effect: 'Score 3 VP each time any region is ruined.', powerBonus: {} },
-  { id: 'gormen_power_of_pestilence',power: 'gormen', name: 'Power of Pestilence',  upgradeType: 'power',      effect: 'Gain two extra power points in the draw phase.', powerBonus: { extraPowerPoints: 2 } },
+  { id: 'gormen_provender_of_rot',  power: 'gormen', name: 'Provender of Rot',    upgradeType: 'power',      effect: 'Score 3 VP each time any region is ruined.', powerBonus: {} },
+  { id: 'gormen_power_of_decay',power: 'gormen', name: 'Power of Decay',  upgradeType: 'power',      effect: 'Gain two extra power points in the draw phase.', powerBonus: { extraPowerPoints: 2 } },
   { id: 'gormen_plaguecarriers_up',  power: 'gormen', name: 'Plaguecarriers Upgrade',upgradeType: 'cultist',   effect: 'A Plaguecarrier costs 0 if placed in a region where you have no other figures (once per figure per round).' },
   { id: 'gormen_plaguebringers_up',  power: 'gormen', name: 'Plaguebringers Upgrade',upgradeType: 'warrior',   effect: 'Each Plaguebringer counts as two figures toward your domination value.', newStats: { cost: 1, attack: 1, defense: 1 } },
   { id: 'gormen_plaguefather_up',    power: 'gormen', name: 'Plaguefather Upgrade',  upgradeType: 'incarnation',effect: 'Immediately place two corruption tokens in a region when you summon your Plaguefather there.' },
 
   // ── Tenzen ────────────────────────────────────────────────────────────────
-  { id: 'tenzen_deluge_of_magic', power: 'tenzen', name: 'Deluge of Magic',   upgradeType: 'power',      effect: 'Draw to six Chaos cards in each draw phase instead of five.', powerBonus: { extraDraw: 1 } },
-  { id: 'tenzen_power_of_magic',  power: 'tenzen', name: 'Power of Magic',    upgradeType: 'power',      effect: 'Gain one extra power point in the draw phase.', powerBonus: { extraPowerPoints: 1 } },
+  { id: 'tenzen_flood_of_magic', power: 'tenzen', name: 'Flood of Magic',   upgradeType: 'power',      effect: 'Draw to six Chaos cards in each draw phase instead of five.', powerBonus: { extraDraw: 1 } },
+  { id: 'tenzen_power_of_fate',  power: 'tenzen', name: 'Power of Fate',    upgradeType: 'power',      effect: 'Gain one extra power point in the draw phase.', powerBonus: { extraPowerPoints: 1 } },
   { id: 'tenzen_apprentices_up',  power: 'tenzen', name: 'Apprentices Upgrade',upgradeType: 'cultist',   effect: 'When summoned from the board, an Apprentice may carry one Chaos Stone token from its origin region to its destination.' },
   { id: 'tenzen_fractals_up',     power: 'tenzen', name: 'Fractals Upgrade',   upgradeType: 'warrior',   effect: 'When you play a Chaos card with a magic symbol, you may immediately summon a Fractal to that region for 0 power.', newStats: { cost: 2, attack: 1, defense: 2 } },
   { id: 'tenzen_fatespinner_up',  power: 'tenzen', name: 'Fatespinner Upgrade',upgradeType: 'incarnation',effect: 'The Fatespinner counts as two Chaos Stone tokens for ruination and dial advancement purposes.', newStats: { cost: 3, attack: 3, defense: 2 } },
@@ -400,31 +401,31 @@ export interface WorldCardDef {
 }
 
 export const WORLD_CARDS: WorldCardDef[] = [
-  { id: 'strategic_vanguard', name: 'Strategic Vanguard', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
+  { id: 'normagne_heir', name: 'Normagne Heir', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
     immediateEffect: 'Place a Noble token on Normagne and a Noble token on any other region.',
     persistentEffect: 'During Resolve World Cards: each player with 1+ figures on Normagne must discard a Chaos card of their choice, if possible.' },
 
-  { id: 'armistice', name: 'Armistice', count: 1, hasCometIcon: true, timing: 'end_of_battle', requiresChoice: false,
+  { id: 'eastern_armistice', name: 'Eastern Armistice', count: 1, hasCometIcon: true, timing: 'end_of_battle', requiresChoice: false,
     immediateEffect: 'Place an Event token on Almerida, Normagne, and Norrsund.',
     persistentEffect: 'At the end of the battle phase: each player must remove one of their figures from each region containing an Event token, if possible.' },
 
-  { id: 'the_pardon', name: 'The Pardon', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'purchased_title', name: 'Purchased Title', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Choose a Peasant token on the board and replace it with a Noble token, if possible.',
     persistentEffect: null },
 
-  { id: 'the_gambit', name: 'The Gambit', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
+  { id: 'northern_heir', name: 'Northern Heir', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
     immediateEffect: 'Place a Noble token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.',
     persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Noble token on a region where there is already a Noble token, if possible.' },
 
-  { id: 'frontier_settlement', name: 'Frontier Settlement', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'ratmen_incursion', name: 'Ratmen Incursion', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Place a Ratmen token on 2 different regions.',
     persistentEffect: null },
 
-  { id: 'war_zone', name: 'War Zone', count: 1, hasCometIcon: true, timing: 'constant', requiresChoice: true,
+  { id: 'mittelreich_diplomacy', name: 'Mittelreich Diplomacy', count: 1, hasCometIcon: true, timing: 'constant', requiresChoice: true,
     immediateEffect: 'Place an Event token on Mittelreich and an Event token on any other region.',
     persistentEffect: 'No battles may take place in regions containing at least 1 Event token.' },
 
-  { id: 'false_lead', name: 'False Lead', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'accelerating_doom', name: 'Accelerating Doom', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Discard this card from the game entirely, then draw and resolve another card from the top of the World Deck immediately.',
     persistentEffect: null },
 
@@ -432,23 +433,23 @@ export const WORLD_CARDS: WorldCardDef[] = [
     immediateEffect: 'Place an Event token on The Barrens, Mittelreich, and Toscavar.',
     persistentEffect: 'Each player who battles in a region containing at least 1 Event token may only roll 1 battle die in total for that battle.' },
 
-  { id: 'border_garrison', name: 'Border Garrison', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'peasant_prosperity', name: 'Peasant Prosperity', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Place a Peasant token on 2 different regions.',
     persistentEffect: null },
 
-  { id: 'buried_cache', name: 'Buried Cache', count: 2, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'chaos_storm', name: 'Chaos Storm', count: 2, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Place a Chaos Stone token on 2 different regions.',
     persistentEffect: null },
 
-  { id: 'misdirection', name: 'Misdirection', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
+  { id: 'central_overpopulation', name: 'Central Overpopulation', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
     immediateEffect: 'Place an Event token on Normagne, Mittelreich, and Toscavar. Then place a Peasant token on every region.',
     persistentEffect: 'During Resolve World Cards: remove one Peasant token from each region containing an Event token.' },
 
-  { id: 'fortification', name: 'Fortification', count: 2, hasCometIcon: false, timing: 'constant', requiresChoice: false,
+  { id: 'raise_the_militia', name: 'Raise the Militia', count: 2, hasCometIcon: false, timing: 'constant', requiresChoice: false,
     immediateEffect: 'Place a Peasant token on every region except The Barrens.',
     persistentEffect: 'Each Peasant token on the board increases the Resistance of its region by 1.' },
 
-  { id: 'populist_rising', name: 'Populist Rising', count: 4, hasCometIcon: false, timing: 'discard', requiresChoice: false,
+  { id: 'peasant_harvest', name: 'Peasant Harvest', count: 4, hasCometIcon: false, timing: 'discard', requiresChoice: false,
     immediateEffect: 'Each player scores 1 VP per claimed Peasant token. The player with the most claimed Peasants scores an additional 3 VP. Claimed tokens are not discarded.',
     persistentEffect: null },
 
@@ -456,11 +457,11 @@ export const WORLD_CARDS: WorldCardDef[] = [
     immediateEffect: 'Place a Noble token on 3 different regions.',
     persistentEffect: 'During Resolve World Cards: the player with the lowest Threat removes 1 Noble token from the board.' },
 
-  { id: 'the_hunt', name: 'The Hunt', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: false,
+  { id: 'chaos_countermeasures', name: 'Chaos Countermeasures', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: false,
     immediateEffect: 'Place a Hero token on The Barrens and Pelascos.',
     persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Hero token on any region containing at least 1 Chaos Stone token. If none, do nothing.' },
 
-  { id: 'the_exodus', name: 'The Exodus', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
+  { id: 'great_exorcism', name: 'Great Exorcism', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
     immediateEffect: 'Place an Event token on any region.',
     persistentEffect: 'During Resolve World Cards: remove all figures from each region containing at least 1 Event token (return to owners\' stockpiles). Then move all Event tokens to the region with the most corruption tokens.' },
 
@@ -468,7 +469,7 @@ export const WORLD_CARDS: WorldCardDef[] = [
     immediateEffect: 'Place a Peasant token on 2 different regions, then a Noble token on 2 different regions, then a Ratmen token on 2 different regions.',
     persistentEffect: null },
 
-  { id: 'entanglement', name: 'Entanglement', count: 1, hasCometIcon: false, timing: 'constant', requiresChoice: true,
+  { id: 'heroes_of_order', name: 'Heroes of Order', count: 1, hasCometIcon: false, timing: 'constant', requiresChoice: true,
     immediateEffect: 'Place a Hero token on Normagne and Mittelreich, OR on Almerida and Toscavar.',
     persistentEffect: 'Regions containing 1 or more Hero tokens have only 1 card space available instead of 2 (total across all players).' },
 

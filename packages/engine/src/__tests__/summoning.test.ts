@@ -91,21 +91,21 @@ describe('summoning pass', () => {
 
 describe('play card', () => {
   test('playing a card removes it from hand and deducts cost', () => {
-    let s = giveCards(makeState(), 'xarm', ['xarm_scorched_earth']);
+    let s = giveCards(makeState(), 'xarm', ['xarm_war_cry']);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_scorched_earth',
+      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_war_cry',
       toRegion: 'norrsund', slotIndex: 0,
     });
-    expect(state.powers.xarm!.hand).not.toContain('xarm_scorched_earth');
+    expect(state.powers.xarm!.hand).not.toContain('xarm_war_cry');
     expect(state.powers.xarm!.powerPoints).toBe(BASE_POWER_POINTS.xarm - 1); // cost 1
-    expect(state.regions.norrsund!.chaosCards[0]?.cardId).toBe('xarm_scorched_earth');
+    expect(state.regions.norrsund!.chaosCards[0]?.cardId).toBe('xarm_war_cry');
   });
 
   test('cannot play card not in hand', () => {
     const s = makeState();
     expect(() =>
       applyPlayCard(s, {
-        kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_scorched_earth',
+        kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_war_cry',
         toRegion: 'norrsund', slotIndex: 0,
       }),
     ).toThrow(/not in hand/);
@@ -137,10 +137,10 @@ describe('Stasis Web', () => {
 
   test('+2 PP cost for non-Tenzen card play in region with Stasis Web', () => {
     let s = placeCard(makeState(), 'tenzen_stasis_web', 'tenzen', 'norrsund');
-    s = giveCards(s, 'xarm', ['xarm_scorched_earth']); // cost 1
+    s = giveCards(s, 'xarm', ['xarm_war_cry']); // cost 1
     s = setPP(s, 'xarm', 10);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_scorched_earth',
+      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_war_cry',
       toRegion: 'norrsund', slotIndex: 1,
     });
     expect(state.powers.xarm!.powerPoints).toBe(10 - 3); // 1 + 2
@@ -151,7 +151,7 @@ describe('Stasis Web', () => {
 
 describe('Killing Ground', () => {
   test('blocks non-Xarm figure from moving away from region', () => {
-    let s = placeCard(makeState(), 'xarm_killing_ground', 'xarm', 'norrsund');
+    let s = placeCard(makeState(), 'xarm_carnage_trap', 'xarm', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     expect(() =>
       applySummonFigure(s, {
@@ -161,7 +161,7 @@ describe('Killing Ground', () => {
   });
 
   test('Xarm figures can still move away from Killing Ground region', () => {
-    let s = placeCard(makeState(), 'xarm_killing_ground', 'xarm', 'norrsund');
+    let s = placeCard(makeState(), 'xarm_carnage_trap', 'xarm', 'norrsund');
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     expect(() =>
       applySummonFigure(s, {
@@ -176,9 +176,9 @@ describe('Killing Ground', () => {
 describe('Gormen Entropy (remove 1 corruption on play)', () => {
   test('removes one corruption token from the target region', () => {
     let s = addCorruption(makeState(), 'norrsund', 'xarm', 3);
-    s = giveCards(s, 'gormen', ['gormen_entropy']);
+    s = giveCards(s, 'gormen', ['gormen_decay']);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'gormen', cardId: 'gormen_entropy',
+      kind: 'summoning_play_card', power: 'gormen', cardId: 'gormen_decay',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.regions.norrsund!.corruptionTokens.xarm).toBe(2);
@@ -191,9 +191,9 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
   test('no effect when played — figures and tokens unchanged', () => {
     let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    s = giveCards(s, 'gormen', ['gormen_plague_bloom']);
+    s = giveCards(s, 'gormen', ['gormen_vile_consumption']);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'gormen', cardId: 'gormen_plague_bloom',
+      kind: 'summoning_play_card', power: 'gormen', cardId: 'gormen_vile_consumption',
       toRegion: 'norrsund', slotIndex: 0,
     });
     // On-play: figures remain, no extra corruption tokens
@@ -206,7 +206,7 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     // Place the card on the board
-    s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_plague_bloom', playedBy: 'gormen', slotIndex: 0, persistNextRound: false }, null] } } };
+    s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_vile_consumption', playedBy: 'gormen', slotIndex: 0, persistNextRound: false }, null] } } };
     const { state } = resolveCorruptionPhase(s);
     // 3 figures removed → floor(3/2) = 1 token
     expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(0);
@@ -219,11 +219,11 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
 describe('Tenzen Arcane Siphon (PP transfer)', () => {
   test('drains 1 PP from each opponent with a cultist and gains PP', () => {
     let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
-    s = giveCards(s, 'tenzen', ['tenzen_arcane_siphon']);
+    s = giveCards(s, 'tenzen', ['tenzen_siphon_power']);
     s = setPP(s, 'gormen', 3);
     const beforeTenzen = s.powers.tenzen!.powerPoints;
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_arcane_siphon',
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_siphon_power',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.powers.gormen!.powerPoints).toBe(2); // 3 - 1
@@ -235,9 +235,9 @@ describe('Tenzen Arcane Siphon (PP transfer)', () => {
 
 describe('Lasha Silent Taint (place corruption, no dial)', () => {
   test('places 1 Lasha corruption token without triggering dial counter', () => {
-    let s = giveCards(makeState(), 'lasha', ['lasha_silent_taint']);
+    let s = giveCards(makeState(), 'lasha', ['lasha_depraved_infiltration']);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_silent_taint',
+      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_depraved_infiltration',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.regions.norrsund!.corruptionTokens.lasha).toBe(1);
@@ -250,10 +250,10 @@ describe('Lasha Silent Taint (place corruption, no dial)', () => {
 
 describe('Lasha Debauched Court (cost reduction)', () => {
   test('costs 3 normally (base cost)', () => {
-    let s = giveCards(makeState(), 'lasha', ['lasha_debauched_court']);
+    let s = giveCards(makeState(), 'lasha', ['lasha_debauched_royalty']);
     s = setPP(s, 'lasha', 10);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_debauched_court',
+      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_debauched_royalty',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.powers.lasha!.powerPoints).toBe(10 - 3);
@@ -261,10 +261,10 @@ describe('Lasha Debauched Court (cost reduction)', () => {
 
   test('costs 0 when region has 3+ corruption tokens', () => {
     let s = addCorruption(makeState(), 'norrsund', 'gormen', 3);
-    s = giveCards(s, 'lasha', ['lasha_debauched_court']);
+    s = giveCards(s, 'lasha', ['lasha_debauched_royalty']);
     s = setPP(s, 'lasha', 5);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_debauched_court',
+      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_debauched_royalty',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.powers.lasha!.powerPoints).toBe(5); // cost 0
@@ -276,9 +276,9 @@ describe('Lasha Debauched Court (cost reduction)', () => {
 describe('Xarm War March (move figures in on play)', () => {
   test('playing sets pendingAction for card_on_play_choice', () => {
     let s = placeFollower(makeState(), 'xarm', 'warrior', 'talvimaa');
-    s = giveCards(s, 'xarm', ['xarm_war_march']);
+    s = giveCards(s, 'xarm', ['xarm_call_to_war']);
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_war_march',
+      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_call_to_war',
       toRegion: 'norrsund', slotIndex: 0,
     });
     expect(state.pendingAction?.actionKind).toBe('card_on_play_choice');
@@ -287,16 +287,16 @@ describe('Xarm War March (move figures in on play)', () => {
 
   test('submitting choice moves figure into played region', () => {
     let s = placeFollower(makeState(), 'xarm', 'warrior', 'talvimaa');
-    s = giveCards(s, 'xarm', ['xarm_war_march']);
+    s = giveCards(s, 'xarm', ['xarm_call_to_war']);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_war_march',
+      kind: 'summoning_play_card', power: 'xarm', cardId: 'xarm_call_to_war',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const followerId = afterPlay.powers.xarm!.followers.find(
       f => f.regionId === 'talvimaa',
     )!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'xarm', cardId: 'xarm_war_march',
+      kind: 'card_on_play_choice', power: 'xarm', cardId: 'xarm_call_to_war',
       regionId: 'norrsund', choices: { followerIds: [followerId] },
     });
     expect(followersIn(state, 'xarm', 'norrsund')).toHaveLength(1);
@@ -309,14 +309,14 @@ describe('Xarm War March (move figures in on play)', () => {
 describe('Tenzen Phase Shift (move figure to any region)', () => {
   test('moves chosen cultist from played region to destination', () => {
     let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
-    s = giveCards(s, 'tenzen', ['tenzen_phase_shift']);
+    s = giveCards(s, 'tenzen', ['tenzen_teleport']);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_phase_shift',
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_teleport',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_phase_shift',
+      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_teleport',
       regionId: 'norrsund', choices: { followerId, toRegion: 'mittelreich' },
     });
     expect(state.regions.norrsund!.placements).toHaveLength(0);
@@ -328,14 +328,14 @@ describe('Tenzen Phase Shift (move figure to any region)', () => {
 
 describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
   test('target opponent has 2 forced discards queued after Stolen Thoughts resolves', () => {
-    let s = giveCards(makeState(), 'xarm', ['xarm_scorched_earth', 'xarm_war_frenzy', 'xarm_killing_ground']);
-    s = giveCards(s, 'tenzen', ['tenzen_stolen_thoughts']);
+    let s = giveCards(makeState(), 'xarm', ['xarm_war_cry', 'xarm_war_frenzy', 'xarm_carnage_trap']);
+    s = giveCards(s, 'tenzen', ['tenzen_the_meddling_of_rats']);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_stolen_thoughts',
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_the_meddling_of_rats',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_stolen_thoughts',
+      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_the_meddling_of_rats',
       regionId: 'norrsund', choices: { targetPower: 'xarm' },
     });
     // Stolen Thoughts queues a forced discard on xarm's next turn (not immediate)
@@ -348,14 +348,14 @@ describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
 describe("Tenzen Fate's Aegis (protect figure)", () => {
   test('chosen figure gets protected = true', () => {
     let s = placeFollower(makeState(), 'tenzen', 'warrior', 'norrsund');
-    s = giveCards(s, 'tenzen', ['tenzen_fates_aegis']);
+    s = giveCards(s, 'tenzen', ['tenzen_fate_shield']);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_fates_aegis',
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_fate_shield',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_fates_aegis',
+      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_fate_shield',
       regionId: 'norrsund', choices: { followerId },
     });
     expect(state.regions.norrsund!.placements.find(f => f.id === followerId)!.protected).toBe(true);
@@ -367,13 +367,13 @@ describe("Tenzen Fate's Aegis (protect figure)", () => {
 describe('Lasha Invisible Hand (move token)', () => {
   test('moves a Noble token from played region to destination', () => {
     let s = addToken(makeState(), 'norrsund', 'noble');
-    s = giveCards(s, 'lasha', ['lasha_invisible_hand']);
+    s = giveCards(s, 'lasha', ['lasha_hidden_influence']);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_invisible_hand',
+      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_hidden_influence',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'lasha', cardId: 'lasha_invisible_hand',
+      kind: 'card_on_play_choice', power: 'lasha', cardId: 'lasha_hidden_influence',
       regionId: 'norrsund', choices: { token: 'noble', fromRegion: 'norrsund', toRegion: 'mittelreich' },
     });
     expect(state.regions.norrsund!.tokens.includes('noble')).toBe(false);
@@ -386,15 +386,15 @@ describe('Lasha Invisible Hand (move token)', () => {
 describe('Lasha Enthrallment (control enemy cultist)', () => {
   test('chosen enemy cultist gets controlledBy = lasha', () => {
     let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
-    s = giveCards(s, 'lasha', ['lasha_enthrallment']);
+    s = giveCards(s, 'lasha', ['lasha_narcotic_musk']);
     s = setPP(s, 'lasha', 10);
     const { state: afterPlay } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_enthrallment',
+      kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_narcotic_musk',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
-      kind: 'card_on_play_choice', power: 'lasha', cardId: 'lasha_enthrallment',
+      kind: 'card_on_play_choice', power: 'lasha', cardId: 'lasha_narcotic_musk',
       regionId: 'norrsund', choices: { followerId },
     });
     const f = state.regions.norrsund!.placements.find(f => f.id === followerId)!;
@@ -459,12 +459,12 @@ describe('Tenzen Apprentices upgrade (carry Chaos Stone)', () => {
 describe('Tenzen Fractals upgrade (free Fractal on magic symbol card)', () => {
   test('playing a magic symbol card summons a Fractal to that region for free', () => {
     let s = withUpgrade(makeState(), 'tenzen', 'tenzen_fractals_up');
-    s = giveCards(s, 'tenzen', ['tenzen_null_weave']); // hasMagicSymbol: true
+    s = giveCards(s, 'tenzen', ['tenzen_changer_of_fate']); // hasMagicSymbol: true
     const fractalsInRegionBefore = s.regions.norrsund!.placements.filter(
       f => f.class === 'warrior' && f.power === 'tenzen',
     ).length;
     const { state } = applyPlayCard(s, {
-      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_null_weave',
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_changer_of_fate',
       toRegion: 'norrsund', slotIndex: 0,
     });
     const fractalsAfter = state.regions.norrsund!.placements.filter(

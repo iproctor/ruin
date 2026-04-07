@@ -81,7 +81,7 @@ export interface PowerState {
   discardIds: string[];
   upgradesInPlay: string[];      // upgrade card IDs currently active
   availableUpgradeIds: string[]; // upgrade cards not yet played
-  claimedPeasants: number;       // collected via battle (for Populist Rising)
+  claimedPeasants: number;       // collected via battle (for Peasant Harvest)
   passedSummoning: boolean;
   pendingForcedDiscards: number; // cards this power must discard at start of their next summoning turn
   followers: FollowerInstance[]; // all followers (on board + reserve)
@@ -121,7 +121,7 @@ export interface BattleRoll {
 }
 
 export type BattleNextStep =
-  | { type: 'normal_battle'; powerIndex: number }
+  | { type: 'normal_battle'; powerIndex: number; clearTipped?: boolean }
   | { type: 'undying_fury';  powerIndex: number }
   | { type: 'post_normal' }
   | { type: 'post_undying' };
@@ -146,6 +146,7 @@ export type DialPendingReward =
 export interface WorldTrack {
   slot1: string | null;   // card ID
   slot2: string | null;
+  discardCard: string | null;  // discard-timing card drawn this round (never goes on track)
 }
 
 // ─── Token supply ─────────────────────────────────────────────────────────────
@@ -259,12 +260,12 @@ export interface CorruptionHarvestChoiceAction {
 
 /**
  * Generic on-play card choice. `choices` payload per cardId:
- *   xarm_war_march:       { followerIds: string[] }          — up to 2 own figures to move in
- *   tenzen_phase_shift:   { followerId: string, toRegion: RegionId }
- *   tenzen_stolen_thoughts: { targetPower: Power }           — opponent to discard 2 cards
- *   tenzen_fates_aegis:   { followerId: string }             — figure that cannot be killed
- *   lasha_invisible_hand: { token: TokenType, fromRegion: RegionId, toRegion: RegionId }
- *   lasha_enthrallment:   { followerId: string }             — enemy cultist to control
+ *   xarm_call_to_war:       { followerIds: string[] }          — up to 2 own figures to move in
+ *   tenzen_teleport:   { followerId: string, toRegion: RegionId }
+ *   tenzen_the_meddling_of_rats: { targetPower: Power }           — opponent to discard 2 cards
+ *   tenzen_fate_shield:   { followerId: string }             — figure that cannot be killed
+ *   lasha_hidden_influence: { token: TokenType, fromRegion: RegionId, toRegion: RegionId }
+ *   lasha_narcotic_musk:   { followerId: string }             — enemy cultist to control
  */
 export interface CardOnPlayChoiceAction {
   kind: 'card_on_play_choice';
@@ -285,6 +286,7 @@ export interface BattleHitAssignmentAction {
   power: Power;
   regionId: RegionId;
   followerIds: string[]; // enemy figures the attacker chooses to kill (total defense must be <= hitsRemaining)
+  peasantsToTake?: number; // number of peasant tokens to claim with remaining hits
 }
 
 export interface DialPlaceTokenAction {

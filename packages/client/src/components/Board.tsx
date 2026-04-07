@@ -4,6 +4,7 @@ import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } 
 import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination, getRegionResistance } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
+import FollowerTooltip from './FollowerTooltip.js';
 import type { DragItem } from '../types/drag.js';
 
 // ── Region layout ─────────────────────────────────────────────────────────────
@@ -61,7 +62,13 @@ function CultistShape({ cx, cy, fill, opacity, stroke, strokeWidth }: {
 
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
-function FigureCluster({ figures, x, y }: { figures: FollowerInstance[]; x: number; y: number }) {
+function FigureCluster({ figures, x, y, powers }: {
+  figures: FollowerInstance[];
+  x: number;
+  y: number;
+  powers: GameState['powers'];
+}) {
+  const [hovered, setHovered] = useState<{ fig: FollowerInstance; mx: number; my: number } | null>(null);
   const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
   const RANK_ORDER = { incarnation: 0, warrior: 1, cultist: 2 };
   const sorted = [...figures].sort((a, b) => {
@@ -86,15 +93,30 @@ function FigureCluster({ figures, x, y }: { figures: FollowerInstance[]; x: numb
         const glowStroke = fig.protected ? '#facc15' : undefined;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
         return (
-          <g key={fig.id}>
-            {fig.class === 'incarnation' && <Triangle cx={fx} cy={fy} r={8} {...sp} />}
-            {fig.class === 'warrior'     && <Square   cx={fx} cy={fy} r={6} {...sp} />}
+          <g
+            key={fig.id}
+            style={{ cursor: 'default' }}
+            onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
+            onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
+            onMouseLeave={() => setHovered(null)}
+          >
+            {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
+            {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
             {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
           </g>
         );
       })}
       {overflow > 0 && (
         <text x={x + 95} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
+      )}
+      {hovered && (
+        <FollowerTooltip
+          power={hovered.fig.power}
+          followerClass={hovered.fig.class}
+          upgradesInPlay={powers[hovered.fig.power]?.upgradesInPlay ?? []}
+          x={hovered.mx}
+          y={hovered.my}
+        />
       )}
     </g>
   );
@@ -215,7 +237,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
         transform: 'translate(-50%, -50%)',
         cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0 : 1,
-        borderRadius: fig.class === 'cultist' ? '50%' : fig.class === 'warrior' ? '2px' : '0',
+        borderRadius: fig.class === 'cultist' ? '50%' : fig.class === 'incarnation' ? '2px' : '0',
         border: `1.5px solid ${POWER_COLORS[fig.controlledBy ?? fig.power]}`,
         background: 'transparent',
         zIndex: 5,
@@ -335,7 +357,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 58} />
+        <FigureCluster figures={region.placements} x={x + 4} y={y + 58} powers={state.powers} />
       )}
 
       {/* Card slots */}

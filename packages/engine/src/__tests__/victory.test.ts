@@ -74,7 +74,7 @@ describe('ruination victory (5 regions ruined)', () => {
 
 describe('world deck exhausted victory', () => {
   test('no winner when world deck still has cards', () => {
-    const s = makeState({ phase: 'world', worldDeck: ['the_pardon'] });
+    const s = makeState({ phase: 'world', worldDeck: ['purchased_title'] });
     expect(checkVictory(s)).toBeNull();
   });
 
