@@ -69,10 +69,10 @@ function DragGhost({ item }: { item: DragItem }) {
 
 interface GameInnerProps {
   gameId: string;
-  myPower: Power | null;
+  myPowers: Power[];
 }
 
-function GameInner({ gameId, myPower }: GameInnerProps) {
+function GameInner({ gameId, myPowers }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
   const { state: streamState, eventLog, chat, connected } = useGameStream(gameId);
 
@@ -86,15 +86,16 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
   useEffect(() => {
     if (!streamState) return;
     setState(streamState);
+    const actingPower = streamState.pendingAction?.waitingFor;
     const stillMyTurn =
-      myPower !== null &&
-      streamState.pendingAction?.waitingFor === myPower &&
+      actingPower !== undefined &&
+      myPowers.includes(actingPower) &&
       streamState.phase === 'summoning';
     if (!stillMyTurn) {
       setPendingAction(null);
       setSelectedCardId(null);
     }
-  }, [streamState, myPower, setState]);
+  }, [streamState, myPowers, setState]);
 
   // displayState = serverState with pending action applied (preview)
   const displayState = useMemo(() => {
@@ -183,7 +184,8 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
   // ── Actions ──────────────────────────────────────────────────────────────────
 
   async function handleEndTurn() {
-    if (!myPower) return;
+    const acting = myPower;
+    if (!acting) return;
     setSubmitError('');
     setSubmitting(true);
     try {
@@ -193,12 +195,12 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
         setPendingAction(null);
         setSelectedCardId(null);
         // If it's still our turn, pass now
-        if (s1.pendingAction?.waitingFor === myPower) {
-          const s2 = await submitAction(gameId, { kind: 'summoning_pass', power: myPower });
+        if (s1.pendingAction?.waitingFor === acting) {
+          const s2 = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
           setState(s2);
         }
       } else {
-        const s = await submitAction(gameId, { kind: 'summoning_pass', power: myPower });
+        const s = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
         setState(s);
       }
     } catch (err) {
@@ -242,16 +244,26 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
     );
   }
 
-  const pending = displayState.pendingAction;
-  const isMyTurn        = myPower !== null && pending?.waitingFor === myPower;
-  const isSummoningTurn = isMyTurn && pending?.actionKind === 'summoning_action';
+  // Use server state for status bar so "Acting:" doesn't jump ahead of the buffer
+  const statusState = serverState ?? displayState;
+  const serverPending = statusState.pendingAction;
+
+  // myPower: if we have a buffered action, it belongs to that power (keep tableau visible).
+  // Otherwise derive from the server state's acting player.
+  const myPower: Power | null = pendingAction
+    ? (pendingAction as { power: Power }).power
+    : (serverPending?.waitingFor && myPowers.includes(serverPending.waitingFor))
+      ? serverPending.waitingFor
+      : null;
+  const isMyTurn        = myPower !== null;
+  const isSummoningTurn = isMyTurn && serverPending?.actionKind === 'summoning_action';
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
 
-        {/* Status bar */}
-        <StatusBar state={displayState} myPower={myPower} />
+        {/* Status bar shows committed state so Acting doesn't flicker ahead */}
+        <StatusBar state={statusState} myPower={myPower} />
 
         {/* Main area */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: 8 }}>
@@ -276,7 +288,7 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
               connected={connected}
             />
 
-            {isMyTurn && pending?.actionKind !== 'summoning_action' && (
+            {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
               <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
                 {submitError && <p style={{ color: '#f87171', fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
                 <ActionPanel
@@ -327,7 +339,7 @@ function GameInner({ gameId, myPower }: GameInnerProps) {
 export default function GamePage() {
   const { id } = useParams<{ id: string }>();
   const { userId } = useAuth();
-  const [myPower, setMyPower] = useState<Power | null>(null);
+  const [myPowers, setMyPowers] = useState<Power[]>([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -336,11 +348,12 @@ export default function GamePage() {
     getGame(id)
       .then((state) => {
         if (cancelled) return;
-        const found = state.activePowers.find((p) => {
+        // All powers whose hand is unmasked belong to this user
+        const mine = state.activePowers.filter((p) => {
           const hand = state.powers[p]?.hand ?? [];
           return hand.length > 0 && hand.some((c) => c !== '?');
         });
-        setMyPower(found ?? null);
+        setMyPowers(mine);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load game');
@@ -352,9 +365,9 @@ export default function GamePage() {
   if (error) return <p className="error-msg" style={{ padding: '2rem' }}>{error}</p>;
 
   return (
-    <GameProvider gameId={id} myPower={myPower}>
+    <GameProvider gameId={id} myPower={myPowers[0] ?? null}>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <GameInner gameId={id} myPower={myPower} />
+        <GameInner gameId={id} myPowers={myPowers} />
       </div>
     </GameProvider>
   );

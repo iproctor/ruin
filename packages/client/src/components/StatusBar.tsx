@@ -1,21 +1,100 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { GameState, Power } from '@ruin/engine';
-import { THREAT_DIALS } from '@ruin/engine';
+import { WORLD_CARD_BY_ID, THREAT_DIALS } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
+import CardTooltip from './CardTooltip.js';
 
 interface StatusBarProps {
   state: GameState;
   myPower: Power | null;
 }
 
-// Total dial positions per power (victory pos = last)
-function dialTotal(power: Power): number {
-  return (THREAT_DIALS[power]?.length ?? 1) - 1;
+// ── World card mini chip ──────────────────────────────────────────────────────
+
+function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 }) {
+  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const def = WORLD_CARD_BY_ID[cardId];
+  const isPersistent = def?.timing === 'persistent';
+
+  return (
+    <>
+      <div
+        onMouseEnter={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
+        onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
+        onMouseLeave={() => setTooltip(null)}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: 48,
+          height: 34,
+          borderRadius: 4,
+          overflow: 'hidden',
+          border: isPersistent ? '1.5px solid #a78bfa' : '1.5px solid #334155',
+          background: '#13121f',
+          cursor: 'default',
+          boxShadow: isPersistent ? '0 0 6px #a78bfa44' : 'none',
+          position: 'relative',
+          flexShrink: 0,
+        }}
+      >
+        {/* Slot label */}
+        <div style={{
+          position: 'absolute',
+          top: 2,
+          left: 3,
+          fontSize: '0.5rem',
+          color: '#475569',
+          lineHeight: 1,
+          fontWeight: 700,
+          letterSpacing: 1,
+        }}>
+          W{slot}
+        </div>
+
+        {/* Persistent indicator */}
+        {isPersistent && (
+          <div style={{
+            position: 'absolute',
+            top: 2,
+            right: 3,
+            fontSize: '0.5rem',
+            color: '#a78bfa',
+            lineHeight: 1,
+          }}>⬡</div>
+        )}
+
+        {/* Card name */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '10px 3px 3px',
+          textAlign: 'center',
+          fontSize: '0.52rem',
+          fontWeight: 700,
+          color: '#c4b5fd',
+          lineHeight: 1.15,
+          wordBreak: 'break-word',
+        }}>
+          {def?.name ?? cardId}
+        </div>
+      </div>
+
+      {tooltip && (
+        <CardTooltip cardId={cardId} x={tooltip.x} y={tooltip.y} />
+      )}
+    </>
+  );
 }
+
+// ── Status bar ────────────────────────────────────────────────────────────────
 
 export default function StatusBar({ state, myPower }: StatusBarProps) {
   const waiting = state.pendingAction?.waitingFor ?? null;
   const phaseLabel = PHASE_LABELS[state.phase] ?? state.phase;
+  const { slot1, slot2 } = state.worldTrack;
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-surface-1 border-b border-border text-sm shrink-0 overflow-x-auto">
@@ -60,6 +139,17 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
         </span>
       )}
 
+      {/* World cards */}
+      {(slot1 || slot2) && (
+        <>
+          <span className="text-slate-600 shrink-0">|</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {slot1 && <WorldCardChip cardId={slot1} slot={1} />}
+            {slot2 && <WorldCardChip cardId={slot2} slot={2} />}
+          </div>
+        </>
+      )}
+
       <div className="flex-1" />
 
       {/* Per-power scores */}
@@ -67,9 +157,8 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
         {state.activePowers.map((power) => {
           const ps = state.powers[power]!;
           const isActing = power === waiting;
-          const dialPos = ps.dialPosition;
-          const dialMax = dialTotal(power);
-          const ticksLeft = dialMax - dialPos;
+          const dialMax = (THREAT_DIALS[power]?.length ?? 1) - 1;
+          const ticksLeft = dialMax - ps.dialPosition;
           const color = POWER_COLORS[power];
 
           return (
@@ -78,7 +167,6 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
               className="flex flex-col items-center gap-0.5 min-w-[56px]"
               style={{ opacity: state.winners ? 0.7 : 1 }}
             >
-              {/* Power name */}
               <span
                 className="text-xs font-bold leading-none"
                 style={{
@@ -90,29 +178,16 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
                 {power === myPower && <span className="text-slate-500"> ★</span>}
               </span>
 
-              {/* VP */}
               <span className="text-base font-black leading-none" style={{ color }}>
                 {ps.victoryPoints}
                 <span className="text-slate-500 text-xs font-normal"> VP</span>
               </span>
 
-              {/* Threat dial pip strip */}
-              <div className="flex gap-0.5 items-center">
-                {Array.from({ length: Math.min(dialMax, 8) }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{
-                      background: i < dialPos ? color : '#2d2d5e',
-                      opacity: i < dialPos ? 0.9 : 0.5,
-                    }}
-                  />
-                ))}
-                {dialMax > 8 && (
-                  <span className="text-slate-500 text-[9px] ml-0.5">+{dialMax - 8}</span>
-                )}
+              <div className="flex gap-2 text-[10px]">
+                <span style={{ color: '#64748b' }}>{ps.powerPoints}<span className="text-slate-600"> pp</span></span>
+                <span style={{ color: '#64748b' }}>{ps.hand.filter(c => c !== '?').length}<span className="text-slate-600"> cards</span></span>
               </div>
-              <span className="text-[9px] text-slate-500 leading-none">{ticksLeft} to win</span>
+              <span className="text-[9px] text-slate-500 leading-none">{ticksLeft} ticks to win</span>
             </div>
           );
         })}

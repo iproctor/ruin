@@ -25,15 +25,17 @@ function HandCard({
   power,
   isSelected,
   isPending,
+  handIndex,
   onClick,
   onHover,
   isSummoningTurn,
 }: {
   cardId: string;
+  handIndex: number;
   power: Power;
   isSelected: boolean;
   isPending: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   onHover: (cardId: string | null, x: number, y: number) => void;
   isSummoningTurn: boolean;
 }) {
@@ -45,15 +47,16 @@ function HandCard({
 
   const dragData: DragItem = { kind: 'hand_card', cardId, power };
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `hand_${cardId}`,
+    id: `hand_${cardId}_${handIndex}`,
     data: dragData,
     disabled: !isSummoningTurn,
   });
 
-  const borderColor = isPending ? '#22c55e' : isSelected ? color : '#3a3a6e';
+  const showSelected = isSelected && !isSummoningTurn;
+  const borderColor = isPending ? '#22c55e' : showSelected ? color : '#3a3a6e';
   const shadow = isPending
     ? '0 0 10px #22c55e88'
-    : isSelected
+    : showSelected
     ? `0 0 10px ${color}88`
     : 'none';
 
@@ -68,8 +71,8 @@ function HandCard({
       onMouseLeave={() => onHover(null, 0, 0)}
       style={{
         position: 'relative',
-        width: 52,
-        height: 72,
+        width: 58,
+        height: 76,
         background: isSelected ? '#1e1433' : '#13121f',
         border: `1.5px ${isPending ? 'dashed' : 'solid'} ${borderColor}`,
         borderRadius: 5,
@@ -80,7 +83,7 @@ function HandCard({
         overflow: 'hidden',
         boxShadow: shadow,
         transition: 'border-color 0.1s, box-shadow 0.1s, transform 0.1s',
-        transform: isSelected && !isDragging ? 'translateY(-4px)' : 'none',
+        transform: showSelected && !isDragging ? 'translateY(-4px)' : 'none',
         opacity: isDragging ? 0.35 : 1,
         touchAction: 'none',
       }}
@@ -295,7 +298,7 @@ export default function Tableau({
 
   const ps = state.powers[myPower]!;
   const color = POWER_COLORS[myPower];
-  // Use displayState hand if available (shows pending card as played)
+  // Use displayState for live preview (PP spend, hand changes)
   const displayPs = displayState?.powers[myPower] ?? ps;
   const hand = displayPs.hand.filter((c) => c !== '?');
   const isSummoningTurn = !!onEndTurn;
@@ -322,15 +325,15 @@ export default function Tableau({
       <div className="flex flex-col items-center justify-center shrink-0 min-w-[52px]">
         <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-1">PP</div>
         <div className="text-3xl font-black leading-none" style={{ color }}>
-          {ps.powerPoints}
+          {displayPs.powerPoints}
         </div>
-        <div className="text-[10px] text-slate-500 mt-1">/ {ps.basePowerPoints}</div>
+        <div className="text-[10px] text-slate-500 mt-1">/ {displayPs.basePowerPoints}</div>
       </div>
 
       <div className="w-px shrink-0" style={{ background: '#1e1e3a' }} />
 
-      {/* Stockpile */}
-      <Stockpile state={state} power={myPower} isSummoningTurn={isSummoningTurn} />
+      {/* Stockpile — use displayState so reserve count drops immediately on drag */}
+      <Stockpile state={displayState ?? state} power={myPower} isSummoningTurn={isSummoningTurn} />
 
       <div className="w-px shrink-0" style={{ background: '#1e1e3a' }} />
 
@@ -344,11 +347,11 @@ export default function Tableau({
           </span>
           <span className="text-slate-300">
             <span className="text-slate-500">Deck </span>
-            <span className="font-bold text-slate-300">{ps.deckIds.length}</span>
+            <span className="font-bold text-slate-300">{displayPs.deckIds.length}</span>
           </span>
           <span className="text-slate-300">
             <span className="text-slate-500">Disc </span>
-            <span className="font-bold text-slate-400">{ps.discardIds.length}</span>
+            <span className="font-bold text-slate-400">{displayPs.discardIds.length}</span>
           </span>
         </div>
       </div>
@@ -364,14 +367,15 @@ export default function Tableau({
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {hand.map((cardId) => (
+          {hand.map((cardId, i) => (
             <HandCard
-              key={cardId}
+              key={`${cardId}_${i}`}
               cardId={cardId}
+              handIndex={i}
               power={myPower}
               isSelected={selectedCardId === cardId}
               isPending={cardId === pendingCardId}
-              onClick={() => onSelectCard(selectedCardId === cardId ? null : cardId)}
+              onClick={isSummoningTurn ? undefined : () => onSelectCard(selectedCardId === cardId ? null : cardId)}
               onHover={handleHover}
               isSummoningTurn={isSummoningTurn}
             />

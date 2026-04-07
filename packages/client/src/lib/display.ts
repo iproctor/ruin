@@ -4,15 +4,15 @@ import type { Power } from '@ruin/engine';
 export const POWER_COLORS: Record<Power, string> = {
   xarm:   '#ef4444',
   gormen: '#22c55e',
-  tenzen: '#a855f7',
-  lasha:  '#ec4899',
+  tenzen: '#38bdf8',
+  lasha:  '#a855f7',
 };
 
 export const POWER_BG: Record<Power, string> = {
   xarm:   '#7f1d1d',
   gormen: '#14532d',
-  tenzen: '#581c87',
-  lasha:  '#831843',
+  tenzen: '#0c4a6e',
+  lasha:  '#581c87',
 };
 
 export const POWER_LABELS: Record<Power, string> = {

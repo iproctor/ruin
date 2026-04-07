@@ -21,7 +21,7 @@ function decodeUserId(token: string): string | null {
     const padded = payload.replace(/-/g, '+').replace(/_/g, '/');
     const json = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), '='));
     const parsed = JSON.parse(json) as Record<string, unknown>;
-    return typeof parsed['sub'] === 'string' ? parsed['sub'] : null;
+    return typeof parsed['userId'] === 'string' ? parsed['userId'] : typeof parsed['sub'] === 'string' ? parsed['sub'] : null;
   } catch {
     return null;
   }

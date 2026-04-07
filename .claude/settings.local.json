@@ -27,7 +27,9 @@
       "Bash(node -e \"import\\('@ruin/ai'\\)\")",
       "Bash(pnpm add:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page"
     ]
   }
 }

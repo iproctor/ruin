@@ -43,7 +43,7 @@ APP_URL=http://localhost:5173
 createdb ruin
 ```
 
-The server runs migrations automatically on startup — no separate migration step needed.
+The server loads `.env` automatically on startup — no separate migration step needed.
 
 ### 4. Start the server
 

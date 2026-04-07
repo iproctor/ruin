@@ -16,7 +16,7 @@ const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: n
   normagne:    { x: 125, y: 340, w: 170, h: 120, label: 'Normagne' },
   almerida:    { x: 20,  y: 490, w: 170, h: 120, label: 'Almerida' },
   toscavar:    { x: 390, y: 340, w: 170, h: 120, label: 'Toscavar' },
-  pelascos:    { x: 545, y: 340, w: 170, h: 120, label: 'Pelascos' },
+  pelascos:    { x: 570, y: 340, w: 170, h: 120, label: 'Pelascos' },
   the_barrens: { x: 590, y: 490, w: 170, h: 120, label: 'The Barrens' },
 };
 
@@ -28,10 +28,10 @@ const TOKEN_COLORS: Record<TokenType, string> = {
   noble:       '#eab308',
   peasant:     '#78716c',
   ratmen:      '#10b981',
-  chaos_stone: '#38bdf8',
+  chaos_stone: '#14b8a6',
 };
 const TOKEN_LABELS: Record<TokenType, string> = {
-  event: 'Ev', hero: 'He', noble: 'No', peasant: 'Pe', ratmen: 'Ra', chaos_stone: 'CS',
+  event: 'Ev', hero: 'He', noble: 'Nb', peasant: 'Pe', ratmen: 'Ra', chaos_stone: 'CS',
 };
 
 // ── Follower shapes ───────────────────────────────────────────────────────────
@@ -61,9 +61,13 @@ function CultistShape({ cx, cy, fill, opacity, stroke, strokeWidth }: {
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
 function FigureCluster({ figures, x, y }: { figures: FollowerInstance[]; x: number; y: number }) {
+  const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
+  const RANK_ORDER = { incarnation: 0, warrior: 1, cultist: 2 };
   const sorted = [...figures].sort((a, b) => {
-    const r = { incarnation: 0, warrior: 1, cultist: 2 };
-    return r[a.class] - r[b.class];
+    const pa = POWER_ORDER[a.power] ?? 99;
+    const pb = POWER_ORDER[b.power] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return RANK_ORDER[a.class] - RANK_ORDER[b.class];
   });
   const MAX = 9;
   const visible = sorted.slice(0, MAX);
@@ -320,7 +324,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
   const isDragging = (highlightRegions !== undefined || dimmedRegions !== undefined);
 
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '800 / 615' }}>
+    <div style={{ position: 'relative', width: '100%', maxWidth: 'calc((100vh - 280px) * 800 / 615)', aspectRatio: '800 / 615' }}>
       {/* SVG board */}
       <svg
         viewBox="0 0 800 615"

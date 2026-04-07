@@ -53,8 +53,12 @@ router.post('/', requireAuth, async (req, res) => {
   const { powers, playerTypes, playerUserIds = {}, inviteEmails = [] } = parsed.data;
 
   const resolvedUserIds: Partial<Record<Power, string>> = { ...playerUserIds };
-  const creatorPower = powers.find((p) => playerTypes[p] === 'human' && !resolvedUserIds[p]);
-  if (creatorPower) resolvedUserIds[creatorPower] = req.userId!;
+  // Assign the creator to every human slot that has no explicit userId
+  for (const p of powers) {
+    if (playerTypes[p] === 'human' && !resolvedUserIds[p]) {
+      resolvedUserIds[p] = req.userId!;
+    }
+  }
 
   const gameId = await createGame(
     req.userId!,
