@@ -385,8 +385,9 @@ function CorruptionHarvestPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   if (!regionId) return <p style={{ color: '#f87171' }}>Missing region in context.</p>;
+  const safeRegionId: RegionId = regionId;
 
-  const region = state.regions[regionId];
+  const region = state.regions[safeRegionId];
   const enemyFigures = (region?.placements ?? []).filter((f) => f.power !== myPower);
 
   function toggle(id: string) {
@@ -405,7 +406,7 @@ function CorruptionHarvestPanel({
     onAction({
       kind: 'corruption_harvest_choice',
       power: 'gormen',
-      regionId,
+      regionId: safeRegionId,
       followerIds: Array.from(selected),
     });
   }

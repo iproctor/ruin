@@ -1,54 +1,52 @@
 import { Worker } from 'node:worker_threads';
-import { eq } from 'drizzle-orm';
+import { eq, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { createInitialState, applyAction, autoAdvance } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType } from '@ruin/engine';
 import { db } from '../db/client.js';
-import { games, gamePlayers } from '../db/schema.js';
+import { games, gamePlayers, chatMessages } from '../db/schema.js';
 import { broadcast } from './sse.js';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ChatMessage {
+  id: string;
+  power: string | null;
+  username: string;
+  message: string;
+  createdAt: string;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function maskStateForViewer(state: GameState, viewingUserId: string | null, playerMap: Map<string, string>): GameState {
-  // playerMap: power → userId
-  // Replace other players' hands with placeholder arrays of the same length
+function maskStateForViewer(
+  state: GameState,
+  viewingUserId: string | null,
+  playerMap: Map<string, string>,
+): GameState {
   const maskedPowers = { ...state.powers };
-
   for (const power of state.activePowers) {
     const powerUserId = playerMap.get(power) ?? null;
-    if (powerUserId === viewingUserId) continue; // this player sees their own hand
-
+    if (powerUserId === viewingUserId) continue;
     const ps = maskedPowers[power];
     if (!ps) continue;
-    maskedPowers[power] = {
-      ...ps,
-      hand: ps.hand.map(() => '?'),
-      deckIds: [], // hide deck contents too
-    };
+    maskedPowers[power] = { ...ps, hand: ps.hand.map(() => '?'), deckIds: [] };
   }
-
   return { ...state, powers: maskedPowers };
 }
 
 async function loadGameRow(gameId: string) {
-  const [row] = await db
-    .select()
-    .from(games)
-    .where(eq(games.id, gameId))
-    .limit(1);
-
+  const [row] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!row) throw new Error(`Game ${gameId} not found`);
   return row;
 }
 
 async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
-  const players = await db
-    .select()
-    .from(gamePlayers)
-    .where(eq(gamePlayers.gameId, gameId));
-
+  const players = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
   const map = new Map<string, string>();
   for (const p of players) {
     if (p.userId) map.set(p.power, p.userId);
@@ -56,9 +54,25 @@ async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
   return map;
 }
 
+async function saveGame(gameId: string, state: GameState, extraLog: string[]): Promise<void> {
+  // Append new log entries to the persisted event_log
+  const [row] = await db.select({ eventLog: games.eventLog }).from(games).where(eq(games.id, gameId)).limit(1);
+  const existing = (row?.eventLog as string[] | null) ?? [];
+  await db
+    .update(games)
+    .set({
+      state: state as unknown as Record<string, unknown>,
+      eventLog: [...existing, ...extraLog] as unknown as Record<string, unknown>,
+      round: state.round,
+      phase: state.phase,
+      isComplete: state.winners !== null,
+      updatedAt: new Date(),
+    })
+    .where(eq(games.id, gameId));
+}
+
 /**
  * Run MCTS in a worker thread so the event loop stays free during search.
- * The worker inherits process.execArgv so tsx loaders are active in dev.
  */
 function runMctsInWorker(state: GameState, power: Power): Promise<Action> {
   return new Promise((resolve, reject) => {
@@ -78,9 +92,8 @@ function runMctsInWorker(state: GameState, power: Power): Promise<Action> {
 }
 
 /**
- * If the game is waiting for an AI power, run MCTS and apply its action.
- * Repeats until a human player must act or the game is over.
- * Saves and broadcasts after each AI move so the log is visible in real time.
+ * Run AI turns sequentially until a human must act. Saves and broadcasts
+ * state + log after each move so clients see AI actions in real time.
  */
 async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameState> {
   let current = state;
@@ -97,26 +110,14 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
       break;
     }
 
-    const { state: next } = applyAction(current, action);
-    await saveGame(gameId, next);
+    const { state: next, log } = applyAction(current, action);
+    await saveGame(gameId, next, log);
     broadcast(gameId, { type: 'state', state: next });
+    if (log.length > 0) broadcast(gameId, { type: 'log', entries: log });
     current = next;
   }
 
   return current;
-}
-
-async function saveGame(gameId: string, state: GameState): Promise<void> {
-  await db
-    .update(games)
-    .set({
-      state: state as unknown as Record<string, unknown>,
-      round: state.round,
-      phase: state.phase,
-      isComplete: state.winners !== null,
-      updatedAt: new Date(),
-    })
-    .where(eq(games.id, gameId));
 }
 
 // ---------------------------------------------------------------------------
@@ -132,40 +133,30 @@ export async function createGame(
   const gameId = uuidv4();
   const seed = Math.floor(Math.random() * 2 ** 31);
 
-  const initialState = createInitialState({
-    gameId,
-    activePowers: powers,
-    playerTypes,
-    seed,
-  });
-
-  // Auto-advance any autonomous phases from the initial state
-  const { state } = autoAdvance({ state: initialState, log: [] });
+  const initialState = createInitialState({ gameId, activePowers: powers, playerTypes, seed });
+  const { state, log } = autoAdvance({ state: initialState, log: [] });
 
   await db.insert(games).values({
     id: gameId,
     state: state as unknown as Record<string, unknown>,
+    eventLog: log as unknown as Record<string, unknown>,
     round: state.round,
     phase: state.phase,
     createdBy,
     isComplete: state.winners !== null,
   });
 
-  // Insert game_players rows
   for (const power of powers) {
-    const userId = playerUserIds[power] ?? null;
     await db.insert(gamePlayers).values({
       gameId,
       power,
-      userId,
+      userId: playerUserIds[power] ?? null,
       playerType: playerTypes[power] ?? 'ai',
       guestEmail: null,
     });
   }
 
-  // If the first pending action is for an AI player, run those turns now
   await maybeRunAiTurns(gameId, state);
-
   return gameId;
 }
 
@@ -182,33 +173,73 @@ export async function applyPlayerAction(
   const row = await loadGameRow(gameId);
   const state = row.state as unknown as GameState;
 
-  if (state.winners !== null) {
-    throw new Error('Game is already complete');
-  }
+  if (state.winners !== null) throw new Error('Game is already complete');
 
-  // applyAction validates that the action is from the expected power
-  const { state: afterAction } = applyAction(state, action);
+  const { state: afterAction, log } = applyAction(state, action);
 
-  await saveGame(gameId, afterAction);
+  await saveGame(gameId, afterAction, log);
   broadcast(gameId, { type: 'state', state: afterAction });
+  if (log.length > 0) broadcast(gameId, { type: 'log', entries: log });
 
-  // Run any follow-on AI turns (saves + broadcasts after each one)
-  const newState = await maybeRunAiTurns(gameId, afterAction);
-
-  return newState;
+  return maybeRunAiTurns(gameId, afterAction);
 }
 
 export async function getGameState(
   gameId: string,
   viewingUserId: string | null,
 ): Promise<GameState> {
-  const [row, playerMap] = await Promise.all([
-    loadGameRow(gameId),
-    loadPlayerMap(gameId),
-  ]);
-
+  const [row, playerMap] = await Promise.all([loadGameRow(gameId), loadPlayerMap(gameId)]);
   const state = row.state as unknown as GameState;
   return maskStateForViewer(state, viewingUserId, playerMap);
+}
+
+export async function getGameHistory(gameId: string): Promise<{
+  eventLog: string[];
+  chat: ChatMessage[];
+}> {
+  const [row, chat] = await Promise.all([
+    loadGameRow(gameId),
+    db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.gameId, gameId))
+      .orderBy(asc(chatMessages.createdAt)),
+  ]);
+
+  return {
+    eventLog: (row.eventLog as string[] | null) ?? [],
+    chat: chat.map((m) => ({
+      id: m.id,
+      power: m.power,
+      username: m.username,
+      message: m.message,
+      createdAt: m.createdAt.toISOString(),
+    })),
+  };
+}
+
+export async function postChat(
+  gameId: string,
+  userId: string,
+  username: string,
+  power: string | null,
+  message: string,
+): Promise<ChatMessage> {
+  const [row] = await db
+    .insert(chatMessages)
+    .values({ gameId, power, username, message })
+    .returning();
+
+  const msg: ChatMessage = {
+    id: row!.id,
+    power,
+    username,
+    message,
+    createdAt: row!.createdAt.toISOString(),
+  };
+
+  broadcast(gameId, { type: 'chat', message: msg });
+  return msg;
 }
 
 export interface GameListEntry {
@@ -222,32 +253,19 @@ export interface GameListEntry {
 }
 
 export async function listGamesForUser(userId: string): Promise<GameListEntry[]> {
-  // Find all game_players rows for this user
   const playerRows = await db
     .select()
     .from(gamePlayers)
     .where(eq(gamePlayers.userId, userId));
 
   if (playerRows.length === 0) return [];
-
   const gameIds = [...new Set(playerRows.map((r) => r.gameId))];
-
   const result: GameListEntry[] = [];
 
   for (const gameId of gameIds) {
-    const [gameRow] = await db
-      .select()
-      .from(games)
-      .where(eq(games.id, gameId))
-      .limit(1);
-
+    const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
     if (!gameRow) continue;
-
-    const allPlayers = await db
-      .select()
-      .from(gamePlayers)
-      .where(eq(gamePlayers.gameId, gameId));
-
+    const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
     result.push({
       id: gameRow.id,
       round: gameRow.round,
@@ -255,11 +273,7 @@ export async function listGamesForUser(userId: string): Promise<GameListEntry[]>
       isComplete: gameRow.isComplete,
       createdAt: gameRow.createdAt,
       updatedAt: gameRow.updatedAt,
-      powers: allPlayers.map((p) => ({
-        power: p.power,
-        playerType: p.playerType,
-        userId: p.userId ?? null,
-      })),
+      powers: allPlayers.map((p) => ({ power: p.power, playerType: p.playerType, userId: p.userId ?? null })),
     });
   }
 

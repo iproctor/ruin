@@ -8,10 +8,12 @@ import {
   getGameState,
   applyPlayerAction,
   listGamesForUser,
+  getGameHistory,
+  postChat,
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
-import { gamePlayers, invitations } from '../db/schema.js';
+import { gamePlayers, invitations, users } from '../db/schema.js';
 import { createMagicLink } from '../auth/magicLink.js';
 import { sendEmail } from '../email/index.js';
 import { gameInviteEmail } from '../email/templates/gameInvite.js';
@@ -29,12 +31,10 @@ const createGameSchema = z.object({
     z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
     z.enum(['human', 'ai', 'guest']),
   ),
-  // Optional: map of power → userId for human players joining immediately
   playerUserIds: z.record(
     z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
     z.string().uuid(),
   ).optional(),
-  // Optional: invite emails for guest/human powers not yet assigned
   inviteEmails: z.array(
     z.object({
       power: z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
@@ -52,15 +52,9 @@ router.post('/', requireAuth, async (req, res) => {
 
   const { powers, playerTypes, playerUserIds = {}, inviteEmails = [] } = parsed.data;
 
-  // Ensure the creator is mapped to their power if they specified one
   const resolvedUserIds: Partial<Record<Power, string>> = { ...playerUserIds };
-  // The creator always controls the first human power they haven't assigned
-  const creatorPower = powers.find(
-    (p) => playerTypes[p] === 'human' && !resolvedUserIds[p],
-  );
-  if (creatorPower) {
-    resolvedUserIds[creatorPower] = req.userId!;
-  }
+  const creatorPower = powers.find((p) => playerTypes[p] === 'human' && !resolvedUserIds[p]);
+  if (creatorPower) resolvedUserIds[creatorPower] = req.userId!;
 
   const gameId = await createGame(
     req.userId!,
@@ -69,16 +63,9 @@ router.post('/', requireAuth, async (req, res) => {
     resolvedUserIds,
   );
 
-  // Send invitation emails
   for (const { power, email } of inviteEmails) {
     const token = await createMagicLink(email, gameId);
-
-    await db.insert(invitations).values({
-      gameId,
-      email,
-      power,
-    });
-
+    await db.insert(invitations).values({ gameId, email, power });
     await sendEmail({
       to: email,
       subject: 'You have been invited to play Ruin',
@@ -98,12 +85,11 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/games/:id — get game state (hands masked for other players)
+// GET /api/games/:id — get game state
 // ---------------------------------------------------------------------------
 router.get('/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
   if (!id) { res.status(400).json({ error: 'Game ID required' }); return; }
-
   const state = await getGameState(id, req.userId ?? null);
   res.json({ state });
 });
@@ -111,9 +97,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/games/:id/action — apply an action
 // ---------------------------------------------------------------------------
-const actionSchema = z.object({
-  action: z.record(z.unknown()),
-});
+const actionSchema = z.object({ action: z.record(z.unknown()) });
 
 router.post('/:id/action', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -126,20 +110,13 @@ router.post('/:id/action', requireAuth, async (req, res) => {
   }
 
   const action = parsed.data.action as unknown as Action;
-
-  // Validate that the requesting user controls the power they are acting as
   const actionPower = (action as { power?: string }).power;
   if (!actionPower || !VALID_POWERS.includes(actionPower as Power)) {
     res.status(400).json({ error: 'Action must include a valid power field' });
     return;
   }
 
-  // Check that this user is the player for the given power
-  const allPlayers = await db
-    .select()
-    .from(gamePlayers)
-    .where(eq(gamePlayers.gameId, id));
-
+  const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
   const powerPlayer = allPlayers.find((p) => p.power === actionPower);
   if (!powerPlayer || powerPlayer.userId !== req.userId) {
     res.status(403).json({ error: 'You do not control this power' });
@@ -148,6 +125,33 @@ router.post('/:id/action', requireAuth, async (req, res) => {
 
   const newState = await applyPlayerAction(id, actionPower as Power, action);
   res.json({ state: newState });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/games/:id/chat — send a chat message
+// ---------------------------------------------------------------------------
+const chatSchema = z.object({ message: z.string().min(1).max(500) });
+
+router.post('/:id/chat', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  if (!id) { res.status(400).json({ error: 'Game ID required' }); return; }
+
+  const parsed = chatSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
+    return;
+  }
+
+  // Look up which power this user controls (if any)
+  const [userRow] = await db.select().from(users).where(eq(users.id, req.userId!)).limit(1);
+  const username = userRow?.username ?? 'Unknown';
+
+  const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
+  const playerRow = allPlayers.find((p) => p.userId === req.userId);
+  const power = playerRow?.power ?? null;
+
+  const msg = await postChat(id, req.userId!, username, power, parsed.data.message);
+  res.json({ message: msg });
 });
 
 // ---------------------------------------------------------------------------
@@ -161,28 +165,32 @@ router.get('/:id/stream', optionalAuth, (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
-
-  // Send an initial keep-alive comment
   res.write(': connected\n\n');
 
   addListener(id, res);
 
-  // Send the current game state immediately on connect
-  getGameState(id, req.userId ?? null)
-    .then((state) => {
-      res.write(`data: ${JSON.stringify({ type: 'state', state })}\n\n`);
+  // Send current state + full history immediately on connect
+  Promise.all([
+    getGameState(id, req.userId ?? null),
+    getGameHistory(id),
+  ])
+    .then(([state, history]) => {
+      res.write(`data: ${JSON.stringify({
+        type: 'history',
+        state,
+        eventLog: history.eventLog,
+        chat: history.chat,
+      })}\n\n`);
     })
     .catch((err) => {
-      res.write(`data: ${JSON.stringify({ type: 'error', message: err instanceof Error ? err.message : 'Unknown error' })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Unknown error',
+      })}\n\n`);
     });
 
-  // Keep-alive ping every 30 seconds
   const pingInterval = setInterval(() => {
-    try {
-      res.write(': ping\n\n');
-    } catch {
-      clearInterval(pingInterval);
-    }
+    try { res.write(': ping\n\n'); } catch { clearInterval(pingInterval); }
   }, 30_000);
 
   req.on('close', () => {

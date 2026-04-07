@@ -1,3 +1,18 @@
+@import "tailwindcss";
+
+/* ── Custom color tokens ── */
+@theme {
+  --color-surface-0: #1a1a2e;
+  --color-surface-1: #16213e;
+  --color-surface-2: #1e1e3a;
+  --color-surface-3: #2d2d4e;
+  --color-border:    #3a3a6e;
+  --color-xarm:  #ef4444;
+  --color-gormen:#22c55e;
+  --color-tenzen:#a855f7;
+  --color-lasha: #ec4899;
+}
+
 /* ── Reset ── */
 *, *::before, *::after {
   box-sizing: border-box;

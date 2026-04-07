@@ -2,10 +2,24 @@ import type { GameState } from '@ruin/engine';
 
 const TOKEN_KEY = 'ruin_token';
 
+export interface ChatMessage {
+  id: string;
+  power: string | null;
+  username: string;
+  message: string;
+  createdAt: string;
+}
+
+export type StreamEvent =
+  | { type: 'history'; state: GameState; eventLog: string[]; chat: ChatMessage[] }
+  | { type: 'state';   state: GameState }
+  | { type: 'log';     entries: string[] }
+  | { type: 'chat';    message: ChatMessage }
+  | { type: 'error';   message: string };
+
 export function connectGameStream(
   gameId: string,
-  onState: (state: GameState) => void,
-  onError?: (e: Event) => void,
+  onEvent: (event: StreamEvent) => void,
 ): () => void {
   const token = localStorage.getItem(TOKEN_KEY);
   const params = token ? `?token=${encodeURIComponent(token)}` : '';
@@ -15,20 +29,12 @@ export function connectGameStream(
 
   es.onmessage = (e) => {
     try {
-      const data = JSON.parse(e.data as string) as { type: string; state?: GameState };
-      if (data.type === 'state' && data.state) {
-        onState(data.state);
-      }
+      const data = JSON.parse(e.data as string) as StreamEvent;
+      onEvent(data);
     } catch {
       // ignore malformed messages
     }
   };
 
-  if (onError) {
-    es.onerror = onError;
-  }
-
-  return () => {
-    es.close();
-  };
+  return () => es.close();
 }

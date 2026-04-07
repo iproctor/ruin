@@ -118,3 +118,10 @@ export async function submitAction(gameId: string, action: Action): Promise<Game
   });
   return res.state;
 }
+
+export async function sendChat(gameId: string, message: string): Promise<void> {
+  await request(`/games/${gameId}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}

@@ -21,3 +21,11 @@ export { checkVictory } from './victory.js';
 
 export { makeRng, rollDice, rollWithExplosions, countHits, shuffle } from './dice.js';
 export type { Rng } from './dice.js';
+
+export {
+  CARD_BY_ID, WORLD_CARD_BY_ID, UPGRADE_BY_ID,
+  CHAOS_CARDS, WORLD_CARDS, UPGRADES,
+  REGIONS, REGION_ORDER,
+  THREAT_DIALS,
+} from './constants.js';
+export type { CardDef, WorldCardDef, UpgradeDef, DialPosition } from './constants.js';

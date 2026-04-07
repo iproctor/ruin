@@ -50,6 +50,23 @@ export async function ensureSchema(): Promise<void> {
         accepted    BOOLEAN NOT NULL DEFAULT false
       );
     `);
+
+    // Additive migrations — safe to re-run
+    await client.query(`
+      ALTER TABLE games ADD COLUMN IF NOT EXISTS event_log JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        game_id    UUID NOT NULL REFERENCES games(id),
+        power      TEXT,
+        username   TEXT NOT NULL,
+        message    TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_game_id ON chat_messages(game_id, created_at);
+    `);
+
     console.log('Database schema verified/created.');
   } finally {
     client.release();

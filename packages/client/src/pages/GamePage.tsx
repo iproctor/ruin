@@ -1,23 +1,71 @@
-import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import type { Power } from '@ruin/engine';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragStartEvent,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import type { Power, Action, RegionId, FollowerClass } from '@ruin/engine';
+import { applyAction, CARD_BY_ID } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
-import { getGame, submitAction } from '../api/client.js';
+import { getGame, submitAction, sendChat } from '../api/client.js';
 import Board from '../components/Board.js';
-import GameLog from '../components/GameLog.js';
-import Hand from '../components/Hand.js';
+import StatusBar from '../components/StatusBar.js';
+import Tableau from '../components/Tableau.js';
+import LogPanel from '../components/LogPanel.js';
 import ActionPanel from '../components/ActionPanel.js';
-import PowerPanel from '../components/PowerPanel.js';
-import type { Action } from '@ruin/engine';
+import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
-const POWER_LABELS: Record<Power, string> = {
-  xarm: 'Xarm',
-  gormen: 'Gormen',
-  tenzen: 'Tenzen',
-  lasha: 'Lasha',
-};
+// ── Drag data types ────────────────────────────────────────────────────────────
+
+export type DragItem =
+  | { kind: 'reserve_follower'; followerId: string; followerClass: FollowerClass; power: Power }
+  | { kind: 'board_follower';   followerId: string; followerClass: FollowerClass; power: Power; fromRegion: RegionId }
+  | { kind: 'hand_card';        cardId: string; power: Power };
+
+// ── DragGhost — what renders under the cursor while dragging ──────────────────
+
+function DragGhost({ item }: { item: DragItem }) {
+  const color = POWER_COLORS[item.power];
+  if (item.kind === 'hand_card') {
+    const def = CARD_BY_ID[item.cardId];
+    return (
+      <div style={{
+        width: 52, height: 72, background: '#1a1433',
+        border: `2px solid ${color}`, borderRadius: 6,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: '0.65rem', fontWeight: 700, color: '#fff', padding: 4,
+        textAlign: 'center', boxShadow: `0 0 16px ${color}88`, opacity: 0.9,
+        pointerEvents: 'none',
+      }}>
+        {def?.name.split(' ').pop() ?? item.cardId}
+      </div>
+    );
+  }
+  const shape = item.followerClass === 'incarnation' ? '▲'
+              : item.followerClass === 'warrior'     ? '■'
+              :                                        '▌';
+  return (
+    <div style={{
+      width: 32, height: 32,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: item.followerClass === 'incarnation' ? '1.4rem' : '1.1rem',
+      color, opacity: 0.9,
+      filter: `drop-shadow(0 0 6px ${color})`,
+      pointerEvents: 'none',
+    }}>
+      {shape}
+    </div>
+  );
+}
+
+// ── GameInner ─────────────────────────────────────────────────────────────────
 
 interface GameInnerProps {
   gameId: string;
@@ -25,162 +73,269 @@ interface GameInnerProps {
 }
 
 function GameInner({ gameId, myPower }: GameInnerProps) {
-  const { state, setState } = useGame();
-  const streamState = useGameStream(gameId);
-  const [submitError, setSubmitError] = useState('');
-  const [log, setLog] = useState<string[]>([]);
+  const { state: serverState, setState } = useGame();
+  const { state: streamState, eventLog, chat, connected } = useGameStream(gameId);
+
+  const [pendingAction, setPendingAction]   = useState<Action | null>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [submitError, setSubmitError]       = useState('');
+  const [submitting, setSubmitting]         = useState(false);
+  const [activeDrag, setActiveDrag]         = useState<DragItem | null>(null);
 
-  // Merge SSE state into context
+  // Merge SSE state; clear pending action if phase changed or it's no longer our turn
   useEffect(() => {
-    if (streamState) {
-      setState(streamState);
+    if (!streamState) return;
+    setState(streamState);
+    const stillMyTurn =
+      myPower !== null &&
+      streamState.pendingAction?.waitingFor === myPower &&
+      streamState.phase === 'summoning';
+    if (!stillMyTurn) {
+      setPendingAction(null);
+      setSelectedCardId(null);
     }
-  }, [streamState, setState]);
+  }, [streamState, myPower, setState]);
 
-  // Build a simple log from state transitions
-  useEffect(() => {
-    if (state) {
-      setLog((prev) => {
-        const entry = `[Round ${state.round} / ${state.phase}]` +
-          (state.pendingAction
-            ? ` Waiting for ${state.pendingAction.waitingFor} — ${state.pendingAction.actionKind}`
-            : '');
-        if (prev[prev.length - 1] === entry) return prev;
-        return [...prev, entry];
-      });
+  // displayState = serverState with pending action applied (preview)
+  const displayState = useMemo(() => {
+    if (!serverState) return null;
+    if (!pendingAction) return serverState;
+    try {
+      return applyAction(serverState, pendingAction).state;
+    } catch {
+      return serverState;
     }
-  }, [state]);
+  }, [serverState, pendingAction]);
 
-  async function handleAction(action: Action) {
+  // Valid drop target regions depend on what's being dragged
+  const validDropRegions = useMemo((): Set<RegionId> | null => {
+    if (!activeDrag || !displayState) return null;
+    const all = displayState.activePowers
+      .flatMap(() => Object.keys(displayState.regions)) as RegionId[];
+    const nonRuined = all.filter((r) => displayState.regions[r]!.ruinationCardIndex === null);
+
+    if (activeDrag.kind === 'hand_card') {
+      // Valid if region has at least one empty card slot
+      return new Set(nonRuined.filter((r) => {
+        const cards = displayState.regions[r]!.chaosCards;
+        return cards[0] === null || cards[1] === null;
+      }));
+    }
+    if (activeDrag.kind === 'board_follower') {
+      return new Set(nonRuined.filter((r) => r !== activeDrag.fromRegion));
+    }
+    return new Set(nonRuined);
+  }, [activeDrag, displayState]);
+
+  const highlightRegions = validDropRegions
+    ? (Object.keys(displayState?.regions ?? {}) as RegionId[])
+        .filter((r) => validDropRegions.has(r))
+    : undefined;
+
+  const dimmedRegions = validDropRegions
+    ? (Object.keys(displayState?.regions ?? {}) as RegionId[])
+        .filter((r) => !validDropRegions.has(r))
+    : undefined;
+
+  // ── DnD sensors ─────────────────────────────────────────────────────────────
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDrag(event.active.data.current as DragItem);
     setSubmitError('');
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const drag = event.active.data.current as DragItem | undefined;
+    const dropRegion = event.over?.id as RegionId | undefined;
+
+    setActiveDrag(null);
+
+    if (!drag || !dropRegion || !displayState || !myPower) return;
+    if (!validDropRegions?.has(dropRegion)) return;
+
+    if (drag.kind === 'reserve_follower' || drag.kind === 'board_follower') {
+      const action: Action = {
+        kind: 'summoning_summon_figure',
+        power: myPower,
+        followerId: drag.followerId,
+        toRegion: dropRegion,
+      };
+      setPendingAction(action);
+    } else if (drag.kind === 'hand_card') {
+      const region = displayState.regions[dropRegion]!;
+      const slotIndex = region.chaosCards[0] === null ? 0 : 1;
+      const action: Action = {
+        kind: 'summoning_play_card',
+        power: myPower,
+        cardId: drag.cardId,
+        toRegion: dropRegion,
+        slotIndex,
+      };
+      setPendingAction(action);
+      setSelectedCardId(drag.cardId);
+    }
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────────
+
+  async function handleEndTurn() {
+    if (!myPower) return;
+    setSubmitError('');
+    setSubmitting(true);
+    try {
+      if (pendingAction) {
+        const s1 = await submitAction(gameId, pendingAction);
+        setState(s1);
+        setPendingAction(null);
+        setSelectedCardId(null);
+        // If it's still our turn, pass now
+        if (s1.pendingAction?.waitingFor === myPower) {
+          const s2 = await submitAction(gameId, { kind: 'summoning_pass', power: myPower });
+          setState(s2);
+        }
+      } else {
+        const s = await submitAction(gameId, { kind: 'summoning_pass', power: myPower });
+        setState(s);
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleUndo() {
+    setPendingAction(null);
+    setSelectedCardId(null);
+  }
+
+  // Non-summoning actions go directly to server
+  const handleDirectAction = useCallback(async (action: Action) => {
+    setSubmitError('');
+    setSubmitting(true);
     try {
       const newState = await submitAction(gameId, action);
       setState(newState);
+      setSelectedCardId(null);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setSubmitting(false);
     }
+  }, [gameId, setState]);
+
+  const handleChatSend = useCallback(async (message: string) => {
+    await sendChat(gameId, message);
+  }, [gameId]);
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
+  if (!displayState) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#475569' }}>
+        Connecting…
+      </div>
+    );
   }
 
-  if (!state) {
-    return <p style={{ padding: '2rem', color: '#aaa' }}>Connecting…</p>;
-  }
-
-  const isMyTurn =
-    myPower !== null &&
-    state.pendingAction !== null &&
-    state.pendingAction.waitingFor === myPower;
+  const pending = displayState.pendingAction;
+  const isMyTurn        = myPower !== null && pending?.waitingFor === myPower;
+  const isSummoningTurn = isMyTurn && pending?.actionKind === 'summoning_action';
 
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateRows: 'auto 1fr auto',
-        gridTemplateColumns: '1fr 280px',
-        gap: '0.75rem',
-        height: '100%',
-        padding: '0.75rem',
-      }}
-    >
-      {/* Header bar */}
-      <div
-        style={{
-          gridColumn: '1 / -1',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-          background: '#16213e',
-          borderRadius: 6,
-          padding: '0.5rem 1rem',
-        }}
-      >
-        <Link to="/games" style={{ color: '#aaa', fontSize: '0.85rem' }}>← Games</Link>
-        <span style={{ fontWeight: 700 }}>Ruin</span>
-        <span style={{ color: '#aaa', fontSize: '0.85rem' }}>
-          Round {state.round} &bull; {state.phase}
-        </span>
-        {myPower && (
-          <span className={`power-${myPower}`} style={{ fontWeight: 600, marginLeft: 'auto' }}>
-            Playing as {POWER_LABELS[myPower]}
-          </span>
-        )}
-        {state.winners && (
-          <span style={{ color: '#facc15', fontWeight: 700, marginLeft: 'auto' }}>
-            Game Over — Winners: {state.winners.map((w) => POWER_LABELS[w] ?? w).join(', ')}
-          </span>
-        )}
-      </div>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
 
-      {/* Board + action panel */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', minHeight: 0 }}>
-        <Board
-          state={state}
-          selectedCardId={selectedCardId}
-          highlightRegions={isMyTurn && state.pendingAction?.actionKind === 'summoning_action' ? [] : undefined}
-          onRegionClick={undefined}
-        />
+        {/* Status bar */}
+        <StatusBar state={displayState} myPower={myPower} />
 
-        {myPower && (
-          <>
-            <Hand
-              hand={state.powers[myPower]?.hand ?? []}
-              selectedCardId={selectedCardId}
-              onSelectCard={(id) => setSelectedCardId((prev) => (prev === id ? null : id))}
+        {/* Main area */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: 8 }}>
+
+          {/* Board */}
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+            <Board
+              state={displayState}
+              highlightRegions={activeDrag ? highlightRegions : undefined}
+              dimmedRegions={activeDrag ? dimmedRegions : undefined}
+              pendingAction={pendingAction}
             />
-            {isMyTurn && state.pendingAction && (
-              <>
-                {submitError && <p className="error-msg">{submitError}</p>}
+          </div>
+
+          {/* Right: log + non-summoning panels */}
+          <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
+            <LogPanel
+              eventLog={eventLog}
+              chat={chat}
+              myPower={myPower}
+              onSendChat={handleChatSend}
+              connected={connected}
+            />
+
+            {isMyTurn && pending?.actionKind !== 'summoning_action' && (
+              <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                {submitError && <p style={{ color: '#f87171', fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
                 <ActionPanel
-                  state={state}
+                  state={displayState}
                   myPower={myPower}
                   selectedCardId={selectedCardId}
-                  onAction={handleAction}
+                  onAction={handleDirectAction}
                   onClearCard={() => setSelectedCardId(null)}
                 />
-              </>
+              </div>
             )}
-          </>
+          </div>
+        </div>
+
+        {/* Tableau */}
+        {myPower && (
+          <Tableau
+            state={serverState ?? displayState}
+            displayState={displayState}
+            myPower={myPower}
+            selectedCardId={selectedCardId}
+            onSelectCard={setSelectedCardId}
+            pendingAction={pendingAction}
+            onUndo={handleUndo}
+            onEndTurn={isSummoningTurn ? handleEndTurn : undefined}
+            submitError={submitError}
+          />
         )}
       </div>
 
-      {/* Right sidebar: power panels + log */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '0.5rem',
-          overflowY: 'auto',
-          minHeight: 0,
-        }}
-      >
-        {state.activePowers.map((power) => (
-          <PowerPanel key={power} power={power} state={state} isMe={power === myPower} />
-        ))}
-        <GameLog entries={log} />
-      </div>
-    </div>
+      {/* Drag ghost */}
+      <DragOverlay dropAnimation={null}>
+        {activeDrag ? <DragGhost item={activeDrag} /> : null}
+      </DragOverlay>
+
+      {/* Submitting overlay */}
+      {submitting && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+          <span style={{ color: '#e2e8f0', fontWeight: 600 }}>Submitting…</span>
+        </div>
+      )}
+    </DndContext>
   );
 }
 
-// Outer loader: fetches summary to resolve myPower, then renders GameInner
+// ── GamePage ──────────────────────────────────────────────────────────────────
+
 export default function GamePage() {
   const { id } = useParams<{ id: string }>();
   const { userId } = useAuth();
   const [myPower, setMyPower] = useState<Power | null>(null);
   const [error, setError] = useState('');
 
-  // Fetch the game list to find which power the current user controls.
-  // We do a quick GET /api/games/:id and look at player records from the summary.
-  // Since getGame returns GameState (no userId mapping), we rely on an external
-  // approach: the server masks hands, so only one power has non-'?' cards.
-  // We'll fetch and then check the hand contents.
   useEffect(() => {
     if (!id || !userId) return;
     let cancelled = false;
     getGame(id)
       .then((state) => {
         if (cancelled) return;
-        // Heuristic: the power whose hand contains non-'?' cards is ours
         const found = state.activePowers.find((p) => {
           const hand = state.powers[p]?.hand ?? [];
           return hand.length > 0 && hand.some((c) => c !== '?');
@@ -198,7 +353,7 @@ export default function GamePage() {
 
   return (
     <GameProvider gameId={id} myPower={myPower}>
-      <div className="page-wide">
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <GameInner gameId={id} myPower={myPower} />
       </div>
     </GameProvider>

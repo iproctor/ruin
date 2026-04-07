@@ -24,7 +24,10 @@
       "Bash(find /Users/iainap/code/chaos/packages/client/src -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec wc -l {} +)",
       "Bash(find /Users/iainap/code/chaos/packages/ai/src -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec wc -l {} +)",
       "Bash(pnpm tsc:*)",
-      "Bash(node -e \"import\\('@ruin/ai'\\)\")"
+      "Bash(node -e \"import\\('@ruin/ai'\\)\")",
+      "Bash(pnpm add:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }
