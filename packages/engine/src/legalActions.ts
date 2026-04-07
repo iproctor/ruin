@@ -167,6 +167,7 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
       if (isRuined(region)) continue;
       const available = cardSlotsAvailable(state, regionId);
       if (available === 0) continue;
+      if (!isCardPlayableInRegion(state, power, cardId, regionId)) continue;
 
       for (let slot = 0; slot <= 1; slot++) {
         if (region.chaosCards[slot as 0 | 1] !== null) continue;
@@ -186,6 +187,45 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
   actions.push({ kind: 'summoning_pass', power } satisfies SummoningPassAction);
 
   return actions;
+}
+
+/**
+ * Returns false when a card has an on-play condition that isn't satisfied in the given region,
+ * making it pointless (or impossible) to play there.
+ */
+function isCardPlayableInRegion(
+  state: GameState,
+  power: Power,
+  cardId: string,
+  regionId: RegionId,
+): boolean {
+  const region = state.regions[regionId]!;
+  switch (cardId) {
+    case 'xarm_war_march':
+      // Requires own figures in at least one other region to move here
+      return state.powers[power]!.followers.some(f => f.regionId !== null && f.regionId !== regionId);
+    case 'tenzen_phase_shift':
+      // Requires a cultist or warrior already in the region
+      return region.placements.some(f => f.class === 'cultist' || f.class === 'warrior');
+    case 'tenzen_stolen_thoughts':
+      // Requires an opponent with figures AND cards in hand in this region
+      return state.activePowers.some(p =>
+        p !== power &&
+        (state.powers[p]?.hand.length ?? 0) > 0 &&
+        region.placements.some(f => (f.controlledBy ?? f.power) === p)
+      );
+    case 'tenzen_fates_aegis':
+      // Requires own figure in the region
+      return region.placements.some(f => (f.controlledBy ?? f.power) === power);
+    case 'lasha_enthrallment':
+      // Requires an opponent cultist in the region
+      return region.placements.some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
+    case 'lasha_invisible_hand':
+      // Requires a movable token in the region
+      return region.tokens.some(t => t === 'peasant' || t === 'hero' || t === 'noble');
+    default:
+      return true;
+  }
 }
 
 /** Card cost approximation for legal action generation (mirrors summoning.ts logic). */

@@ -1,3 +1,5 @@
+import { CARD_BY_ID } from '@ruin/engine';
+
 interface HandProps {
   hand: string[];
   selectedCardId: string | null;
@@ -15,8 +17,18 @@ function formatCardId(id: string): string {
 export default function Hand({ hand, selectedCardId, onSelectCard }: HandProps) {
   if (hand.length === 0) return null;
 
-  // Filter out placeholder cards from masked hands
-  const visibleCards = hand.filter((id) => id !== '?');
+  // Filter out placeholder cards from masked hands, then sort by cost asc then name asc
+  const visibleCards = hand
+    .filter((id) => id !== '?')
+    .slice()
+    .sort((a, b) => {
+      const costA = CARD_BY_ID[a]?.cost ?? 0;
+      const costB = CARD_BY_ID[b]?.cost ?? 0;
+      if (costA !== costB) return costA - costB;
+      const nameA = CARD_BY_ID[a]?.name ?? a;
+      const nameB = CARD_BY_ID[b]?.name ?? b;
+      return nameA.localeCompare(nameB);
+    });
 
   if (visibleCards.length === 0) return null;
 

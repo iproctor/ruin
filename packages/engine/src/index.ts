@@ -20,7 +20,8 @@ export { applyAction, applyActionForPreview, autoAdvance } from './reducers.js';
 export type { ApplyResult } from './reducers.js';
 
 export { getLegalActions } from './legalActions.js';
-export { getRegionDominationLeader, getRegionDomination } from './phases/corruption.js';
+export { getRegionDominationLeader, getRegionDomination, getRegionResistance } from './phases/corruption.js';
+export { getWorldChoiceRegions } from './phases/world.js';
 export { checkVictory } from './victory.js';
 
 export { makeRng, rollDice, rollWithExplosions, countHits, shuffle } from './dice.js';

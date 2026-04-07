@@ -5,6 +5,46 @@ import {
   isWorldCardActive, updateRegion, updatePower, scoreVP,
 } from '../helpers.js';
 
+/**
+ * Returns the valid region options for a world card's regionId choice.
+ * Used by the client to filter the region picker.
+ */
+export function getWorldChoiceRegions(state: GameState, cardId: string): RegionId[] {
+  const notRuined = REGION_ORDER.filter(r => state.regions[r]!.ruinationCardIndex === null);
+
+  switch (cardId) {
+    case 'the_pardon':
+      return notRuined.filter(r => state.regions[r]!.tokens.includes('peasant'));
+
+    case 'strategic_vanguard':
+      // Noble already placed on Normagne; choose any other region
+      return notRuined.filter(r => r !== 'normagne');
+
+    case 'war_zone':
+      // Event already placed on Mittelreich; choose any other region
+      return notRuined.filter(r => r !== 'mittelreich');
+
+    case 'cleansing_wave':
+      // Event already placed on Normagne; choose an adjacent region
+      return (ADJACENCY['normagne'] ?? []).filter(r => state.regions[r]?.ruinationCardIndex === null) as RegionId[];
+
+    case 'forward_scouts':
+      // Region with chaos_stone, or adjacent to one
+      return notRuined.filter(r =>
+        state.regions[r]!.tokens.includes('chaos_stone') ||
+        (ADJACENCY[r] ?? []).some(adj => state.regions[adj]!.tokens.includes('chaos_stone'))
+      );
+
+    case 'the_gambit':
+      // Persistent effect: Noble on region that already has a Noble
+      return notRuined.filter(r => state.regions[r]!.tokens.includes('noble'));
+
+    default:
+      // the_exodus, the_exchange, diplomatic_envoy (first pick), etc. — any non-ruined region
+      return notRuined;
+  }
+}
+
 /** Draw the next world card and apply its immediate effects.
  *  If the card requires a player choice, sets pendingAction and returns early.
  *  Otherwise, fully resolves and advances to the draw phase. */

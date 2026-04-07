@@ -187,7 +187,7 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
                 <span style={{ color: '#64748b' }}>{ps.powerPoints}<span className="text-slate-600"> pp</span></span>
                 <span style={{ color: '#64748b' }}>{ps.hand.filter(c => c !== '?').length}<span className="text-slate-600"> cards</span></span>
               </div>
-              <span className="text-[9px] text-slate-500 leading-none">{ticksLeft} ticks to win</span>
+              <span className="text-[9px] text-slate-500 leading-none">{ps.threatValue} • {ticksLeft} ticks to win</span>
             </div>
           );
         })}

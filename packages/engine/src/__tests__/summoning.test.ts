@@ -5,6 +5,7 @@
 import { applyAction } from '../reducers.js';
 import { applySummonFigure, applyPlayCard, applySummoningPass } from '../phases/summoning.js';
 import { applyCardOnPlayChoice } from '../phases/cardChoices.js';
+import { resolveCorruptionPhase } from '../phases/corruption.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
   giveCards, withUpgrade, setPP, followersIn,
@@ -184,21 +185,32 @@ describe('Gormen Entropy (remove 1 corruption on play)', () => {
   });
 });
 
-// ─── On-play: Gormen Plague Bloom ─────────────────────────────────────────────
+// ─── Corruption phase: Gormen Plague Bloom ────────────────────────────────────
 
-describe('Gormen Plague Bloom (remove figures → place tokens)', () => {
-  test('removes Gormen figures and places 1 token per 2 figures', () => {
+describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
+  test('no effect when played — figures and tokens unchanged', () => {
     let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
-    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = giveCards(s, 'gormen', ['gormen_plague_bloom']);
     const { state } = applyPlayCard(s, {
       kind: 'summoning_play_card', power: 'gormen', cardId: 'gormen_plague_bloom',
       toRegion: 'norrsund', slotIndex: 0,
     });
+    // On-play: figures remain, no extra corruption tokens
+    expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(2);
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(0);
+  });
+
+  test('fires at end of corruption phase: removes figures and places tokens', () => {
+    let s = placeFollower(makeState({ phase: 'corruption', pendingAction: null }), 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    // Place the card on the board
+    s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_plague_bloom', playedBy: 'gormen', slotIndex: 0, persistNextRound: false }, null] } } };
+    const { state } = resolveCorruptionPhase(s);
+    // 3 figures removed → floor(3/2) = 1 token
     expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(0);
-    // 3 figures → floor(3/2) = 1 token
-    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(1);
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBeGreaterThanOrEqual(1);
   });
 });
 

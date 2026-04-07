@@ -401,25 +401,10 @@ function applyOnPlayEffect(
       }
       break;
     }
-    case 'gormen_plague_bloom': {
-      const gormenFigures = s.regions[regionId]!.placements.filter(f => f.power === 'gormen');
-      const removed = gormenFigures.length;
-      const tokensToPlace = Math.floor(removed / 2);
-      s = updateRegion(s, regionId, {
-        placements: s.regions[regionId]!.placements.filter(f => f.power !== 'gormen'),
-        corruptionTokens: {
-          ...s.regions[regionId]!.corruptionTokens,
-          gormen: s.regions[regionId]!.corruptionTokens.gormen + tokensToPlace,
-        },
-      });
-      s = updatePower(s, 'gormen', {
-        followers: s.powers['gormen']!.followers.map(f =>
-          gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
-        ),
-      });
-      log.push(`Gormen Plague Bloom: ${removed} figures removed, ${tokensToPlace} corruption tokens placed.`);
+    case 'gormen_plague_bloom':
+      // No on-play effect. Effect fires at end of corruption phase (after corruption
+      // placement, before ruination check) — handled in resolveCorruption.
       break;
-    }
     case 'tenzen_arcane_siphon': {
       const region = s.regions[regionId]!;
       let gained = 0;

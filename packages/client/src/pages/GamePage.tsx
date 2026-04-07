@@ -125,13 +125,11 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
     if (!activeDrag || !displayState || !myPowerEarly) return null;
 
     if (activeDrag.kind === 'hand_card') {
-      // Valid if region has an empty card slot and is not ruined
+      const legal = getLegalActions(displayState, myPowerEarly);
       return new Set(
-        (Object.keys(displayState.regions) as RegionId[]).filter((r) => {
-          const region = displayState.regions[r]!;
-          if (region.ruinationCardIndex !== null) return false;
-          return region.chaosCards[0] === null || region.chaosCards[1] === null;
-        })
+        legal
+          .filter(a => a.kind === 'summoning_play_card' && a.cardId === activeDrag.cardId)
+          .map(a => (a as { toRegion: RegionId }).toRegion)
       );
     }
 

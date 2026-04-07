@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination, getRegionResistance } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import type { DragItem } from '../types/drag.js';
@@ -291,7 +291,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       </text>
 
       {/* Stats */}
-      <text x={x + 5}     y={y + 25} fill="#64748b" fontSize="8">{`R${region.resistance}`}</text>
+      <text x={x + 5}     y={y + 25} fill="#64748b" fontSize="8">{`R${getRegionResistance(state, regionId)}`}</text>
       <text x={x + 30}    y={y + 25} fill="#64748b" fontSize="8">{`C${region.conquestValue + (tokenCounts.get('noble') ?? 0)}`}</text>
       {(() => {
         const { leader, value } = getRegionDomination(state, regionId);

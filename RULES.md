@@ -768,7 +768,7 @@ Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 mea
 | Epidemic | 1 | — | 4 | This region's Resistance is reduced by two. |
 | Blight Ward | 1 | — | 3 | Your figures' defense value is increased by one. |
 | Entropy | 1 | — | 2 | Remove one corruption token (any player) from this region. |
-| Plague Bloom | 2 | — | 3 | Remove any of your figures from this region; place one corruption token for every two figures removed. |
+| Plague Bloom | 2 | — | 3 | **No effect when played.** At the end of the Corruption phase, after all corruption tokens have been placed but before the ruination check: remove all of your figures from this region, then place one corruption token for every two figures removed. |
 | Corruption's Harvest | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. You choose which figures to kill. |
 | Death's Perfume | 3 | ✦ | 2 | If you dominate this region, place two corruption tokens here. |
 

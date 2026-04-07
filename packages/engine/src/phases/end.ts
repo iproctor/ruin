@@ -591,17 +591,7 @@ function advanceDial(
     case 'upgrade_card': {
       const available = s.powers[power]!.availableUpgradeIds;
       if (available.length > 0) {
-        if (available.length === 1) {
-          // Only one option — apply automatically.
-          const upgradeId = available[0]!;
-          s = updatePower(s, power, {
-            upgradesInPlay: [...s.powers[power]!.upgradesInPlay, upgradeId],
-            availableUpgradeIds: [],
-          });
-          log.push(`${power} gains upgrade: ${upgradeId}.`);
-        } else {
-          rewards.push({ kind: 'upgrade_choice', power });
-        }
+        rewards.push({ kind: 'upgrade_choice', power });
       }
       break;
     }

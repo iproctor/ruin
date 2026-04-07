@@ -6,7 +6,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
-import { FOLLOWERS, UPGRADES } from '@ruin/engine';
+import { FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -319,15 +319,18 @@ function SummoningPanel({
 function RegionPicker({
   selectedRegion,
   onSelect,
+  allowedRegions,
 }: {
   selectedRegion: RegionId | null;
   onSelect: (r: RegionId) => void;
+  allowedRegions?: RegionId[];
 }) {
+  const regions = allowedRegions ?? ALL_REGIONS;
   return (
     <div>
       <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '0.25rem' }}>Choose region:</div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {ALL_REGIONS.map((r) => (
+        {regions.map((r) => (
           <button
             key={r}
             className={selectedRegion === r ? 'primary' : 'secondary'}
@@ -407,12 +410,31 @@ function WorldChoicePanel({
     });
   }
 
+  const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
+
+  const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        World card {cardId ? formatId(cardId) : ''} — choose a region:
+      {cardDef && (
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0' }}>
+          {cardDef.name}
+        </div>
+      )}
+      {cardDef?.immediateEffect && (
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+          {cardDef.immediateEffect}
+        </div>
+      )}
+      {cardDef?.persistentEffect && (
+        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+          Persistent: {cardDef.persistentEffect}
+        </div>
+      )}
+      <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
+        Choose a region:
       </div>
-      <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} />
+      <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} allowedRegions={allowedRegions} />
       {selectedRegion && (
         <button className="primary" onClick={handleSubmit}>
           Confirm: {REGION_LABELS[selectedRegion]}
@@ -513,18 +535,27 @@ function UpgradeChoicePanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>Choose an upgrade:</div>
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-        {upgrades.map((upgradeId) => (
-          <button
-            key={upgradeId}
-            className="primary"
-            onClick={() =>
-              onAction({ kind: 'upgrade_choice', power: myPower, upgradeCardId: upgradeId })
-            }
-          >
-            {formatId(upgradeId)}
-          </button>
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        {upgrades.map((upgradeId) => {
+          const def = UPGRADE_BY_ID[upgradeId];
+          return (
+            <button
+              key={upgradeId}
+              className="primary"
+              onClick={() =>
+                onAction({ kind: 'upgrade_choice', power: myPower, upgradeCardId: upgradeId })
+              }
+              style={{ textAlign: 'left', padding: '0.4rem 0.6rem' }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{def?.name ?? formatId(upgradeId)}</div>
+              {def?.effect && (
+                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: '#c4b5fd', marginTop: '0.15rem' }}>
+                  {def.effect}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -736,7 +767,7 @@ function WarMarchPanel({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const moveable = state.powers[myPower]!.followers.filter(
+  const moveable = (state.powers[myPower]?.followers ?? []).filter(
     f => f.regionId !== null && f.regionId !== regionId
   );
 

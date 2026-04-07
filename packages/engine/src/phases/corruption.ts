@@ -18,6 +18,12 @@ export function getRegionDominationLeader(state: GameState, regionId: RegionId):
   return getRegionDomination(state, regionId).leader;
 }
 
+/** Returns the true current resistance for a region, accounting for all card/world-card effects. */
+export function getRegionResistance(state: GameState, regionId: RegionId): number {
+  const nullWeave = state.regions[regionId]!.chaosCards.some(c => c?.cardId === 'tenzen_null_weave');
+  return calcResistance(state, regionId, nullWeave);
+}
+
 /** Returns the leading power and their domination value, or null if ruined/tied/zero. */
 export function getRegionDomination(
   state: GameState,
@@ -27,9 +33,17 @@ export function getRegionDomination(
   if (region.ruinationCardIndex !== null) return { leader: null, value: 0 };
   const nullWeave = regionCardActive(state, regionId, 'tenzen_null_weave');
   const domValues = new Map<Power, number>();
-  // Use all 4 powers so figures placed via card effects are always included
-  const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
-  for (const power of allPowers) {
+  // Compute for all active powers, plus any power with a presence in the region
+  // that might not be in activePowers (e.g. figures from card effects)
+  const powersToCheck = new Set<Power>(state.activePowers);
+  for (const f of region.placements) {
+    const p = (f.controlledBy ?? f.power) as Power;
+    if (state.powers[p]) powersToCheck.add(p);
+  }
+  for (const slot of region.chaosCards) {
+    if (slot && state.powers[slot.playedBy]) powersToCheck.add(slot.playedBy);
+  }
+  for (const power of powersToCheck) {
     domValues.set(power, calcDomination(state, regionId, power, nullWeave));
   }
   const vals = Array.from(domValues.values());
@@ -37,7 +51,7 @@ export function getRegionDomination(
   if (maxDom === 0) return { leader: null, value: 0 };
   const resistance = calcResistance(state, regionId, nullWeave);
   if (maxDom <= resistance) return { leader: null, value: 0 };
-  const leaders = allPowers.filter(p => domValues.get(p) === maxDom);
+  const leaders = Array.from(powersToCheck).filter(p => domValues.get(p) === maxDom);
   return { leader: leaders.length === 1 ? leaders[0]! : null, value: maxDom };
 }
 
@@ -274,6 +288,29 @@ function resolveCorruption(
 
       // Dial advancement counters
       s = checkDialAdvancement(s, regionId, power, tokensToPlace, nullWeave, log);
+    }
+
+    // Gormen Plague Bloom: after corruption placement, remove Gormen figures and
+    // place 1 corruption token per 2 figures removed (before ruination check).
+    if (!nullWeave && regionCardActive(s, regionId, 'gormen_plague_bloom')) {
+      const gormenFigures = s.regions[regionId]!.placements.filter(f => f.power === 'gormen');
+      if (gormenFigures.length > 0) {
+        const tokensToPlace = Math.floor(gormenFigures.length / 2);
+        s = updateRegion(s, regionId, {
+          placements: s.regions[regionId]!.placements.filter(f => f.power !== 'gormen'),
+          corruptionTokens: tokensToPlace > 0 ? {
+            ...s.regions[regionId]!.corruptionTokens,
+            gormen: s.regions[regionId]!.corruptionTokens.gormen + tokensToPlace,
+          } : s.regions[regionId]!.corruptionTokens,
+        });
+        s = updatePower(s, 'gormen', {
+          followers: s.powers['gormen']!.followers.map(f =>
+            gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
+          ),
+        });
+        if (tokensToPlace > 0) placedBy.add('gormen');
+        log.push(`${regionId}: Plague Bloom — ${gormenFigures.length} Gormen figures removed, ${tokensToPlace} corruption token(s) placed.`);
+      }
     }
 
     // Check ruination

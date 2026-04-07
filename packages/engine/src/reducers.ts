@@ -256,12 +256,21 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
  */
 export function autoAdvance(result: ApplyResult): ApplyResult {
   let { state: s, log } = result;
+  let lastBannerPhase: string | null = null;
 
   while (true) {
     // Stop if waiting for player input or game is over
     if (s.pendingAction !== null) break;
     if (s.winners !== null) break;
     if (s.phase === 'completed') break;
+
+    // Emit a phase-change banner on fresh entry to each phase.
+    // Skip for end-phase re-entries while draining dial rewards (banner was already emitted).
+    const isEndReEntry = s.phase === 'end' && s.pendingDialRewards !== null;
+    if (s.phase !== lastBannerPhase && !isEndReEntry) {
+      log = [...log, `== Round ${s.round}: ${s.phase.toUpperCase()} ==`];
+      lastBannerPhase = s.phase;
+    }
 
     // Check for autonomous phase transitions
     let next: ApplyResult;
