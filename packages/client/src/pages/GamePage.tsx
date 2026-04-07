@@ -210,6 +210,11 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
     if (!acting) return;
     setSubmitError('');
     setSubmitting(true);
+    // Track whether the player staged an action before clicking End Turn.
+    // If they did, "End Turn" means "submit my action" — not "pass summoning".
+    // The AI will run, and it may come back to the human player's next summoning
+    // tick. We must NOT auto-pass that new tick.
+    const hadStagedAction = !!pendingAction || !!pendingOnPlayChoice;
     try {
       let latest = serverState!;
       if (pendingAction) {
@@ -223,8 +228,10 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
         setState(latest);
         setPendingOnPlayChoice(null);
       }
-      // Pass if still our turn
-      if (latest.pendingAction?.waitingFor === acting && latest.pendingAction?.actionKind === 'summoning_action') {
+      // Only auto-pass if the player clicked End Turn without staging any action
+      // (i.e. pure "pass" intent). After AI turns run it could be our turn again
+      // (new summoning rotation) — do NOT pass that new tick.
+      if (!hadStagedAction && latest.pendingAction?.waitingFor === acting && latest.pendingAction?.actionKind === 'summoning_action') {
         const sPass = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
         setState(sPass);
       }
@@ -406,20 +413,20 @@ export default function GamePage() {
   const { id } = useParams<{ id: string }>();
   const { userId } = useAuth();
   const [myPowers, setMyPowers] = useState<Power[]>([]);
+  const [initialState, setInitialState] = useState<GameState | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!id || !userId) return;
     let cancelled = false;
     getGame(id)
-      .then((state) => {
+      .then(({ state, myPower }) => {
         if (cancelled) return;
-        // All powers whose hand is unmasked belong to this user
-        const mine = state.activePowers.filter((p) => {
-          const hand = state.powers[p]?.hand ?? [];
-          return hand.length > 0 && hand.some((c) => c !== '?');
-        });
-        setMyPowers(mine);
+        // Seed the display with the HTTP state so the board is visible immediately,
+        // before the SSE 'history' event arrives.
+        setInitialState(state);
+        // Use the server-provided myPower — reliable even when the hand is empty.
+        if (myPower) setMyPowers([myPower as Power]);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load game');
@@ -431,7 +438,7 @@ export default function GamePage() {
   if (error) return <p className="error-msg" style={{ padding: '2rem' }}>{error}</p>;
 
   return (
-    <GameProvider gameId={id} myPower={myPowers[0] ?? null}>
+    <GameProvider gameId={id} myPower={myPowers[0] ?? null} initialState={initialState}>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <GameInner gameId={id} myPowers={myPowers} />
       </div>

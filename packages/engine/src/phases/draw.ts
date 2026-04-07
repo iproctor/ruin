@@ -63,9 +63,10 @@ function resolveAllDraws(state: GameState, log: string[]): { state: GameState; l
     log.push(result.entry);
   }
 
-  // Reset power points
+  // Reset power points and sync basePowerPoints so the UI reflects upgrades
   for (const power of s.activePowers) {
-    s = updatePower(s, power, { powerPoints: getBasePP(s, power), passedSummoning: false });
+    const pp = getBasePP(s, power);
+    s = updatePower(s, power, { powerPoints: pp, basePowerPoints: pp, passedSummoning: false });
   }
 
   s = {
@@ -111,7 +112,10 @@ function drawForPower(state: GameState, power: Power): { state: GameState; entry
       discardIds = [];
     }
     if (deckIds.length === 0) break;
-    drawn.push(deckIds.shift()!);
+    // Use slice (non-mutating) instead of shift() so shallow-copied state
+    // objects (used during MCTS/greedyAction look-ahead) don't lose cards.
+    drawn.push(deckIds[0]!);
+    deckIds = deckIds.slice(1);
   }
 
   hand = [...hand, ...drawn];
@@ -140,7 +144,7 @@ function getExtraDraw(state: GameState, power: Power): number {
   return extra;
 }
 
-function getBasePP(state: GameState, power: Power): number {
+export function getBasePP(state: GameState, power: Power): number {
   let base = BASE_POWER_POINTS[power]!;
   for (const upId of state.powers[power]!.upgradesInPlay) {
     const up = UPGRADES.find(u => u.id === upId);

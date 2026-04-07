@@ -68,13 +68,13 @@ export function applyCardOnPlayChoice(
       break;
     }
 
-    // ── Tenzen: Stolen Thoughts ───────────────────────────────────────────────
+    // ── Tenzen: Meddling of Rats ───────────────────────────────────────────────
     // Queue a forced discard on the target — they choose on their next summoning turn
     case 'tenzen_the_meddling_of_rats': {
       const targetPower = choices['targetPower'] as Power;
       const current = s.powers[targetPower]!.pendingForcedDiscards;
       s = updatePower(s, targetPower, { pendingForcedDiscards: current + 2 });
-      log.push(`Stolen Thoughts: ${targetPower} must discard 2 cards on their next turn.`);
+      log.push(`Meddling of Rats: ${targetPower} must discard 2 cards on their next turn.`);
       break;
     }
 

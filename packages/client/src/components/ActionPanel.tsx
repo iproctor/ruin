@@ -713,7 +713,7 @@ export function CardOnPlayChoicePanel({
   );
 }
 
-// ── Stolen Thoughts: choose opponent to discard 2 cards ───────────────────────
+// ── Meddling of Rats: choose opponent to discard 2 cards ───────────────────────
 
 function StolenThoughtsPanel({
   state, myPower, regionId, onSubmit,
@@ -973,7 +973,7 @@ function EnthrallmentPanel({
   );
 }
 
-// ── Forced discard (Stolen Thoughts deferred) ─────────────────────────────────
+// ── Forced discard (Meddling of Rats deferred) ─────────────────────────────────
 
 function ForcedDiscardPanel({
   hand,
@@ -1012,7 +1012,7 @@ function ForcedDiscardPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
-        Stolen Thoughts — choose {count} card{count !== 1 ? 's' : ''} to discard ({selectedIndices.size}/{count} selected):
+        Meddling of Rats — choose {count} card{count !== 1 ? 's' : ''} to discard ({selectedIndices.size}/{count} selected):
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {visibleEntries.map(({ cardId, i }) => (
@@ -1058,10 +1058,18 @@ function BattleHitAssignmentPanel({
   const safeRegionId: RegionId = regionId;
 
   const region = state.regions[safeRegionId]!;
-  const targets = region.placements.filter(f => {
-    const ctrl = f.controlledBy ?? f.power;
-    return ctrl !== myPower && !f.tipped && !f.protected;
-  });
+  const CLASS_ORDER: Record<string, number> = { cultist: 0, warrior: 1, incarnation: 2 };
+  const targets = region.placements
+    .filter(f => {
+      const ctrl = f.controlledBy ?? f.power;
+      return ctrl !== myPower && !f.tipped && !f.protected;
+    })
+    .sort((a, b) => {
+      const pa = (a.controlledBy ?? a.power) as string;
+      const pb = (b.controlledBy ?? b.power) as string;
+      if (pa !== pb) return pa.localeCompare(pb);
+      return (CLASS_ORDER[a.class] ?? 0) - (CLASS_ORDER[b.class] ?? 0);
+    });
 
   function getDefense(fig: FollowerInstance): number {
     const owner = fig.power as Power;

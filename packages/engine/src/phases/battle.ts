@@ -58,9 +58,29 @@ export function applyBattleHitAssignment(
   const log: string[] = [];
   let s: GameState = { ...state, pendingAction: null };
 
-  const { regionId, followerIds, peasantsToTake = 0, power: attacker } = action;
+  const { regionId, followerIds, peasantsToTake = 0, power: attacker, warFrenzyPartialHits } = action;
   const ctx = state.pendingAction!.context;
   const nullWeaveActive = ctx['nullWeaveActive'] as boolean;
+
+  // Apply War Frenzy partial hits (don't kill, just accumulate on figure for Xarm's normal battle)
+  if (warFrenzyPartialHits && warFrenzyPartialHits.length > 0) {
+    for (const { followerId, hits } of warFrenzyPartialHits) {
+      s = updateRegion(s, regionId, {
+        placements: s.regions[regionId]!.placements.map(f =>
+          f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
+        ),
+      });
+      const owner = s.regions[regionId]!.placements.find(f => f.id === followerId)?.power as Power | undefined;
+      if (owner) {
+        s = updatePower(s, owner, {
+          followers: s.powers[owner]!.followers.map(f =>
+            f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
+          ),
+        });
+      }
+      log.push(`${regionId}: War Frenzy — ${hits} hit(s) applied to ${followerId} (not killed).`);
+    }
+  }
 
   // Claim chosen peasants first
   for (let i = 0; i < peasantsToTake; i++) {
@@ -216,7 +236,13 @@ function resolveRegion(
   const hasWarFrenzy = regionCardActive(s, regionId, 'xarm_war_frenzy');
   const xarmPresent = powersPresent.includes('xarm');
 
-  const powersThatCanRoll = powersPresent.filter(p => {
+  // War Frenzy fires even if xarm has no figures in the region — the card
+  // itself acts as xarm's "presence" for pre-battle dice rolls.
+  const effectivePowers = (hasWarFrenzy && !xarmPresent)
+    ? [...powersPresent, 'xarm' as const]
+    : powersPresent;
+
+  const powersThatCanRoll = effectivePowers.filter(p => {
     const totalAttack = getTotalAttack(s, regionId, p);
     return totalAttack > 0 || (p === 'xarm' && hasWarFrenzy);
   });
@@ -261,7 +287,9 @@ function resolveRegion(
   }
 
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
-  if (!nullWeaveActive && xarmPresent && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
+  // War Frenzy fires even when xarm has no figures present — the card itself
+  // rolls dice targeting enemies/peasants in the region.
+  if (!nullWeaveActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
     const rng = makeBattleRng(s);
     const rolls = rollWithExplosions(2, rng);
     const hits = countHits(rolls);
@@ -275,6 +303,7 @@ function resolveRegion(
           s, regionId, 'xarm', hits, nullWeaveActive,
           { type: 'normal_battle', powerIndex: 0, clearTipped: true },
           log,
+          { isWarFrenzy: true },
         );
       }
     }
@@ -449,6 +478,22 @@ function runPostUndying(
     s = r.state;
   }
 
+  // Reset warFrenzyHits on all surviving figures in this region
+  const surviving = s.regions[regionId]!.placements.filter(f => f.warFrenzyHits > 0);
+  if (surviving.length > 0) {
+    s = updateRegion(s, regionId, {
+      placements: s.regions[regionId]!.placements.map(f => ({ ...f, warFrenzyHits: 0 })),
+    });
+    for (const f of surviving) {
+      const owner = f.power as Power;
+      s = updatePower(s, owner, {
+        followers: s.powers[owner]!.followers.map(fl =>
+          fl.id === f.id ? { ...fl, warFrenzyHits: 0 } : fl
+        ),
+      });
+    }
+  }
+
   // ── End-of-battle: Corruption's Harvest ──────────────────────────────────
   if (!nullWeaveActive && regionCardActive(s, regionId, 'gormen_inevitable_rot')) {
     const gormenCorr = s.regions[regionId]!.corruptionTokens['gormen'] ?? 0;
@@ -486,6 +531,7 @@ function pauseForHitChoice(
   nullWeaveActive: boolean,
   nextStep: BattleNextStep,
   log: string[],
+  extraContext: Record<string, unknown> = {},
 ): { state: GameState; log: string[] } {
   const peasantsAvailable = state.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
   const s: GameState = {
@@ -497,7 +543,7 @@ function pauseForHitChoice(
     pendingAction: {
       waitingFor: attacker,
       actionKind: 'battle_hit_assignment',
-      context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable },
+      context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable, ...extraContext },
     },
   };
   log.push(`${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.`);
@@ -534,6 +580,9 @@ function getEnemyFigures(
 
       // Rotting Grasp: -1 to non-Gormen figures' defense (min 1)
       if (hasRottingGrasp && owner !== 'gormen') defense = Math.max(1, defense - 1);
+
+      // War Frenzy carry-over: partial hits from War Frenzy reduce effective defense for Xarm only
+      if (attacker === 'xarm' && f.warFrenzyHits > 0) defense = Math.max(1, defense - f.warFrenzyHits);
 
       return { figure: f, defense };
     })
@@ -579,7 +628,7 @@ function removeFigureFromBoard(
     if (follower) {
       s = updatePower(s, power, {
         followers: s.powers[power]!.followers.map(f =>
-          f.id === followerId ? { ...f, regionId: null, tipped: false, controlledBy: null } : f
+          f.id === followerId ? { ...f, regionId: null, tipped: false, controlledBy: null, warFrenzyHits: 0 } : f
         ),
       });
       break;

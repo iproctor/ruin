@@ -29,6 +29,7 @@ export function makeFollowers(power: Power): FollowerInstance[] {
         controlledBy: null,
         tipped: false,
         protected: false,
+        warFrenzyHits: 0,
       });
     }
   }

@@ -39,6 +39,7 @@ export interface FollowerInstance {
   controlledBy: Power | null; // non-null when Enthrallment/Rapture active
   tipped: boolean;            // killed this battle round, awaiting removal
   protected: boolean;         // Fate's Aegis: cannot be killed in battle this round
+  warFrenzyHits: number;      // partial hits from War Frenzy; count toward Xarm's defense threshold only
 }
 
 // ─── Cards ────────────────────────────────────────────────────────────────────
@@ -287,6 +288,7 @@ export interface BattleHitAssignmentAction {
   regionId: RegionId;
   followerIds: string[]; // enemy figures the attacker chooses to kill (total defense must be <= hitsRemaining)
   peasantsToTake?: number; // number of peasant tokens to claim with remaining hits
+  warFrenzyPartialHits?: Array<{ followerId: string; hits: number }>; // War Frenzy only: partial hits that don't kill
 }
 
 export interface DialPlaceTokenAction {

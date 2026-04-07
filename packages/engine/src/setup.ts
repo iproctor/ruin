@@ -64,7 +64,7 @@ export function createInitialState(config: GameConfig): GameState {
     for (const cls of ['cultist', 'warrior', 'incarnation'] as const) {
       const def = FOLLOWERS[power]![cls]!;
       for (let i = 1; i <= def.count; i++) {
-        followers.push({ id: `${power}_${cls}_${i}`, power, class: cls, regionId: null, controlledBy: null, tipped: false, protected: false });
+        followers.push({ id: `${power}_${cls}_${i}`, power, class: cls, regionId: null, controlledBy: null, tipped: false, protected: false, warFrenzyHits: 0 });
       }
     }
 

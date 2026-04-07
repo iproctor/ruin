@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npm test:*)",
+      "Bash(npx jest:*)",
+      "Bash(git stash:*)",
+      "Bash(grep -v \"^$\\\\|npm warn\")"
+    ]
+  }
+}

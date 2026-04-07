@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { GameState, Power } from '@ruin/engine';
 
 interface GameContextValue {
@@ -13,11 +13,17 @@ const GameContext = createContext<GameContextValue | null>(null);
 interface GameProviderProps {
   gameId: string;
   myPower: Power | null;
+  initialState?: GameState | null;
   children: React.ReactNode;
 }
 
-export function GameProvider({ gameId, myPower, children }: GameProviderProps) {
+export function GameProvider({ gameId, myPower, initialState, children }: GameProviderProps) {
   const [state, setState] = useState<GameState | null>(null);
+
+  // Seed from HTTP response; SSE will overwrite with real-time updates.
+  useEffect(() => {
+    if (initialState && !state) setState(initialState);
+  }, [initialState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const value = useMemo<GameContextValue>(
     () => ({ state, gameId, myPower, setState }),

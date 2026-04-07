@@ -324,10 +324,10 @@ describe('Tenzen Phase Shift (move figure to any region)', () => {
   });
 });
 
-// ─── On-play choice: Tenzen Stolen Thoughts ──────────────────────────────────
+// ─── On-play choice: Tenzen Meddling of Rats ──────────────────────────────────
 
-describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
-  test('target opponent has 2 forced discards queued after Stolen Thoughts resolves', () => {
+describe('Tenzen Meddling of Rats (opponent discards 2 cards)', () => {
+  test('target opponent has 2 forced discards queued after Meddling of Rats resolves', () => {
     let s = giveCards(makeState(), 'xarm', ['xarm_war_cry', 'xarm_war_frenzy', 'xarm_carnage_trap']);
     s = giveCards(s, 'tenzen', ['tenzen_the_meddling_of_rats']);
     const { state: afterPlay } = applyPlayCard(s, {
@@ -338,7 +338,7 @@ describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
       kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_the_meddling_of_rats',
       regionId: 'norrsund', choices: { targetPower: 'xarm' },
     });
-    // Stolen Thoughts queues a forced discard on xarm's next turn (not immediate)
+    // Meddling of Rats queues a forced discard on xarm's next turn (not immediate)
     expect(state.powers.xarm!.pendingForcedDiscards).toBe(2);
   });
 });

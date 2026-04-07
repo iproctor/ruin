@@ -5,7 +5,8 @@
     "dev": "pnpm --parallel --filter '{engine,ai,server}' dev",
     "build": "pnpm --filter engine build && pnpm --filter ai build && pnpm --filter client build && pnpm --filter server build",
     "test": "pnpm --filter engine test",
-    "headless": "tsx packages/server/src/scripts/headless-game.ts"
+    "headless": "tsx packages/server/src/scripts/headless-game.ts",
+    "benchmark": "tsx packages/server/src/scripts/benchmark.ts"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

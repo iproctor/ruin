@@ -1,6 +1,6 @@
 import type { GameState, Action, Power, DialPendingReward } from './types.js';
 import { resolveWorldPhase, applyWorldChoice } from './phases/world.js';
-import { beginDrawPhase, applyTenzenDiscard } from './phases/draw.js';
+import { beginDrawPhase, applyTenzenDiscard, getBasePP } from './phases/draw.js';
 import { applySummonFigure, applyPlayCard, applySummoningPass } from './phases/summoning.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
@@ -28,7 +28,7 @@ export function applyActionForPreview(state: GameState, action: Action): ApplyRe
 
 /** Remove the first item from the dial rewards queue; returns null when empty. */
 function popDialReward(queue: DialPendingReward[] | null): DialPendingReward[] | null {
-  if (!queue || queue.length <= 1) return null;
+  if (!queue || queue.length <= 1) return [];  // empty array, not null — prevents end-phase re-run
   return queue.slice(1);
 }
 
@@ -90,7 +90,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           context: {},
         },
       };
-      result = { state: s, log: [`${action.power} discards ${toDiscard.length} card(s) (Stolen Thoughts).`] };
+      result = { state: s, log: [`${action.power} discards ${toDiscard.length} card(s) (Meddling of Rats).`] };
       break;
     }
 
@@ -112,6 +112,11 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           },
         },
       };
+      // Sync basePowerPoints (and powerPoints) immediately so the UI reflects PP upgrades right away
+      const newBase = getBasePP(s, action.power);
+      if (newBase !== p.basePowerPoints) {
+        s = { ...s, powers: { ...s.powers, [action.power]: { ...s.powers[action.power]!, basePowerPoints: newBase, powerPoints: newBase } } };
+      }
       result = { state: s, log: [`${action.power} takes upgrade: ${action.upgradeCardId}.`] };
       break;
     }

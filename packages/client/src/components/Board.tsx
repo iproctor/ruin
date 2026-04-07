@@ -418,11 +418,6 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         viewBox="0 0 800 615"
         style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: '#0d0d1f' }}
       >
-        <text x={10} y={606} fill="#334155" fontSize="10">
-          World: {state.worldTrack.slot1 ?? '—'} / {state.worldTrack.slot2 ?? '—'}
-          {'   '}Ruination: {state.ruinationCardsUsed} / 5
-        </text>
-
         {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).map(
           ([regionId, pos]) => (
             <RegionContent

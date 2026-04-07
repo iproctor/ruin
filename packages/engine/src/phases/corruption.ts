@@ -24,6 +24,17 @@ export function getRegionResistance(state: GameState, regionId: RegionId): numbe
   return calcResistance(state, regionId, nullWeave);
 }
 
+/**
+ * Returns the raw domination value for a specific power in a region.
+ * Useful for AI evaluation: knowing HOW CLOSE a power is to winning a region.
+ */
+export function getPowerDomination(state: GameState, regionId: RegionId, power: Power): number {
+  const region = state.regions[regionId]!;
+  if (region.ruinationCardIndex !== null) return 0;
+  const nullWeave = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  return calcDomination(state, regionId, power, nullWeave);
+}
+
 /** Returns the leading power and their domination value, or null if ruined/tied/zero. */
 export function getRegionDomination(
   state: GameState,

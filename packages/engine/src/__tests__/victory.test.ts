@@ -25,12 +25,12 @@ describe('VP victory (≥50)', () => {
     expect(checkVictory(s)!.condition).toBe('vp');
   });
 
-  test('multiple powers with 50+ VP all win', () => {
+  test('when multiple powers reach threshold, highest VP wins alone', () => {
     let s = setVP(makeState(), 'xarm', 55);
     s = setVP(s, 'lasha', 52);
     const result = checkVictory(s)!;
-    expect(result.winners).toContain('xarm');
-    expect(result.winners).toContain('lasha');
+    // xarm has more VP (55 > 52) so wins alone
+    expect(result.winners).toEqual(['xarm']);
   });
 });
 
@@ -58,7 +58,7 @@ describe('ruination victory (5 regions ruined)', () => {
     expect(result.winners).not.toContain('xarm');
   });
 
-  test('tied highest VP results in multiple winners on ruination', () => {
+  test('VP tie on ruination broken by highest threat', () => {
     let s = makeState();
     for (let i = 0; i < 5; i++) {
       s = ruinRegion(s, REGION_ORDER[i]!, i + 1);
@@ -66,9 +66,9 @@ describe('ruination victory (5 regions ruined)', () => {
     s = { ...s, ruinationCardsUsed: 5 };
     s = setVP(s, 'xarm', 30);
     s = setVP(s, 'gormen', 30);
+    // xarm starts with threat 3, gormen with threat 1 → xarm wins tie-break
     const result = checkVictory(s)!;
-    expect(result.winners).toContain('xarm');
-    expect(result.winners).toContain('gormen');
+    expect(result.winners).toEqual(['xarm']);
   });
 });
 

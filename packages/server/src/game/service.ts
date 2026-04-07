@@ -1,8 +1,9 @@
 import { Worker } from 'node:worker_threads';
 import { eq, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { createInitialState, applyAction, autoAdvance } from '@ruin/engine';
+import { createInitialState, applyAction, autoAdvance, getLegalActions } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType } from '@ruin/engine';
+import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
 import { games, gamePlayers, chatMessages } from '../db/schema.js';
 import { broadcast } from './sse.js';
@@ -104,10 +105,17 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
 
     let action: Action;
     try {
-      action = await runMctsInWorker(current, waitingFor);
+      if (current.pendingAction!.actionKind === 'summoning_action') {
+        action = await runMctsInWorker(current, waitingFor);
+      } else {
+        action = greedyAction(current, waitingFor);
+      }
     } catch (err) {
       console.error(`AI failed to pick action for ${waitingFor}:`, err);
-      break;
+      // Last resort: use first legal action
+      const fallback = getLegalActions(current, waitingFor)[0];
+      if (!fallback) break;
+      action = fallback;
     }
 
     const { state: next, log } = applyAction(current, action);

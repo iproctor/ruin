@@ -106,9 +106,8 @@ export async function listGames(): Promise<GameSummary[]> {
   return res.games;
 }
 
-export async function getGame(gameId: string): Promise<GameState> {
-  const res = await request<{ state: GameState }>(`/games/${gameId}`);
-  return res.state;
+export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null }> {
+  return request<{ state: GameState; myPower: string | null }>(`/games/${gameId}`);
 }
 
 export async function submitAction(gameId: string, action: Action): Promise<GameState> {

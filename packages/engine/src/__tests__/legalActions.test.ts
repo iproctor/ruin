@@ -177,7 +177,7 @@ describe('card_on_play_choice', () => {
     )).toBe(true);
   });
 
-  test("Stolen Thoughts returns opponent targets", () => {
+  test("Meddling of Rats returns opponent targets", () => {
     let s = giveCards(makeState(), 'xarm', ['xarm_war_cry']);
     s = {
       ...s,

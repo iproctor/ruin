@@ -93,7 +93,15 @@ router.get('/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
   if (!id) { res.status(400).json({ error: 'Game ID required' }); return; }
   const state = await getGameState(id, req.userId ?? null);
-  res.json({ state });
+  // Tell the client which power(s) they control so detection works even with
+  // an empty hand (empty hands are indistinguishable from masked empty hands).
+  let myPower: string | null = null;
+  if (req.userId) {
+    const rows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
+    const mine = rows.find((r) => r.userId === req.userId);
+    myPower = mine?.power ?? null;
+  }
+  res.json({ state, myPower });
 });
 
 // ---------------------------------------------------------------------------
