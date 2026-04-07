@@ -9,7 +9,7 @@
 import { resolveEndPhase } from '../phases/end.js';
 import {
   makeState, placeFollower, addToken, addCorruption, setVP, setWorldCard,
-  giveInDeck,
+  giveInDeck, autoResolveEndPhase,
 } from './helpers.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -192,12 +192,12 @@ describe('dial instruction: place_nobles (Lasha pos 3, threat 16)', () => {
     // Lasha dial: pos 2 → pos 3 = place_nobles 2
     let s = endState();
     s = setDial(s, 'lasha', 2, 1);
-    const { state, log } = resolveEndPhase(s);
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
     const noblePlacements = Object.values(state.regions)
       .flatMap(r => r.tokens)
       .filter(t => t === 'noble').length;
     expect(noblePlacements).toBeGreaterThanOrEqual(2);
-    expect(log.some(l => l.includes('lasha') && l.includes('Noble'))).toBe(true);
+    expect(log.some(l => l.includes('lasha') && l.includes('noble'))).toBe(true);
   });
 });
 
@@ -206,12 +206,12 @@ describe('dial instruction: place_chaos_stone (Tenzen pos 1, threat 7)', () => {
     // Tenzen dial: pos 0 → pos 1 = place_chaos_stone 1
     let s = endState();
     s = setDial(s, 'tenzen', 0, 1);
-    const { state, log } = resolveEndPhase(s);
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
     const stones = Object.values(state.regions)
       .flatMap(r => r.tokens)
       .filter(t => t === 'chaos_stone').length;
     expect(stones).toBeGreaterThanOrEqual(1);
-    expect(log.some(l => l.includes('tenzen') && l.includes('Chaos Stone'))).toBe(true);
+    expect(log.some(l => l.includes('tenzen') && l.includes('chaos_stone'))).toBe(true);
   });
 });
 
@@ -221,7 +221,7 @@ describe('dial instruction: remove_corruption (Gormen pos 2, threat 10)', () => 
     let s = endState();
     s = setDial(s, 'gormen', 1, 1);
     s = addCorruption(s, 'norrsund', 'gormen', 3);
-    const { state, log } = resolveEndPhase(s);
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
     const remaining = state.regions.norrsund!.corruptionTokens.gormen;
     expect(remaining).toBeLessThan(3);
     expect(log.some(l => l.includes('gormen') && l.includes('corruption'))).toBe(true);
@@ -231,12 +231,14 @@ describe('dial instruction: remove_corruption (Gormen pos 2, threat 10)', () => 
 describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () => {
   test('removes world tokens (non-chaos-stone) from regions', () => {
     // Lasha dial: pos 5 → pos 6 = remove_world_tokens 2
+    // Give xarm equal counters to prevent lasha getting a bonus advance to victory (pos 7)
     let s = endState();
     s = setDial(s, 'lasha', 5, 1);
+    s = setDial(s, 'xarm', 0, 1); // tie → no bonus advance for either
     // Add some removable tokens
     s = addToken(s, 'toscavar', 'noble');
     s = addToken(s, 'almerida', 'peasant');
-    const { state, log } = resolveEndPhase(s);
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
     // At least one token should be removed
     const totalTokens = Object.values(state.regions)
       .flatMap(r => r.tokens)
@@ -251,7 +253,7 @@ describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () =>
     let s = endState();
     s = setDial(s, 'lasha', 5, 1);
     s = addToken(s, 'norrsund', 'chaos_stone');
-    const { state } = resolveEndPhase(s);
+    const { state } = autoResolveEndPhase(resolveEndPhase(s));
     // chaos_stone is exempt from removal
     expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
   });

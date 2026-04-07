@@ -29,7 +29,17 @@
       "Bash(npx tsc:*)",
       "Bash(npx vite:*)",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
-      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page"
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page",
+      "Bash(sed -n '83,105p' /Users/iainap/code/chaos/packages/engine/src/setup.ts)",
+      "Bash(sed -n '218,260p' /Users/iainap/code/chaos/packages/engine/src/phases/summoning.ts)",
+      "Bash(sed -n '91,105p' /Users/iainap/code/chaos/packages/engine/src/types.ts)",
+      "Bash(sed -n '255,270p' /Users/iainap/code/chaos/packages/engine/src/types.ts)",
+      "Bash(npm test:*)",
+      "Bash(node --experimental-vm-modules node_modules/jest-cli/bin/jest.js --testPathPattern=battle --no-coverage)",
+      "Bash(node --experimental-vm-modules packages/engine/node_modules/jest/bin/jest.js --testPathPattern=battle --no-coverage --rootDir packages/engine)",
+      "Bash(node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern=battle --no-coverage)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(node -e ':*)"
     ]
   }
 }

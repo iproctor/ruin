@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
-import { useDroppable } from '@dnd-kit/core';
+import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
+import type { DragItem } from '../types/drag.js';
 
 // ── Region layout ─────────────────────────────────────────────────────────────
 
@@ -145,15 +146,17 @@ function MiniCard({ cardId, width, height, onHover, isPending }: {
 
 // ── Drop zone overlay (HTML div, invisible, DnD droppable) ────────────────────
 
-function RegionDropZone({ regionId, pos }: {
+function RegionDropZone({ regionId, pos, onClick, active }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: regionId, data: { kind: 'region', regionId } });
-  // 800×615 viewBox — positions as percentages of the SVG container
   return (
     <div
       ref={setNodeRef}
+      onClick={onClick}
       style={{
         position: 'absolute',
         left:   `${(pos.x / 800) * 100}%`,
@@ -165,7 +168,59 @@ function RegionDropZone({ regionId, pos }: {
         border:    isOver ? '2px solid #facc15' : '2px solid transparent',
         boxSizing: 'border-box',
         transition: 'background 0.1s, border-color 0.1s',
-        pointerEvents: 'all',
+        pointerEvents: active ? 'all' : 'none',
+        cursor: onClick ? 'pointer' : 'default',
+      }}
+    />
+  );
+}
+
+// ── Draggable figure overlay ──────────────────────────────────────────────────
+
+// SVG viewBox is 800×615; the Board container has the same aspect ratio.
+// Convert SVG coords to percentages for absolute HTML positioning.
+function svgPct(svgCoord: number, axis: 'x' | 'y') {
+  return `${(svgCoord / (axis === 'x' ? 800 : 615)) * 100}%`;
+}
+
+function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
+  fig: FollowerInstance;
+  fromRegion: RegionId;
+  svgX: number;
+  svgY: number;
+}) {
+  const dragData: DragItem = {
+    kind: 'board_follower',
+    followerId: fig.id,
+    followerClass: fig.class,
+    power: fig.controlledBy ?? fig.power,
+    fromRegion,
+  };
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `board_fig_${fig.id}`,
+    data: dragData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      style={{
+        position: 'absolute',
+        left: svgPct(svgX, 'x'),
+        top:  svgPct(svgY, 'y'),
+        width: 18,
+        height: 18,
+        transform: 'translate(-50%, -50%)',
+        cursor: isDragging ? 'grabbing' : 'grab',
+        opacity: isDragging ? 0 : 1,
+        borderRadius: fig.class === 'cultist' ? '50%' : fig.class === 'warrior' ? '2px' : '0',
+        border: `1.5px solid ${POWER_COLORS[fig.controlledBy ?? fig.power]}`,
+        background: 'transparent',
+        zIndex: 5,
+        touchAction: 'none',
+        pointerEvents: 'auto',
       }}
     />
   );
@@ -237,7 +292,17 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Stats */}
       <text x={x + 5}     y={y + 25} fill="#64748b" fontSize="8">{`R${region.resistance}`}</text>
-      <text x={x + 30}    y={y + 25} fill="#64748b" fontSize="8">{`C${region.conquestValue}`}</text>
+      <text x={x + 30}    y={y + 25} fill="#64748b" fontSize="8">{`C${region.conquestValue + (tokenCounts.get('noble') ?? 0)}`}</text>
+      {(() => {
+        const { leader, value } = getRegionDomination(state, regionId);
+        if (!leader) return null;
+        return (
+          <text x={x + 46} y={y + 25} fill={POWER_COLORS[leader]} fontSize="8" fontWeight="700"
+            style={{ userSelect: 'none' }}>
+            D{value}
+          </text>
+        );
+      })()}
       {region.populous && (
         <text x={x + w - 5} y={y + 25} textAnchor="end" fill="#facc15" fontSize="8" fontWeight="700">POP</text>
       )}
@@ -302,9 +367,10 @@ interface BoardProps {
   dimmedRegions?: RegionId[];
   pendingAction?: Action | null;
   onRegionClick?: (regionId: RegionId) => void;
+  myPower?: Power | null;
 }
 
-export default function Board({ state, highlightRegions, dimmedRegions, pendingAction }: BoardProps) {
+export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
 
   const handleCardHover = useCallback((cardId: string | null, x: number, y: number) => {
@@ -351,14 +417,58 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         )}
       </svg>
 
-      {/* Invisible HTML drop-zone overlays (sits on top of SVG, pointer-events during drag) */}
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: isDragging ? 'all' : 'none' }}>
+      {/* Invisible HTML overlays — drop zones during drag, click zones when onRegionClick provided */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: (isDragging || !!onRegionClick) ? 'all' : 'none' }}>
         {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).map(
           ([regionId, pos]) => (
-            <RegionDropZone key={regionId} regionId={regionId} pos={pos} />
+            <RegionDropZone
+              key={regionId}
+              regionId={regionId}
+              pos={pos}
+              onClick={onRegionClick ? () => onRegionClick(regionId) : undefined}
+              active={isDragging || !!onRegionClick}
+            />
           ),
         )}
       </div>
+
+      {/* Draggable HTML overlays for on-board figures belonging to myPower */}
+      {myPower && (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).flatMap(
+            ([regionId, pos]) => {
+              const region = state.regions[regionId];
+              if (!region) return [];
+              const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
+              const RANK_ORDER: Record<string, number> = { incarnation: 0, warrior: 1, cultist: 2 };
+              const sorted = [...region.placements].sort((a, b) => {
+                const pa = POWER_ORDER[a.power] ?? 99;
+                const pb = POWER_ORDER[b.power] ?? 99;
+                if (pa !== pb) return pa - pb;
+                return (RANK_ORDER[a.class] ?? 9) - (RANK_ORDER[b.class] ?? 9);
+              });
+              const figX = pos.x + 4;
+              const figY = pos.y + 58;
+              return sorted.slice(0, 9).flatMap((fig, i) => {
+                if ((fig.controlledBy ?? fig.power) !== myPower) return [];
+                const col = i % 5;
+                const row = Math.floor(i / 5);
+                const svgX = figX + col * 18 + 9;
+                const svgY = figY + row * 18 + 9;
+                return [
+                  <DraggableFigureOverlay
+                    key={fig.id}
+                    fig={fig}
+                    fromRegion={regionId}
+                    svgX={svgX}
+                    svgY={svgY}
+                  />,
+                ];
+              });
+            }
+          )}
+        </div>
+      )}
 
       {tooltip && <CardTooltip cardId={tooltip.cardId} x={tooltip.x} y={tooltip.y} />}
     </div>

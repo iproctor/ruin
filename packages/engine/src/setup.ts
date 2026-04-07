@@ -96,6 +96,7 @@ export function createInitialState(config: GameConfig): GameState {
       availableUpgradeIds,
       claimedPeasants: 0,
       passedSummoning: false,
+      pendingForcedDiscards: 0,
       followers,
     };
   }
@@ -116,6 +117,7 @@ export function createInitialState(config: GameConfig): GameState {
     summoningOrder: POWER_ORDER.filter(p => activePowers.includes(p)),
     summoningIndex: 0,
     battleState: null,
+    pendingDialRewards: null,
     rngSeed: seed,
     actionCount: 0,
     winners: null,

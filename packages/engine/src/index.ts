@@ -3,20 +3,24 @@
 export type {
   GameState, Power, Phase, RegionId, FollowerClass, TokenType, PlayerType,
   WinCondition, FollowerInstance, PlayedCard, RegionState, PowerState,
-  PendingAction, ActionKind, BattleRoll, BattleState, WorldTrack, TokenSupply,
+  PendingAction, ActionKind, BattleRoll, BattleState, BattleNextStep, WorldTrack, TokenSupply,
   WinResult, Action,
   TenzenDiscardAction, SummonFigureAction, PlayCardAction, SummoningPassAction,
   WorldChoiceAction, HeroRemovalAction, WorldCardEffectAction, UpgradeChoiceAction,
-  CorruptionHarvestChoiceAction, CardOnPlayChoiceAction,
+  CorruptionHarvestChoiceAction, CardOnPlayChoiceAction, ForcedDiscardAction,
+  BattleHitAssignmentAction,
+  DialPendingReward,
+  DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
 } from './types.js';
 
 export { createInitialState } from './setup.js';
 export type { GameConfig } from './setup.js';
 
-export { applyAction, autoAdvance } from './reducers.js';
+export { applyAction, applyActionForPreview, autoAdvance } from './reducers.js';
 export type { ApplyResult } from './reducers.js';
 
 export { getLegalActions } from './legalActions.js';
+export { getRegionDominationLeader, getRegionDomination } from './phases/corruption.js';
 export { checkVictory } from './victory.js';
 
 export { makeRng, rollDice, rollWithExplosions, countHits, shuffle } from './dice.js';
@@ -24,7 +28,7 @@ export type { Rng } from './dice.js';
 
 export {
   CARD_BY_ID, WORLD_CARD_BY_ID, UPGRADE_BY_ID,
-  CHAOS_CARDS, WORLD_CARDS, UPGRADES,
+  CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS,
   REGIONS, REGION_ORDER,
   THREAT_DIALS,
 } from './constants.js';

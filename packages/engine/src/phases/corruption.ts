@@ -8,6 +8,39 @@ import {
   magicSymbolCount, totalCorruption,
 } from '../helpers.js';
 
+// ─── Public helper ────────────────────────────────────────────────────────────
+
+/**
+ * Returns the power currently leading domination in a region, or null if the
+ * region is ruined, nobody has any presence, or there is a tie for the lead.
+ */
+export function getRegionDominationLeader(state: GameState, regionId: RegionId): Power | null {
+  return getRegionDomination(state, regionId).leader;
+}
+
+/** Returns the leading power and their domination value, or null if ruined/tied/zero. */
+export function getRegionDomination(
+  state: GameState,
+  regionId: RegionId,
+): { leader: Power | null; value: number } {
+  const region = state.regions[regionId]!;
+  if (region.ruinationCardIndex !== null) return { leader: null, value: 0 };
+  const nullWeave = regionCardActive(state, regionId, 'tenzen_null_weave');
+  const domValues = new Map<Power, number>();
+  // Use all 4 powers so figures placed via card effects are always included
+  const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+  for (const power of allPowers) {
+    domValues.set(power, calcDomination(state, regionId, power, nullWeave));
+  }
+  const vals = Array.from(domValues.values());
+  const maxDom = vals.length ? Math.max(...vals) : 0;
+  if (maxDom === 0) return { leader: null, value: 0 };
+  const resistance = calcResistance(state, regionId, nullWeave);
+  if (maxDom <= resistance) return { leader: null, value: 0 };
+  const leaders = allPowers.filter(p => domValues.get(p) === maxDom);
+  return { leader: leaders.length === 1 ? leaders[0]! : null, value: maxDom };
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 export function resolveCorruptionPhase(

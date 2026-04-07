@@ -83,6 +83,7 @@ export interface PowerState {
   availableUpgradeIds: string[]; // upgrade cards not yet played
   claimedPeasants: number;       // collected via battle (for Populist Rising)
   passedSummoning: boolean;
+  pendingForcedDiscards: number; // cards this power must discard at start of their next summoning turn
   followers: FollowerInstance[]; // all followers (on board + reserve)
 }
 
@@ -95,9 +96,13 @@ export type ActionKind =
   | 'hero_removal'             // forced figure removal from Hero token
   | 'world_card_effect'        // world card persistent effect requiring choice
   | 'upgrade_choice'           // dial instruction: choose an upgrade card
-  | 'battle_hit_assignment'    // (future) interactive hit assignment
+  | 'battle_hit_assignment'    // interactive hit assignment during battle
   | 'corruption_harvest_choice'// Gormen chooses which figures to kill
-  | 'card_on_play_choice';     // on-play card effect requiring player choice
+  | 'card_on_play_choice'      // on-play card effect requiring player choice
+  | 'forced_discard'           // player must discard N cards (deferred opponent effect)
+  | 'dial_place_token'         // dial reward: place a noble or chaos stone on any region
+  | 'dial_remove_corruption'   // dial reward: remove own corruption token from a region
+  | 'dial_remove_world_token'; // dial reward: remove a world token from a region
 
 export interface PendingAction {
   waitingFor: Power;
@@ -115,11 +120,26 @@ export interface BattleRoll {
   assignments: Array<{ followerId: string }>;
 }
 
+export type BattleNextStep =
+  | { type: 'normal_battle'; powerIndex: number }
+  | { type: 'undying_fury';  powerIndex: number }
+  | { type: 'post_normal' }
+  | { type: 'post_undying' };
+
 export interface BattleState {
   regionOrder: RegionId[];          // remaining regions to resolve
   currentRegionIndex: number;
   log: string[];
+  nextStep: BattleNextStep | null;  // null = not paused for hit choice
 }
+
+// ─── Dial pending rewards (queued interactive end-phase rewards) ──────────────
+
+export type DialPendingReward =
+  | { kind: 'upgrade_choice';        power: Power }
+  | { kind: 'place_token';           power: Power; tokenType: 'noble' | 'chaos_stone'; remaining: number }
+  | { kind: 'remove_corruption';     power: Power; remaining: number }
+  | { kind: 'remove_world_tokens';   power: Power; remaining: number };
 
 // ─── World track ──────────────────────────────────────────────────────────────
 
@@ -157,6 +177,7 @@ export interface GameState {
 
   // Transient
   battleState: BattleState | null;
+  pendingDialRewards: DialPendingReward[] | null; // queue of end-phase dial rewards awaiting player choices
 
   // Replay / RNG
   rngSeed: number;
@@ -253,6 +274,38 @@ export interface CardOnPlayChoiceAction {
   choices: Record<string, unknown>;
 }
 
+export interface ForcedDiscardAction {
+  kind: 'forced_discard';
+  power: Power;
+  cardIds: string[];  // cards chosen to discard (length must equal min(pendingForcedDiscards, hand.length))
+}
+
+export interface BattleHitAssignmentAction {
+  kind: 'battle_hit_assignment';
+  power: Power;
+  regionId: RegionId;
+  followerIds: string[]; // enemy figures the attacker chooses to kill (total defense must be <= hitsRemaining)
+}
+
+export interface DialPlaceTokenAction {
+  kind: 'dial_place_token';
+  power: Power;
+  regionId: RegionId;
+}
+
+export interface DialRemoveCorruptionAction {
+  kind: 'dial_remove_corruption';
+  power: Power;
+  regionId: RegionId;
+}
+
+export interface DialRemoveWorldTokenAction {
+  kind: 'dial_remove_world_token';
+  power: Power;
+  regionId: RegionId;
+  tokenType: TokenType;
+}
+
 export type Action =
   | TenzenDiscardAction
   | SummonFigureAction
@@ -263,4 +316,9 @@ export type Action =
   | WorldCardEffectAction
   | UpgradeChoiceAction
   | CorruptionHarvestChoiceAction
-  | CardOnPlayChoiceAction;
+  | CardOnPlayChoiceAction
+  | ForcedDiscardAction
+  | DialPlaceTokenAction
+  | DialRemoveCorruptionAction
+  | DialRemoveWorldTokenAction
+  | BattleHitAssignmentAction;

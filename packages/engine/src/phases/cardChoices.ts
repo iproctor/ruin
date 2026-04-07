@@ -69,16 +69,12 @@ export function applyCardOnPlayChoice(
     }
 
     // ── Tenzen: Stolen Thoughts ───────────────────────────────────────────────
-    // Target opponent discards 2 chaos cards (auto: discard last 2 in hand)
+    // Queue a forced discard on the target — they choose on their next summoning turn
     case 'tenzen_stolen_thoughts': {
       const targetPower = choices['targetPower'] as Power;
-      const tp = s.powers[targetPower]!;
-      const toDiscard = tp.hand.slice(-2);
-      s = updatePower(s, targetPower, {
-        hand: tp.hand.slice(0, -toDiscard.length),
-        discardIds: [...tp.discardIds, ...toDiscard],
-      });
-      log.push(`Stolen Thoughts: ${targetPower} discards ${toDiscard.length} card(s).`);
+      const current = s.powers[targetPower]!.pendingForcedDiscards;
+      s = updatePower(s, targetPower, { pendingForcedDiscards: current + 2 });
+      log.push(`Stolen Thoughts: ${targetPower} must discard 2 cards on their next turn.`);
       break;
     }
 

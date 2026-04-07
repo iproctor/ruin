@@ -1,8 +1,8 @@
-import type { GameState, Action } from './types.js';
+import type { GameState, Action, Power, DialPendingReward } from './types.js';
 import { resolveWorldPhase, applyWorldChoice } from './phases/world.js';
 import { beginDrawPhase, applyTenzenDiscard } from './phases/draw.js';
 import { applySummonFigure, applyPlayCard, applySummoningPass } from './phases/summoning.js';
-import { resolveBattlePhase, applyCorruptionHarvestChoice } from './phases/battle.js';
+import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
 import { resolveEndPhase } from './phases/end.js';
 import { applyCardOnPlayChoice } from './phases/cardChoices.js';
@@ -14,19 +14,25 @@ export interface ApplyResult {
 }
 
 /**
- * Apply a player action or advance an autonomous phase.
- * Increments actionCount on every call for RNG determinism.
+ * Apply a player action without auto-advancing autonomous phases.
+ * Use this for client-side preview so the display doesn't race ahead through
+ * battle/corruption/end phases before the action is submitted to the server.
  */
-export function applyAction(state: GameState, action: Action): ApplyResult {
+export function applyActionForPreview(state: GameState, action: Action): ApplyResult {
   let s = { ...state, actionCount: state.actionCount + 1 };
-
-  // Validate that the action is from the right power
   if (s.pendingAction && s.pendingAction.waitingFor !== action.power) {
-    throw new Error(
-      `Action from ${action.power} but waiting for ${s.pendingAction.waitingFor}`
-    );
+    throw new Error(`Action from ${action.power} but waiting for ${s.pendingAction.waitingFor}`);
   }
+  return applyActionSwitch(s, action);
+}
 
+/** Remove the first item from the dial rewards queue; returns null when empty. */
+function popDialReward(queue: DialPendingReward[] | null): DialPendingReward[] | null {
+  if (!queue || queue.length <= 1) return null;
+  return queue.slice(1);
+}
+
+function applyActionSwitch(s: GameState, action: Action): ApplyResult {
   let result: ApplyResult;
 
   switch (action.kind) {
@@ -54,9 +60,39 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       result = applyCorruptionHarvestChoice(s, action);
       break;
 
+    case 'battle_hit_assignment':
+      result = applyBattleHitAssignment(s, action);
+      break;
+
     case 'card_on_play_choice':
       result = applyCardOnPlayChoice(s, action);
       break;
+
+    case 'forced_discard': {
+      const p = s.powers[action.power as Power]!;
+      const required = Math.min(p.pendingForcedDiscards, p.hand.length);
+      const toDiscard = action.cardIds.filter(id => p.hand.includes(id)).slice(0, required);
+      s = {
+        ...s,
+        powers: {
+          ...s.powers,
+          [action.power]: {
+            ...p,
+            hand: p.hand.filter(id => !toDiscard.includes(id)),
+            discardIds: [...p.discardIds, ...toDiscard],
+            pendingForcedDiscards: 0,
+          },
+        },
+        // Give this power their summoning turn now
+        pendingAction: {
+          waitingFor: action.power as Power,
+          actionKind: 'summoning_action',
+          context: {},
+        },
+      };
+      result = { state: s, log: [`${action.power} discards ${toDiscard.length} card(s) (Stolen Thoughts).`] };
+      break;
+    }
 
     case 'upgrade_choice': {
       const p = s.powers[action.power]!;
@@ -66,6 +102,7 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       s = {
         ...s,
         pendingAction: null,
+        pendingDialRewards: popDialReward(s.pendingDialRewards),
         powers: {
           ...s.powers,
           [action.power]: {
@@ -76,6 +113,79 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
         },
       };
       result = { state: s, log: [`${action.power} takes upgrade: ${action.upgradeCardId}.`] };
+      break;
+    }
+
+    case 'dial_place_token': {
+      const queue = s.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'place_token') throw new Error('No place_token reward pending');
+      const region = s.regions[action.regionId];
+      if (!region || region.ruinationCardIndex !== null) throw new Error(`Cannot place token on ${action.regionId}`);
+      s = {
+        ...s,
+        pendingAction: null,
+        regions: {
+          ...s.regions,
+          [action.regionId]: {
+            ...region,
+            tokens: [...region.tokens, reward.tokenType],
+          },
+        },
+        pendingDialRewards: reward.remaining <= 1
+          ? popDialReward(queue)
+          : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
+      };
+      result = { state: s, log: [`${action.power} (dial) places ${reward.tokenType} on ${action.regionId}.`] };
+      break;
+    }
+
+    case 'dial_remove_corruption': {
+      const queue = s.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'remove_corruption') throw new Error('No remove_corruption reward pending');
+      const region = s.regions[action.regionId]!;
+      const curr = region.corruptionTokens[action.power];
+      if (curr <= 0) throw new Error(`No ${action.power} corruption in ${action.regionId}`);
+      s = {
+        ...s,
+        pendingAction: null,
+        regions: {
+          ...s.regions,
+          [action.regionId]: {
+            ...region,
+            corruptionTokens: { ...region.corruptionTokens, [action.power]: curr - 1 },
+          },
+        },
+        pendingDialRewards: reward.remaining <= 1
+          ? popDialReward(queue)
+          : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
+      };
+      result = { state: s, log: [`${action.power} (dial) removes 1 corruption from ${action.regionId}.`] };
+      break;
+    }
+
+    case 'dial_remove_world_token': {
+      const queue = s.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'remove_world_tokens') throw new Error('No remove_world_tokens reward pending');
+      const region = s.regions[action.regionId]!;
+      const idx = region.tokens.lastIndexOf(action.tokenType);
+      if (idx === -1 || action.tokenType === 'chaos_stone') throw new Error(`No removable ${action.tokenType} in ${action.regionId}`);
+      const tokens = [...region.tokens];
+      tokens.splice(idx, 1);
+      s = {
+        ...s,
+        pendingAction: null,
+        regions: {
+          ...s.regions,
+          [action.regionId]: { ...region, tokens },
+        },
+        pendingDialRewards: reward.remaining <= 1
+          ? popDialReward(queue)
+          : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
+      };
+      result = { state: s, log: [`${action.power} (dial) removes ${action.tokenType} from ${action.regionId}.`] };
       break;
     }
 
@@ -119,9 +229,25 @@ export function applyAction(state: GameState, action: Action): ApplyResult {
       throw new Error(`Unknown action kind: ${(action as Action).kind}`);
   }
 
-  // After action, check if we should auto-advance autonomous phases
-  result = autoAdvance(result);
   return result;
+}
+
+/**
+ * Apply a player action or advance an autonomous phase.
+ * Increments actionCount on every call for RNG determinism.
+ */
+export function applyAction(state: GameState, action: Action): ApplyResult {
+  let s = { ...state, actionCount: state.actionCount + 1 };
+
+  // Validate that the action is from the right power
+  if (s.pendingAction && s.pendingAction.waitingFor !== action.power) {
+    throw new Error(
+      `Action from ${action.power} but waiting for ${s.pendingAction.waitingFor}`
+    );
+  }
+
+  const result = applyActionSwitch(s, action);
+  return autoAdvance(result);
 }
 
 /**

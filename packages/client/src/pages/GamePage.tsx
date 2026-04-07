@@ -10,7 +10,8 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import type { Power, Action, RegionId, FollowerClass } from '@ruin/engine';
-import { applyAction, CARD_BY_ID } from '@ruin/engine';
+import type { DragItem } from '../types/drag.js';
+import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
@@ -19,15 +20,12 @@ import Board from '../components/Board.js';
 import StatusBar from '../components/StatusBar.js';
 import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
-import ActionPanel from '../components/ActionPanel.js';
+import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
 
-export type DragItem =
-  | { kind: 'reserve_follower'; followerId: string; followerClass: FollowerClass; power: Power }
-  | { kind: 'board_follower';   followerId: string; followerClass: FollowerClass; power: Power; fromRegion: RegionId }
-  | { kind: 'hand_card';        cardId: string; power: Power };
+export type { DragItem } from '../types/drag.js';
 
 // ── DragGhost — what renders under the cursor while dragging ──────────────────
 
@@ -76,11 +74,12 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
   const { state: streamState, eventLog, chat, connected } = useGameStream(gameId);
 
-  const [pendingAction, setPendingAction]   = useState<Action | null>(null);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [submitError, setSubmitError]       = useState('');
-  const [submitting, setSubmitting]         = useState(false);
-  const [activeDrag, setActiveDrag]         = useState<DragItem | null>(null);
+  const [pendingAction, setPendingAction]         = useState<Action | null>(null);
+  const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
+  const [selectedCardId, setSelectedCardId]       = useState<string | null>(null);
+  const [submitError, setSubmitError]             = useState('');
+  const [submitting, setSubmitting]               = useState(false);
+  const [activeDrag, setActiveDrag]               = useState<DragItem | null>(null);
 
   // Merge SSE state; clear pending action if phase changed or it's no longer our turn
   useEffect(() => {
@@ -93,40 +92,65 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
       streamState.phase === 'summoning';
     if (!stillMyTurn) {
       setPendingAction(null);
+      setPendingOnPlayChoice(null);
       setSelectedCardId(null);
     }
   }, [streamState, myPowers, setState]);
 
-  // displayState = serverState with pending action applied (preview)
+  // displayState = serverState + pendingAction (+ pendingOnPlayChoice if set)
+  // Use applyActionForPreview (no autoAdvance) so the tableau shows the immediate
+  // board/PP changes without racing through battle → corruption → end phases.
   const displayState = useMemo(() => {
     if (!serverState) return null;
-    if (!pendingAction) return serverState;
-    try {
-      return applyAction(serverState, pendingAction).state;
-    } catch {
-      return serverState;
+    let s = serverState;
+    if (pendingAction) {
+      try { s = applyActionForPreview(s, pendingAction).state; } catch { /* ignore */ }
     }
-  }, [serverState, pendingAction]);
+    if (pendingOnPlayChoice) {
+      try { s = applyActionForPreview(s, pendingOnPlayChoice).state; } catch { /* ignore */ }
+    }
+    return s;
+  }, [serverState, pendingAction, pendingOnPlayChoice]);
 
-  // Valid drop target regions depend on what's being dragged
+  // myPower: hoisted before validDropRegions (a memo) so both run in the hooks section.
+  // If a buffered action exists, lock to that power; otherwise use server's acting player.
+  const myPowerEarly: Power | null = pendingAction
+    ? (pendingAction as { power: Power }).power
+    : (serverState?.pendingAction?.waitingFor && myPowers.includes(serverState.pendingAction.waitingFor))
+      ? serverState.pendingAction.waitingFor
+      : null;
+
+  // Valid drop target regions — derived from getLegalActions so placement rules are respected
   const validDropRegions = useMemo((): Set<RegionId> | null => {
-    if (!activeDrag || !displayState) return null;
-    const all = displayState.activePowers
-      .flatMap(() => Object.keys(displayState.regions)) as RegionId[];
-    const nonRuined = all.filter((r) => displayState.regions[r]!.ruinationCardIndex === null);
+    if (!activeDrag || !displayState || !myPowerEarly) return null;
 
     if (activeDrag.kind === 'hand_card') {
-      // Valid if region has at least one empty card slot
-      return new Set(nonRuined.filter((r) => {
-        const cards = displayState.regions[r]!.chaosCards;
-        return cards[0] === null || cards[1] === null;
-      }));
+      // Valid if region has an empty card slot and is not ruined
+      return new Set(
+        (Object.keys(displayState.regions) as RegionId[]).filter((r) => {
+          const region = displayState.regions[r]!;
+          if (region.ruinationCardIndex !== null) return false;
+          return region.chaosCards[0] === null || region.chaosCards[1] === null;
+        })
+      );
     }
-    if (activeDrag.kind === 'board_follower') {
-      return new Set(nonRuined.filter((r) => r !== activeDrag.fromRegion));
+
+    // For follower drags (reserve or board), consult legal actions for valid toRegions
+    if (activeDrag.kind === 'reserve_follower' || activeDrag.kind === 'board_follower') {
+      const legal = getLegalActions(displayState, myPowerEarly);
+      return new Set(
+        legal
+          .filter(
+            (a) =>
+              a.kind === 'summoning_summon_figure' &&
+              a.followerId === activeDrag.followerId
+          )
+          .map((a) => (a as { toRegion: RegionId }).toRegion)
+      );
     }
-    return new Set(nonRuined);
-  }, [activeDrag, displayState]);
+
+    return null;
+  }, [activeDrag, displayState, myPowerEarly]);
 
   const highlightRegions = validDropRegions
     ? (Object.keys(displayState?.regions ?? {}) as RegionId[])
@@ -189,19 +213,22 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
     setSubmitError('');
     setSubmitting(true);
     try {
+      let latest = serverState!;
       if (pendingAction) {
-        const s1 = await submitAction(gameId, pendingAction);
-        setState(s1);
+        latest = await submitAction(gameId, pendingAction);
+        setState(latest);
         setPendingAction(null);
         setSelectedCardId(null);
-        // If it's still our turn, pass now
-        if (s1.pendingAction?.waitingFor === acting) {
-          const s2 = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
-          setState(s2);
-        }
-      } else {
-        const s = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
-        setState(s);
+      }
+      if (pendingOnPlayChoice) {
+        latest = await submitAction(gameId, pendingOnPlayChoice);
+        setState(latest);
+        setPendingOnPlayChoice(null);
+      }
+      // Pass if still our turn
+      if (latest.pendingAction?.waitingFor === acting && latest.pendingAction?.actionKind === 'summoning_action') {
+        const sPass = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
+        setState(sPass);
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
@@ -211,8 +238,12 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
   }
 
   function handleUndo() {
-    setPendingAction(null);
-    setSelectedCardId(null);
+    if (pendingOnPlayChoice) {
+      setPendingOnPlayChoice(null);
+    } else {
+      setPendingAction(null);
+      setSelectedCardId(null);
+    }
   }
 
   // Non-summoning actions go directly to server
@@ -258,6 +289,28 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
   const isMyTurn        = myPower !== null;
   const isSummoningTurn = isMyTurn && serverPending?.actionKind === 'summoning_action';
 
+  // After applying pendingAction client-side, the engine may pause for an on-play choice
+  const afterPlayPending = pendingAction ? displayState.pendingAction : null;
+  const needsOnPlayChoice = !!pendingAction && afterPlayPending?.actionKind === 'card_on_play_choice';
+  const onPlayContext = needsOnPlayChoice ? (afterPlayPending!.context ?? {}) : null;
+
+  // When choosing a destination region for the on-play choice, highlight all valid regions
+  // (all except source) and enable board clicks
+  const onPlaySourceRegion = onPlayContext ? (onPlayContext['regionId'] as RegionId | undefined) : undefined;
+  const onPlayHighlight = needsOnPlayChoice && !pendingOnPlayChoice
+    ? (Object.keys(displayState.regions) as RegionId[]).filter(r => r !== onPlaySourceRegion)
+    : undefined;
+
+  function handleOnPlayChoice(action: Action) {
+    setPendingOnPlayChoice(action);
+  }
+
+  function handleOnPlayRegionClick(regionId: RegionId) {
+    // Only used when the panel has already selected a token — handled inside the panel
+    // This is a fallback for direct map clicks; we rely on the panel for token selection
+    void regionId;
+  }
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
@@ -272,9 +325,11 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
           <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
             <Board
               state={displayState}
-              highlightRegions={activeDrag ? highlightRegions : undefined}
+              highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}
               dimmedRegions={activeDrag ? dimmedRegions : undefined}
               pendingAction={pendingAction}
+              onRegionClick={needsOnPlayChoice && !pendingOnPlayChoice ? handleOnPlayRegionClick : undefined}
+              myPower={isSummoningTurn && !pendingAction ? myPower : null}
             />
           </div>
 
@@ -287,6 +342,19 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
               onSendChat={handleChatSend}
               connected={connected}
             />
+
+            {/* On-play choice panel (client-buffered, shown over the summoning phase) */}
+            {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
+              <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <CardOnPlayChoicePanel
+                  state={displayState}
+                  myPower={myPower}
+                  context={onPlayContext as Record<string, unknown>}
+                  onAction={handleOnPlayChoice}
+                  onUndo={handleUndo}
+                />
+              </div>
+            )}
 
             {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
               <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
@@ -311,9 +379,9 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
             myPower={myPower}
             selectedCardId={selectedCardId}
             onSelectCard={setSelectedCardId}
-            pendingAction={pendingAction}
+            pendingAction={pendingOnPlayChoice ?? pendingAction}
             onUndo={handleUndo}
-            onEndTurn={isSummoningTurn ? handleEndTurn : undefined}
+            onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) ? handleEndTurn : undefined}
             submitError={submitError}
           />
         )}

@@ -315,7 +315,7 @@ describe('Tenzen Phase Shift (move figure to any region)', () => {
 // ─── On-play choice: Tenzen Stolen Thoughts ──────────────────────────────────
 
 describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
-  test('target opponent discards 2 cards', () => {
+  test('target opponent has 2 forced discards queued after Stolen Thoughts resolves', () => {
     let s = giveCards(makeState(), 'xarm', ['xarm_scorched_earth', 'xarm_war_frenzy', 'xarm_killing_ground']);
     s = giveCards(s, 'tenzen', ['tenzen_stolen_thoughts']);
     const { state: afterPlay } = applyPlayCard(s, {
@@ -326,7 +326,8 @@ describe('Tenzen Stolen Thoughts (opponent discards 2 cards)', () => {
       kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_stolen_thoughts',
       regionId: 'norrsund', choices: { targetPower: 'xarm' },
     });
-    expect(state.powers.xarm!.hand).toHaveLength(1); // 3 - 2 = 1
+    // Stolen Thoughts queues a forced discard on xarm's next turn (not immediate)
+    expect(state.powers.xarm!.pendingForcedDiscards).toBe(2);
   });
 });
 

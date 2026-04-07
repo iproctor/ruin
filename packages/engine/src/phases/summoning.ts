@@ -244,11 +244,58 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
     iterations++;
   }
 
+  const nextPower = activePowers[next]!;
+  const nextPs = state.powers[nextPower]!;
+
+  // If the next player has queued forced discards, handle them
+  if (nextPs.pendingForcedDiscards > 0) {
+    const required = Math.min(nextPs.pendingForcedDiscards, nextPs.hand.length);
+
+    // If they have more cards than required, they must choose — show the panel
+    if (nextPs.hand.length > required) {
+      return {
+        ...state,
+        summoningIndex: next,
+        pendingAction: {
+          waitingFor: nextPower,
+          actionKind: 'forced_discard',
+          context: { count: required },
+        },
+      };
+    }
+
+    // Otherwise auto-discard all (0 or <= required cards — no meaningful choice)
+    const toDiscard = nextPs.hand.slice(0, required);
+    const autoState = {
+      ...state,
+      powers: {
+        ...state.powers,
+        [nextPower]: {
+          ...nextPs,
+          hand: nextPs.hand.slice(required),
+          discardIds: [...nextPs.discardIds, ...toDiscard],
+          pendingForcedDiscards: 0,
+        },
+      },
+    };
+    return {
+      ...autoState,
+      summoningIndex: next,
+      pendingAction: {
+        waitingFor: nextPower,
+        actionKind: 'summoning_action',
+        context: {},
+      },
+    };
+  }
+
+  const clearedState = state;
+
   return {
-    ...state,
+    ...clearedState,
     summoningIndex: next,
     pendingAction: {
-      waitingFor: activePowers[next]!,
+      waitingFor: nextPower,
       actionKind: 'summoning_action',
       context: {},
     },

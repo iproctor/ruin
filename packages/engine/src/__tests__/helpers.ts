@@ -10,6 +10,9 @@ import {
   REGIONS, REGION_ORDER, FOLLOWERS, BASE_POWER_POINTS,
   UPGRADES, THREAT_DIALS,
 } from '../constants.js';
+import { applyAction } from '../reducers.js';
+import { applyBattleHitAssignment } from '../phases/battle.js';
+import { resolveEndPhase } from '../phases/end.js';
 
 // ─── Follower factories ───────────────────────────────────────────────────────
 
@@ -58,6 +61,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       availableUpgradeIds: UPGRADES.filter(u => u.power === power).map(u => u.id),
       claimedPeasants: 0,
       passedSummoning: false,
+      pendingForcedDiscards: 0,
       followers: makeFollowers(power),
     };
   };
@@ -102,6 +106,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
     summoningOrder: [...allPowers],
     summoningIndex: 0,
     battleState: null,
+    pendingDialRewards: null,
     rngSeed: 42,
     actionCount: 0,
     winners: null,
@@ -341,6 +346,121 @@ export function setWorldCard(
     ...state,
     worldTrack: { ...state.worldTrack, [slot]: cardId },
   };
+}
+
+/**
+ * Drive a battle to completion by automatically assigning hits to the cheapest
+ * available enemy figures (greedy lowest-defense-first). Handles any number of
+ * sequential `battle_hit_assignment` pending actions that arise from interactive
+ * battle resolution.
+ */
+export function autoResolveBattle(
+  result: { state: GameState; log: string[] },
+): { state: GameState; log: string[] } {
+  const DEFENSE: Record<string, number> = { cultist: 1, warrior: 2, incarnation: 3 };
+  let { state: s, log } = result;
+  let iters = 0;
+
+  while (s.pendingAction?.actionKind === 'battle_hit_assignment' && iters < 200) {
+    const ctx = s.pendingAction.context;
+    const regionId = ctx['regionId'] as RegionId;
+    const hitsRemaining = ctx['hitsRemaining'] as number;
+    const power = s.pendingAction.waitingFor;
+
+    // Greedily pick cheapest enemies up to hitsRemaining
+    const enemies = s.regions[regionId]!.placements
+      .filter(f => (f.controlledBy ?? f.power) !== power && !f.tipped && !f.protected)
+      .sort((a, b) => (DEFENSE[a.class] ?? 1) - (DEFENSE[b.class] ?? 1));
+
+    let remaining = hitsRemaining;
+    const chosen: string[] = [];
+    for (const f of enemies) {
+      const def = DEFENSE[f.class] ?? 1;
+      if (def <= remaining) { chosen.push(f.id); remaining -= def; }
+    }
+
+    const next = applyBattleHitAssignment(s, {
+      kind: 'battle_hit_assignment', power, regionId, followerIds: chosen,
+    });
+    s = next.state;
+    log = [...log, ...next.log];
+    iters++;
+  }
+
+  return { state: s, log };
+}
+
+/**
+ * Drive the end phase to completion by auto-resolving any interactive dial
+ * reward choices:
+ *   - upgrade_choice: pick the first available upgrade
+ *   - place_token: pick the first non-ruined region
+ *   - remove_corruption: pick the first region with own tokens
+ *   - remove_world_tokens: pick the first removable token anywhere
+ *
+ * Returns the final resolved state (phase advanced to 'world' or 'completed').
+ */
+export function autoResolveEndPhase(
+  result: { state: GameState; log: string[] },
+): { state: GameState; log: string[] } {
+  let { state: s, log } = result;
+  let iters = 0;
+
+  while (s.pendingDialRewards !== null && iters < 100) {
+    const pending = s.pendingAction;
+    if (!pending) break;
+    const power = pending.waitingFor;
+
+    let next: { state: GameState; log: string[] };
+
+    switch (pending.actionKind) {
+      case 'upgrade_choice': {
+        const upgradeId = s.powers[power]!.availableUpgradeIds[0];
+        if (!upgradeId) break;
+        next = applyAction(s, { kind: 'upgrade_choice', power, upgradeCardId: upgradeId });
+        s = next.state; log = [...log, ...next.log];
+        break;
+      }
+      case 'dial_place_token': {
+        const region = REGION_ORDER.find(r => s.regions[r]!.ruinationCardIndex === null);
+        if (!region) break;
+        next = applyAction(s, { kind: 'dial_place_token', power, regionId: region });
+        s = next.state; log = [...log, ...next.log];
+        break;
+      }
+      case 'dial_remove_corruption': {
+        const region = REGION_ORDER.find(r => s.regions[r]!.corruptionTokens[power] > 0);
+        if (!region) break;
+        next = applyAction(s, { kind: 'dial_remove_corruption', power, regionId: region });
+        s = next.state; log = [...log, ...next.log];
+        break;
+      }
+      case 'dial_remove_world_token': {
+        for (const regionId of REGION_ORDER) {
+          const token = s.regions[regionId]!.tokens.find(t => t !== 'chaos_stone');
+          if (token) {
+            next = applyAction(s, { kind: 'dial_remove_world_token', power, regionId, tokenType: token });
+            s = next.state; log = [...log, ...next.log];
+            break;
+          }
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    iters++;
+  }
+
+  // If the phase is still 'end' but no pending rewards, run the end phase once more
+  // (e.g., to advance to the next round after all choices are resolved).
+  if (s.phase === 'end' && s.pendingDialRewards === null && !s.pendingAction) {
+    const next = resolveEndPhase(s);
+    s = next.state;
+    log = [...log, ...next.log];
+  }
+
+  return { state: s, log };
 }
 
 /** Convenience: followers of a power in a region. */

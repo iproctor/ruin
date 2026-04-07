@@ -2,7 +2,8 @@ import type {
   GameState, Power, Action, RegionId,
   SummonFigureAction, PlayCardAction, SummoningPassAction,
   TenzenDiscardAction, WorldChoiceAction, CorruptionHarvestChoiceAction,
-  UpgradeChoiceAction, CardOnPlayChoiceAction, TokenType,
+  UpgradeChoiceAction, CardOnPlayChoiceAction, TokenType, BattleHitAssignmentAction,
+  DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
 } from './types.js';
 import { REGION_ORDER, CARD_BY_ID, UPGRADES, ADJACENCY } from './constants.js';
 import {
@@ -32,6 +33,69 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
 
     case 'card_on_play_choice':
       return getCardOnPlayChoiceActions(state, power);
+
+    case 'forced_discard': {
+      const ps = state.powers[power]!;
+      const required = Math.min(ps.pendingForcedDiscards, ps.hand.length);
+      const hand = ps.hand.filter(c => c !== '?');
+      // Return one canonical action per card as a selection hint; client enforces count
+      return hand.map(cardId => ({
+        kind: 'forced_discard' as const,
+        power,
+        cardIds: [cardId],
+      }));
+    }
+
+    case 'dial_place_token': {
+      const queue = state.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'place_token') return [];
+      return REGION_ORDER
+        .filter(r => state.regions[r]!.ruinationCardIndex === null)
+        .map(regionId => ({ kind: 'dial_place_token' as const, power, regionId } satisfies DialPlaceTokenAction));
+    }
+
+    case 'dial_remove_corruption': {
+      const queue = state.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'remove_corruption') return [];
+      return REGION_ORDER
+        .filter(r => state.regions[r]!.corruptionTokens[power] > 0)
+        .map(regionId => ({ kind: 'dial_remove_corruption' as const, power, regionId } satisfies DialRemoveCorruptionAction));
+    }
+
+    case 'dial_remove_world_token': {
+      const queue = state.pendingDialRewards ?? [];
+      const reward = queue[0];
+      if (!reward || reward.kind !== 'remove_world_tokens') return [];
+      const actions: DialRemoveWorldTokenAction[] = [];
+      for (const regionId of REGION_ORDER) {
+        const tokens = state.regions[regionId]!.tokens.filter(t => t !== 'chaos_stone');
+        for (const tokenType of new Set(tokens)) {
+          actions.push({ kind: 'dial_remove_world_token' as const, power, regionId, tokenType } satisfies DialRemoveWorldTokenAction);
+        }
+      }
+      return actions;
+    }
+
+    case 'battle_hit_assignment': {
+      const ctx = state.pendingAction!.context;
+      const regionId = ctx['regionId'] as RegionId;
+      const hitsRemaining = ctx['hitsRemaining'] as number;
+      const region = state.regions[regionId]!;
+      const enemies = region.placements.filter(f => {
+        const ctrl = f.controlledBy ?? f.power;
+        return ctrl !== power && !f.tipped && !f.protected;
+      });
+      // Return each individual figure as a valid action (player can select multiple)
+      // The UI handles enforcing the defense constraint
+      return enemies.map(f => ({
+        kind: 'battle_hit_assignment' as const,
+        power,
+        regionId,
+        followerIds: [f.id],
+      } satisfies BattleHitAssignmentAction));
+    }
 
     // world_choice, hero_removal, world_card_effect handled separately (they are
     // context-specific and validated by the phase resolvers rather than enumerated here)

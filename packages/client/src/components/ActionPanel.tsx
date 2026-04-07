@@ -6,6 +6,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
+import { FOLLOWERS, UPGRADES } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -114,6 +115,60 @@ export default function ActionPanel({
 
       {pending.actionKind === 'world_card_effect' && (
         <WorldCardEffectPanel
+          state={state}
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'card_on_play_choice' && (
+        <CardOnPlayChoicePanel
+          state={state}
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'forced_discard' && (
+        <ForcedDiscardPanel
+          hand={myState?.hand ?? []}
+          count={(pending.context['count'] as number | undefined) ?? 1}
+          onAction={onAction}
+          myPower={myPower}
+        />
+      )}
+
+      {pending.actionKind === 'battle_hit_assignment' && (
+        <BattleHitAssignmentPanel
+          state={state}
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'dial_place_token' && (
+        <DialPlaceTokenPanel
+          state={state}
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'dial_remove_corruption' && (
+        <DialRemoveCorruptionPanel
+          state={state}
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'dial_remove_world_token' && (
+        <DialRemoveWorldTokenPanel
           state={state}
           myPower={myPower}
           context={pending.context}
@@ -517,6 +572,500 @@ function HeroRemovalPanel({
   );
 }
 
+// ── Card on-play choice ───────────────────────────────────────────────────────
+
+const POWER_LABELS_LOCAL: Record<string, string> = {
+  xarm: 'Xarm', gormen: 'Gormen', tenzen: 'Tenzen', lasha: 'Lasha',
+};
+
+export function CardOnPlayChoicePanel({
+  state,
+  myPower,
+  context,
+  onAction,
+  onUndo,
+}: {
+  state: GameState;
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+  onUndo?: () => void;
+}) {
+  const cardId   = (context['cardId']   as string   | undefined) ?? '';
+  const regionId = (context['regionId'] as RegionId | undefined);
+
+  function submit(choices: Record<string, unknown>) {
+    if (!regionId) return;
+    onAction({ kind: 'card_on_play_choice', power: myPower, cardId, regionId, choices });
+  }
+
+  const cardTitle = formatId(cardId);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#a78bfa', fontWeight: 600 }}>
+        {cardTitle}
+      </div>
+
+      {cardId === 'tenzen_stolen_thoughts' && regionId && (
+        <StolenThoughtsPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
+      )}
+      {cardId === 'lasha_invisible_hand' && regionId && (
+        <InvisibleHandPanel state={state} regionId={regionId} onSubmit={submit} />
+      )}
+      {cardId === 'xarm_war_march' && regionId && (
+        <WarMarchPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
+      )}
+      {cardId === 'tenzen_phase_shift' && regionId && (
+        <PhaseShiftPanel state={state} regionId={regionId} onSubmit={submit} />
+      )}
+      {cardId === 'tenzen_fates_aegis' && regionId && (
+        <FatesAegisPanel state={state} myPower={myPower} regionId={regionId} onSubmit={submit} />
+      )}
+      {cardId === 'lasha_enthrallment' && regionId && (
+        <EnthrallmentPanel state={state} regionId={regionId} onSubmit={submit} />
+      )}
+
+      {onUndo && (
+        <button className="secondary" onClick={onUndo} style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+          Undo
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Stolen Thoughts: choose opponent to discard 2 cards ───────────────────────
+
+function StolenThoughtsPanel({
+  state, myPower, regionId, onSubmit,
+}: {
+  state: GameState; myPower: Power; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const region = state.regions[regionId];
+  const eligiblePowers = state.activePowers.filter(p =>
+    p !== myPower &&
+    (region?.placements ?? []).some(f => (f.controlledBy ?? f.power) === p) &&
+    (state.powers[p]?.hand.length ?? 0) > 0
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+        Choose opponent to discard 2 cards:
+      </div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {eligiblePowers.length === 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible opponents.</span>
+        )}
+        {eligiblePowers.map(p => (
+          <button key={p} className="danger"
+            onClick={() => onSubmit({ targetPower: p })}
+            style={{ fontSize: '0.8rem' }}
+          >
+            {POWER_LABELS_LOCAL[p] ?? p}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Invisible Hand: choose token + destination ────────────────────────────────
+
+function InvisibleHandPanel({
+  state, regionId, onSubmit,
+}: {
+  state: GameState; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const [chosenToken, setChosenToken] = useState<string | null>(null);
+  const [chosenRegion, setChosenRegion] = useState<RegionId | null>(null);
+
+  const TOKEN_TYPES = ['peasant', 'hero', 'noble'] as const;
+  const sourceTokens = TOKEN_TYPES.filter(t => (state.regions[regionId]?.tokens ?? []).includes(t));
+  const validDests = ALL_REGIONS.filter(r => r !== regionId);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+        Move a token from {REGION_LABELS[regionId]}:
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {sourceTokens.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No tokens here.</span>}
+        {sourceTokens.map(t => (
+          <button key={t} className={chosenToken === t ? 'primary' : 'secondary'}
+            onClick={() => { setChosenToken(t); setChosenRegion(null); }}
+            style={{ fontSize: '0.8rem', textTransform: 'capitalize' }}
+          >{t}</button>
+        ))}
+      </div>
+      {chosenToken && (
+        <>
+          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Destination:</div>
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+            {validDests.map(r => (
+              <button key={r} className={chosenRegion === r ? 'primary' : 'secondary'}
+                onClick={() => setChosenRegion(r)}
+                style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+              >{REGION_LABELS[r]}</button>
+            ))}
+          </div>
+          {chosenRegion && (
+            <button className="primary"
+              onClick={() => onSubmit({ token: chosenToken, fromRegion: regionId, toRegion: chosenRegion })}
+              style={{ fontSize: '0.8rem' }}
+            >
+              Move {chosenToken} → {REGION_LABELS[chosenRegion]}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── War March: choose up to 2 own figures from other regions ──────────────────
+
+function WarMarchPanel({
+  state, myPower, regionId, onSubmit,
+}: {
+  state: GameState; myPower: Power; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const moveable = state.powers[myPower]!.followers.filter(
+    f => f.regionId !== null && f.regionId !== regionId
+  );
+
+  function toggle(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else if (next.size < 2) { next.add(id); }
+      return next;
+    });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+        Choose up to 2 figures to move here (selected: {selected.size}):
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No figures to move.</span>}
+        {moveable.map(f => (
+          <button key={f.id} className={selected.has(f.id) ? 'primary' : 'secondary'}
+            onClick={() => toggle(f.id)}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+          >
+            {formatId(f.class)} in {f.regionId ? REGION_LABELS[f.regionId] : '?'}
+          </button>
+        ))}
+      </div>
+      {selected.size > 0 && (
+        <button className="primary"
+          onClick={() => onSubmit({ followerIds: Array.from(selected) })}
+          style={{ fontSize: '0.8rem' }}
+        >
+          Move {selected.size} figure{selected.size > 1 ? 's' : ''} here
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Phase Shift: choose cultist or warrior in region + destination ─────────────
+
+function PhaseShiftPanel({
+  state, regionId, onSubmit,
+}: {
+  state: GameState; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const [chosenFig, setChosenFig] = useState<string | null>(null);
+  const [chosenRegion, setChosenRegion] = useState<RegionId | null>(null);
+
+  const moveable = (state.regions[regionId]?.placements ?? []).filter(
+    f => f.class === 'cultist' || f.class === 'warrior'
+  );
+  const validDests = ALL_REGIONS.filter(r => r !== regionId);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Choose figure to move:</div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible figures.</span>}
+        {moveable.map(f => (
+          <button key={f.id} className={chosenFig === f.id ? 'primary' : 'secondary'}
+            onClick={() => { setChosenFig(f.id); setChosenRegion(null); }}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+          >
+            {POWER_LABELS_LOCAL[f.power] ?? f.power} {formatId(f.class)}
+          </button>
+        ))}
+      </div>
+      {chosenFig && (
+        <>
+          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Destination:</div>
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+            {validDests.map(r => (
+              <button key={r} className={chosenRegion === r ? 'primary' : 'secondary'}
+                onClick={() => setChosenRegion(r)}
+                style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+              >{REGION_LABELS[r]}</button>
+            ))}
+          </div>
+          {chosenRegion && (
+            <button className="primary"
+              onClick={() => onSubmit({ followerId: chosenFig, toRegion: chosenRegion })}
+              style={{ fontSize: '0.8rem' }}
+            >
+              Move → {REGION_LABELS[chosenRegion]}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Fate's Aegis: choose one of your figures to protect ──────────────────────
+
+function FatesAegisPanel({
+  state, myPower, regionId, onSubmit,
+}: {
+  state: GameState; myPower: Power; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const figures = (state.regions[regionId]?.placements ?? []).filter(
+    f => (f.controlledBy ?? f.power) === myPower
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+        Choose a figure to protect this battle:
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {figures.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No figures here.</span>}
+        {figures.map(f => (
+          <button key={f.id} className="primary"
+            onClick={() => onSubmit({ followerId: f.id })}
+            style={{ fontSize: '0.8rem' }}
+          >
+            {formatId(f.class)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Enthrallment: choose an enemy cultist to control ─────────────────────────
+
+function EnthrallmentPanel({
+  state, regionId, onSubmit,
+}: {
+  state: GameState; regionId: RegionId;
+  onSubmit: (choices: Record<string, unknown>) => void;
+}) {
+  const targets = (state.regions[regionId]?.placements ?? []).filter(
+    f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== 'lasha'
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+        Choose an enemy cultist to control:
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {targets.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible cultists.</span>}
+        {targets.map(f => (
+          <button key={f.id} className="primary"
+            onClick={() => onSubmit({ followerId: f.id })}
+            style={{ fontSize: '0.8rem' }}
+          >
+            {POWER_LABELS_LOCAL[f.power] ?? f.power} Cultist
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Forced discard (Stolen Thoughts deferred) ─────────────────────────────────
+
+function ForcedDiscardPanel({
+  hand,
+  count,
+  onAction,
+  myPower,
+}: {
+  hand: string[];
+  count: number;
+  onAction: (action: Action) => void;
+  myPower: Power;
+}) {
+  // Track by index to handle duplicate card IDs correctly
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  const visibleEntries = hand
+    .map((cardId, i) => ({ cardId, i }))
+    .filter(e => e.cardId !== '?');
+
+  function toggle(idx: number) {
+    setSelectedIndices(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) {
+        next.delete(idx);
+      } else if (next.size < count) {
+        next.add(idx);
+      }
+      return next;
+    });
+  }
+
+  function handleConfirm() {
+    const cardIds = Array.from(selectedIndices).map(i => hand[i]!);
+    onAction({ kind: 'forced_discard', power: myPower, cardIds });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
+        Stolen Thoughts — choose {count} card{count !== 1 ? 's' : ''} to discard ({selectedIndices.size}/{count} selected):
+      </div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {visibleEntries.map(({ cardId, i }) => (
+          <button
+            key={i}
+            className={selectedIndices.has(i) ? 'danger' : 'secondary'}
+            onClick={() => toggle(i)}
+            style={{ fontSize: '0.8rem' }}
+          >
+            {formatId(cardId)}
+          </button>
+        ))}
+      </div>
+      {selectedIndices.size === count && (
+        <button className="danger" onClick={handleConfirm}>
+          Discard {count} card{count !== 1 ? 's' : ''}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Battle hit assignment ─────────────────────────────────────────────────────
+
+function BattleHitAssignmentPanel({
+  state,
+  myPower,
+  context,
+  onAction,
+}: {
+  state: GameState;
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+}) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const regionId = context['regionId'] as RegionId | undefined;
+  const hitsRemaining = (context['hitsRemaining'] as number | undefined) ?? 0;
+  if (!regionId) return null;
+  const safeRegionId: RegionId = regionId;
+
+  const region = state.regions[safeRegionId]!;
+  const targets = region.placements.filter(f => {
+    const ctrl = f.controlledBy ?? f.power;
+    return ctrl !== myPower && !f.tipped && !f.protected;
+  });
+
+  function getDefense(fig: FollowerInstance): number {
+    const owner = fig.power as Power;
+    const def = FOLLOWERS[owner]?.[fig.class];
+    if (!def) return 1;
+    const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
+      UPGRADES.find(up => up.id === u)?.upgradeType === fig.class
+    );
+    let d = isUpgraded ? def.upgraded.defense : def.base.defense;
+
+    // Card modifiers in the region
+    const regionCards = state.regions[safeRegionId]!.chaosCards;
+    const rottingGrasp = regionCards.some(c => c?.cardId === 'gormen_rotting_grasp');
+    const blightWard   = regionCards.some(c => c?.cardId === 'gormen_blight_ward');
+    const nullWeave    = regionCards.some(c => c?.cardId === 'tenzen_null_weave');
+
+    if (!nullWeave) {
+      if (blightWard   && (fig.controlledBy ?? fig.power) === 'gormen') d += 1;
+      if (rottingGrasp && (fig.controlledBy ?? fig.power) !== 'gormen') d = Math.max(1, d - 1);
+    }
+
+    return d;
+  }
+
+  function toggle(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        const newTotal = Array.from(next).reduce((sum, fid) => {
+          const f = targets.find(t => t.id === fid);
+          return sum + (f ? getDefense(f) : 0);
+        }, 0) + getDefense(targets.find(t => t.id === id)!);
+        if (newTotal <= hitsRemaining) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  const selectedDefenseTotal = Array.from(selectedIds).reduce((sum, id) => {
+    const f = targets.find(t => t.id === id);
+    return sum + (f ? getDefense(f) : 0);
+  }, 0);
+
+  function handleConfirm() {
+    onAction({
+      kind: 'battle_hit_assignment',
+      power: myPower,
+      regionId: safeRegionId,
+      followerIds: Array.from(selectedIds),
+    });
+    setSelectedIds(new Set());
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
+        Battle in {REGION_LABELS[safeRegionId]} — {hitsRemaining} hit(s) to assign
+        ({selectedDefenseTotal}/{hitsRemaining} defense used):
+      </div>
+      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+        {targets.length === 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No valid targets.</span>
+        )}
+        {targets.map(f => (
+          <button
+            key={f.id}
+            className={selectedIds.has(f.id) ? 'danger' : 'secondary'}
+            onClick={() => toggle(f.id)}
+            style={{ fontSize: '0.8rem' }}
+          >
+            {POWER_LABELS_LOCAL[f.controlledBy ?? f.power] ?? f.power} {formatId(f.class)}
+            <span style={{ color: '#94a3b8', marginLeft: 4 }}>def {getDefense(f)}</span>
+          </button>
+        ))}
+      </div>
+      <button className="danger" onClick={handleConfirm}>
+        {selectedIds.size === 0 ? 'Apply hits (no kills)' : `Kill ${selectedIds.size} figure${selectedIds.size > 1 ? 's' : ''}`}
+      </button>
+    </div>
+  );
+}
+
 // ── World card effect ─────────────────────────────────────────────────────────
 
 function WorldCardEffectPanel({
@@ -554,6 +1103,152 @@ function WorldCardEffectPanel({
           Confirm: {REGION_LABELS[selectedRegion]}
         </button>
       )}
+    </div>
+  );
+}
+
+// ── Dial: place token ─────────────────────────────────────────────────────────
+
+function DialPlaceTokenPanel({
+  state,
+  myPower,
+  context,
+  onAction,
+}: {
+  state: GameState;
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+}) {
+  const [selectedRegion, setSelectedRegion] = useState<RegionId | null>(null);
+  const tokenType = (context['tokenType'] as string) ?? 'noble';
+  const remaining = (context['remaining'] as number) ?? 1;
+
+  const validRegions = ALL_REGIONS.filter(r => state.regions[r]!.ruinationCardIndex === null);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+        Dial reward — place a <strong style={{ color: '#facc15', textTransform: 'capitalize' }}>{tokenType}</strong> token
+        on any region ({remaining} remaining):
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {validRegions.map(r => (
+          <button
+            key={r}
+            className={selectedRegion === r ? 'primary' : 'secondary'}
+            onClick={() => setSelectedRegion(r)}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+          >
+            {REGION_LABELS[r]}
+          </button>
+        ))}
+      </div>
+      {selectedRegion && (
+        <button className="primary" onClick={() => {
+          onAction({ kind: 'dial_place_token', power: myPower, regionId: selectedRegion });
+          setSelectedRegion(null);
+        }}>
+          Place {tokenType} on {REGION_LABELS[selectedRegion]}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Dial: remove corruption ───────────────────────────────────────────────────
+
+function DialRemoveCorruptionPanel({
+  state,
+  myPower,
+  context,
+  onAction,
+}: {
+  state: GameState;
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+}) {
+  const remaining = (context['remaining'] as number) ?? 1;
+  const regionsWithOwn = ALL_REGIONS.filter(
+    r => (state.regions[r]!.corruptionTokens[myPower] ?? 0) > 0,
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+        Dial reward — remove 1 of your corruption tokens ({remaining} remaining):
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {regionsWithOwn.length === 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No corruption to remove.</span>
+        )}
+        {regionsWithOwn.map(r => (
+          <button
+            key={r}
+            className="danger"
+            onClick={() => onAction({ kind: 'dial_remove_corruption', power: myPower, regionId: r })}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+          >
+            {REGION_LABELS[r]} ({state.regions[r]!.corruptionTokens[myPower]})
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Dial: remove world token ──────────────────────────────────────────────────
+
+function DialRemoveWorldTokenPanel({
+  state,
+  myPower,
+  context,
+  onAction,
+}: {
+  state: GameState;
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+}) {
+  const remaining = (context['remaining'] as number) ?? 1;
+  type RemovableToken = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen';
+  const TOKEN_NAMES: Record<RemovableToken, string> = {
+    event: 'Event', hero: 'Hero', noble: 'Noble', peasant: 'Peasant', ratmen: 'Ratmen',
+  };
+
+  // Collect (region, tokenType) pairs
+  const options: { regionId: RegionId; tokenType: RemovableToken }[] = [];
+  for (const regionId of ALL_REGIONS) {
+    const seen = new Set<string>();
+    for (const t of state.regions[regionId]!.tokens) {
+      if (t === 'chaos_stone') continue;
+      if (seen.has(t)) continue;
+      seen.add(t);
+      options.push({ regionId, tokenType: t as RemovableToken });
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+        Dial reward — remove a world token ({remaining} remaining):
+      </div>
+      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+        {options.length === 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No tokens to remove.</span>
+        )}
+        {options.map(({ regionId, tokenType }) => (
+          <button
+            key={`${regionId}-${tokenType}`}
+            className="danger"
+            onClick={() => onAction({ kind: 'dial_remove_world_token', power: myPower, regionId, tokenType })}
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+          >
+            {TOKEN_NAMES[tokenType]} from {REGION_LABELS[regionId]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

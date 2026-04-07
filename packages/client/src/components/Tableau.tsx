@@ -4,7 +4,7 @@ import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
 import { CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
-import type { DragItem } from '../pages/GamePage.js';
+import type { DragItem } from '../types/drag.js';
 
 interface TableauProps {
   state: GameState;

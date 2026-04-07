@@ -97,7 +97,7 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
   const { slot1, slot2 } = state.worldTrack;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-surface-1 border-b border-border text-sm shrink-0 overflow-x-auto">
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #3a3a6e', fontSize: '0.875rem', flexShrink: 0, overflowX: 'auto' }}>
       {/* Nav */}
       <Link to="/games" className="text-slate-400 hover:text-white shrink-0 text-xs">
         ← Games

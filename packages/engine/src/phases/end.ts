@@ -1,4 +1,4 @@
-import type { GameState, Power, RegionId } from '../types.js';
+import type { GameState, Power, RegionId, DialPendingReward } from '../types.js';
 import {
   REGION_ORDER, RUINATION_CARDS, THREAT_DIALS, UPGRADES,
 } from '../constants.js';
@@ -16,6 +16,11 @@ export function resolveEndPhase(
   const log: string[] = [];
   let s = state;
 
+  // If we're mid-way through draining dial reward choices, continue from here.
+  if (s.pendingDialRewards !== null) {
+    return drainDialRewards(s, log);
+  }
+
   // Step 1: Remove Chaos cards from board (persistent cards handled below)
   ({ state: s } = removeChaosCards(s, log));
 
@@ -28,8 +33,89 @@ export function resolveEndPhase(
   // Step 4: Score ruined regions (for cards placed this round = still faceup ruination cards)
   ({ state: s } = scoreRuinedRegions(s, log));
 
-  // Step 5: Advance threat dials
+  // Step 5: Advance threat dials (interactive rewards queued in pendingDialRewards)
   ({ state: s } = advanceThreatDials(s, log));
+
+  // Check for victory immediately — dial may have scored VP or triggered a win condition
+  // before any interactive rewards are processed.
+  {
+    const victory = checkVictory(s);
+    if (victory) {
+      s = { ...s, phase: 'completed', winners: victory.winners, winCondition: victory.condition };
+      log.push(`Game over! Winners: ${victory.winners.join(', ')} (${victory.condition}).`);
+      return { state: s, log };
+    }
+  }
+
+  // If dial advancement produced rewards requiring choices, pause here.
+  if (s.pendingDialRewards && s.pendingDialRewards.length > 0) {
+    return drainDialRewards(s, log);
+  }
+
+  return finalizeEndPhase(s, log);
+}
+
+/** Set pendingAction for the next queued dial reward, or finalize the round. */
+function drainDialRewards(
+  state: GameState,
+  log: string[],
+): { state: GameState; log: string[] } {
+  let s = state;
+  const queue = s.pendingDialRewards ?? [];
+
+  if (queue.length === 0) {
+    s = { ...s, pendingDialRewards: null };
+    return finalizeEndPhase(s, log);
+  }
+
+  const next = queue[0]!;
+  switch (next.kind) {
+    case 'upgrade_choice':
+      s = {
+        ...s,
+        pendingAction: { waitingFor: next.power, actionKind: 'upgrade_choice', context: {} },
+      };
+      break;
+    case 'place_token':
+      s = {
+        ...s,
+        pendingAction: {
+          waitingFor: next.power,
+          actionKind: 'dial_place_token',
+          context: { tokenType: next.tokenType, remaining: next.remaining },
+        },
+      };
+      break;
+    case 'remove_corruption':
+      s = {
+        ...s,
+        pendingAction: {
+          waitingFor: next.power,
+          actionKind: 'dial_remove_corruption',
+          context: { remaining: next.remaining },
+        },
+      };
+      break;
+    case 'remove_world_tokens':
+      s = {
+        ...s,
+        pendingAction: {
+          waitingFor: next.power,
+          actionKind: 'dial_remove_world_token',
+          context: { remaining: next.remaining },
+        },
+      };
+      break;
+  }
+
+  return { state: s, log };
+}
+
+function finalizeEndPhase(
+  state: GameState,
+  log: string[],
+): { state: GameState; log: string[] } {
+  let s = state;
 
   // Check for victory
   const victory = checkVictory(s);
@@ -435,6 +521,7 @@ function advanceThreatDials(
   log: string[],
 ): { state: GameState; log: string[] } {
   let s = state;
+  const queuedRewards: DialPendingReward[] = [];
 
   // Powers with 1+ counters advance once
   const counters = s.activePowers.map(p => ({
@@ -447,17 +534,25 @@ function advanceThreatDials(
   const mostCounters = counters.filter(c => c.count === maxCount && c.count > 0);
 
   for (const power of powersWithCounters) {
-    ({ state: s } = advanceDial(s, power, log));
+    const result = advanceDial(s, power, log);
+    s = result.state;
+    queuedRewards.push(...result.rewards);
   }
 
   // Additional advance for most-counter holder (if unique)
   if (mostCounters.length === 1) {
-    ({ state: s } = advanceDial(s, mostCounters[0]!.power, log));
+    const result = advanceDial(s, mostCounters[0]!.power, log);
+    s = result.state;
+    queuedRewards.push(...result.rewards);
   }
 
   // Reset all counters
   for (const power of s.activePowers) {
     s = updatePower(s, power, { dialCounters: 0 });
+  }
+
+  if (queuedRewards.length > 0) {
+    s = { ...s, pendingDialRewards: queuedRewards };
   }
 
   return { state: s, log };
@@ -467,13 +562,14 @@ function advanceDial(
   state: GameState,
   power: Power,
   log: string[],
-): { state: GameState; log: string[] } {
+): { state: GameState; log: string[]; rewards: DialPendingReward[] } {
   let s = state;
+  const rewards: DialPendingReward[] = [];
   const p = s.powers[power]!;
   const dial = THREAT_DIALS[power]!;
   const nextPos = p.dialPosition + 1;
 
-  if (nextPos >= dial.length) return { state: s, log };
+  if (nextPos >= dial.length) return { state: s, log, rewards };
 
   const entry = dial[nextPos]!;
   const newThreat = entry.threat === 'victory' ? p.threatValue : entry.threat;
@@ -485,7 +581,7 @@ function advanceDial(
 
   log.push(`${power} advances threat dial to position ${nextPos} (threat: ${entry.threat}).`);
 
-  // Apply dial instruction
+  // Apply dial instruction — automatic rewards run now; interactive ones get queued.
   switch (entry.instruction.type) {
     case 'score_vp':
       s = scoreVP(s, power, entry.instruction.amount);
@@ -495,13 +591,17 @@ function advanceDial(
     case 'upgrade_card': {
       const available = s.powers[power]!.availableUpgradeIds;
       if (available.length > 0) {
-        // Auto-pick first available (TODO: interactive choice)
-        const upgradeId = available[0]!;
-        s = updatePower(s, power, {
-          upgradesInPlay: [...s.powers[power]!.upgradesInPlay, upgradeId],
-          availableUpgradeIds: available.slice(1),
-        });
-        log.push(`${power} gains upgrade: ${upgradeId}.`);
+        if (available.length === 1) {
+          // Only one option — apply automatically.
+          const upgradeId = available[0]!;
+          s = updatePower(s, power, {
+            upgradesInPlay: [...s.powers[power]!.upgradesInPlay, upgradeId],
+            availableUpgradeIds: [],
+          });
+          log.push(`${power} gains upgrade: ${upgradeId}.`);
+        } else {
+          rewards.push({ kind: 'upgrade_choice', power });
+        }
       }
       break;
     }
@@ -513,66 +613,28 @@ function advanceDial(
       break;
 
     case 'place_nobles':
-      // Auto-place on first available regions (TODO: interactive)
-      for (let i = 0; i < entry.instruction.amount; i++) {
-        const target = REGION_ORDER.find(r => !isRuined(s.regions[r]!));
-        if (target) {
-          s = updateRegion(s, target, {
-            tokens: [...s.regions[target]!.tokens, 'noble'],
-          });
-          log.push(`${power} (dial) places Noble on ${target}.`);
-        }
-      }
+      rewards.push({ kind: 'place_token', power, tokenType: 'noble', remaining: entry.instruction.amount });
       break;
 
     case 'place_chaos_stone':
-      for (let i = 0; i < entry.instruction.amount; i++) {
-        const target = REGION_ORDER.find(r => !isRuined(s.regions[r]!));
-        if (target) {
-          s = updateRegion(s, target, {
-            tokens: [...s.regions[target]!.tokens, 'chaos_stone'],
-          });
-          log.push(`${power} (dial) places Chaos Stone on ${target}.`);
-        }
-      }
+      rewards.push({ kind: 'place_token', power, tokenType: 'chaos_stone', remaining: entry.instruction.amount });
       break;
 
     case 'remove_corruption': {
-      // Remove own corruption tokens from any region (auto: most first)
-      let toRemove = entry.instruction.amount;
-      for (const regionId of REGION_ORDER) {
-        if (toRemove === 0) break;
-        const curr = s.regions[regionId]!.corruptionTokens[power];
-        const removing = Math.min(curr, toRemove);
-        if (removing > 0) {
-          s = updateRegion(s, regionId, {
-            corruptionTokens: {
-              ...s.regions[regionId]!.corruptionTokens,
-              [power]: curr - removing,
-            },
-          });
-          toRemove -= removing;
-          log.push(`${power} (dial) removes ${removing} corruption token(s) from ${regionId}.`);
-        }
+      // Only queue if there's actually something to remove.
+      const hasOwn = REGION_ORDER.some(r => s.regions[r]!.corruptionTokens[power] > 0);
+      if (hasOwn) {
+        rewards.push({ kind: 'remove_corruption', power, remaining: entry.instruction.amount });
       }
       break;
     }
 
     case 'remove_world_tokens': {
-      // Lasha: remove world tokens from any region (auto: last region first)
-      // TODO: interactive choice for Lasha
-      let toRemove = entry.instruction.amount;
-      for (const regionId of [...REGION_ORDER].reverse()) {
-        if (toRemove === 0) break;
-        const region = s.regions[regionId]!;
-        const removable = region.tokens.filter(t => t !== 'chaos_stone');
-        if (removable.length === 0) continue;
-        const token = removable[removable.length - 1]!;
-        const tokens = [...region.tokens];
-        tokens.splice(tokens.lastIndexOf(token), 1);
-        s = updateRegion(s, regionId, { tokens });
-        toRemove--;
-        log.push(`${power} (dial) removes ${token} token from ${regionId}.`);
+      const hasTokens = REGION_ORDER.some(r =>
+        s.regions[r]!.tokens.some(t => t !== 'chaos_stone'),
+      );
+      if (hasTokens) {
+        rewards.push({ kind: 'remove_world_tokens', power, remaining: entry.instruction.amount });
       }
       break;
     }
@@ -590,7 +652,7 @@ function advanceDial(
       break;
   }
 
-  return { state: s, log };
+  return { state: s, log, rewards };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
