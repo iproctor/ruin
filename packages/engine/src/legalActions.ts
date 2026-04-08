@@ -83,81 +83,8 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
       return actions;
     }
 
-    case 'battle_hit_assignment': {
-      const ctx = state.pendingAction!.context;
-      const regionId = ctx['regionId'] as RegionId;
-      const hitsRemaining = ctx['hitsRemaining'] as number;
-      const peasantsAvailable = (ctx['peasantsAvailable'] as number | undefined) ?? 0;
-      const region = state.regions[regionId]!;
-      const enemies = region.placements.filter(f => {
-        const ctrl = f.controlledBy ?? f.power;
-        return ctrl !== power && !f.tipped && !f.protected;
-      });
-
-      // Annotate each enemy with stats (base values — good enough for AI)
-      type Annotated = { f: typeof enemies[0]; def: number; atk: number };
-      const annotated: Annotated[] = enemies.map(f => {
-        const stats = FOLLOWERS[f.power as import('./types.js').Power]?.[f.class]?.base;
-        return { f, def: stats?.defense ?? 1, atk: stats?.attack ?? 0 };
-      });
-
-      /** Greedy kill selection given a sorted priority list. */
-      function greedyKill(sorted: Annotated[]): string[] {
-        const ids: string[] = [];
-        let spent = 0;
-        for (const { f, def } of sorted) {
-          if (spent + def <= hitsRemaining) { ids.push(f.id); spent += def; }
-        }
-        return ids;
-      }
-
-      const seen = new Set<string>();
-      const makeAction = (ids: string[], peasants = 0): BattleHitAssignmentAction => peasants > 0
-        ? { kind: 'battle_hit_assignment', power, regionId, followerIds: ids, peasantsToTake: peasants }
-        : { kind: 'battle_hit_assignment', power, regionId, followerIds: ids };
-
-      function add(ids: string[], peasants = 0) {
-        const key = [...ids].sort().join(',') + '|' + peasants;
-        if (seen.has(key)) return;
-        seen.add(key);
-        actions.push(makeAction(ids, peasants));
-      }
-
-      const actions: BattleHitAssignmentAction[] = [];
-
-      // ── Strategy 1: Reduce corruption power — kill cultists first (cheapest def first)
-      const cultistFirst = [...annotated]
-        .filter(a => a.f.class === 'cultist')
-        .sort((a, b) => a.def - b.def);
-      const cultistKills = greedyKill(cultistFirst);
-      if (cultistKills.length > 0) add(cultistKills);
-
-      // ── Strategy 2: Reduce attack power — kill highest-attack figures first
-      const attackFirst = [...annotated].sort((a, b) => b.atk - a.atk || a.def - b.def);
-      const attackKills = greedyKill(attackFirst);
-      if (attackKills.length > 0) add(attackKills);
-
-      // ── Strategy 3: Reduce domination — kill as many figures as possible (cheapest def first)
-      const countFirst = [...annotated].sort((a, b) => a.def - b.def);
-      const countKills = greedyKill(countFirst);
-      if (countKills.length > 0) {
-        const leftover = hitsRemaining - countKills.reduce((s, id) => {
-          const a = annotated.find(x => x.f.id === id)!;
-          return s + a.def;
-        }, 0);
-        const peasants = Math.min(leftover, peasantsAvailable);
-        add(countKills, peasants);
-      }
-
-      // Peasants are only claimed with leftover hits after kills — no standalone peasant actions
-
-      // ── Fallback: pass (no kills, no peasants)
-      if (actions.length === 0) {
-        actions.push(makeAction([]));
-      }
-
-      return actions;
-    }
+    case 'battle_hit_assignment':
+      return getBattleHitAssignmentActions(state, power);
 
     case 'world_choice': {
       const cardId = state.pendingAction.context['cardId'] as string;
@@ -244,6 +171,77 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
   }
 }
 
+// ─── Battle hit assignment ────────────────────────────────────────────────────
+
+type AnnotatedEnemy = { id: string; cls: string; def: number; atk: number };
+
+function greedyKill(sorted: AnnotatedEnemy[], hitsRemaining: number): string[] {
+  const ids: string[] = [];
+  let spent = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i]!;
+    if (spent + a.def <= hitsRemaining) { ids.push(a.id); spent += a.def; }
+  }
+  return ids;
+}
+
+function getBattleHitAssignmentActions(state: GameState, power: Power): BattleHitAssignmentAction[] {
+  const ctx = state.pendingAction!.context;
+  const regionId = ctx['regionId'] as RegionId;
+  const hitsRemaining = ctx['hitsRemaining'] as number;
+  const peasantsAvailable = (ctx['peasantsAvailable'] as number | undefined) ?? 0;
+  const region = state.regions[regionId]!;
+
+  const annotated: AnnotatedEnemy[] = [];
+  for (const f of region.placements) {
+    const ctrl = f.controlledBy ?? f.power;
+    if (ctrl === power || f.tipped || f.protected) continue;
+    const stats = FOLLOWERS[f.power as import('./types.js').Power]?.[f.class]?.base;
+    annotated.push({ id: f.id, cls: f.class, def: stats?.defense ?? 1, atk: stats?.attack ?? 0 });
+  }
+
+  const actions: BattleHitAssignmentAction[] = [];
+  const seen = new Set<string>();
+
+  const add = (ids: string[], peasants = 0): void => {
+    const key = [...ids].sort().join(',') + '|' + peasants;
+    if (seen.has(key)) return;
+    seen.add(key);
+    actions.push(peasants > 0
+      ? { kind: 'battle_hit_assignment', power, regionId, followerIds: ids, peasantsToTake: peasants }
+      : { kind: 'battle_hit_assignment', power, regionId, followerIds: ids });
+  };
+
+  // Strategy 1: cultists first (cheapest def first)
+  const cultistFirst = annotated.filter(a => a.cls === 'cultist').sort((a, b) => a.def - b.def);
+  const cultistKills = greedyKill(cultistFirst, hitsRemaining);
+  if (cultistKills.length > 0) add(cultistKills);
+
+  // Strategy 2: highest attack first
+  const attackFirst = annotated.slice().sort((a, b) => b.atk - a.atk || a.def - b.def);
+  const attackKills = greedyKill(attackFirst, hitsRemaining);
+  if (attackKills.length > 0) add(attackKills);
+
+  // Strategy 3: most kills (cheapest def first)
+  const countFirst = annotated.slice().sort((a, b) => a.def - b.def);
+  const countKills = greedyKill(countFirst, hitsRemaining);
+  if (countKills.length > 0) {
+    // Build a defense lookup once so we don't do an O(n) find per kill.
+    let spent = 0;
+    const killSet = new Set(countKills);
+    for (let i = 0; i < annotated.length; i++) {
+      if (killSet.has(annotated[i]!.id)) spent += annotated[i]!.def;
+    }
+    const peasants = Math.min(hitsRemaining - spent, peasantsAvailable);
+    add(countKills, peasants);
+  }
+
+  if (actions.length === 0) {
+    actions.push({ kind: 'battle_hit_assignment', power, regionId, followerIds: [] });
+  }
+  return actions;
+}
+
 // ─── Summoning actions ────────────────────────────────────────────────────────
 
 function getSummoningActions(state: GameState, power: Power): Action[] {
@@ -270,18 +268,34 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
     }
   }
 
-  // Move figures already on board (re-summon to different region)
+  // Move figures already on board (re-summon to different region).
+  // legalPlacementRegions(power, figureId) differs from the base result only when
+  // the figure's current region would become unoccupied by removing it — i.e. when
+  // this power has exactly one follower there. Cache by regionId: two followers in
+  // the same region always produce the same result.
+  const regionCounts: Partial<Record<RegionId, number>> = {};
+  for (const f of p.followers) {
+    if (f.regionId !== null) regionCounts[f.regionId] = (regionCounts[f.regionId] ?? 0) + 1;
+  }
+  const moveCache = new Map<RegionId, RegionId[]>();
   for (const follower of p.followers) {
     if (follower.regionId === null) continue; // skip reserve
-    // Killing Ground: cannot move non-Xarm figures away from a region with this card
     const currentRegion = follower.regionId;
-    if (currentRegion !== null) {
-      const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
-        c => c?.cardId === 'xarm_carnage_trap'
-      );
-      if (hasKillingGround && (follower.controlledBy ?? follower.power) !== 'xarm') continue;
+    // Killing Ground: cannot move non-Xarm figures away from a region with this card
+    const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
+      c => c?.cardId === 'xarm_carnage_trap'
+    );
+    if (hasKillingGround && (follower.controlledBy ?? follower.power) !== 'xarm') continue;
+
+    let legalRegionsForMove = moveCache.get(currentRegion);
+    if (!legalRegionsForMove) {
+      // If another follower of this power is also in currentRegion, removing this
+      // follower leaves the occupied set unchanged → equals base result.
+      legalRegionsForMove = (regionCounts[currentRegion] ?? 0) > 1
+        ? legalRegions
+        : legalPlacementRegions(state, power, follower.id);
+      moveCache.set(currentRegion, legalRegionsForMove);
     }
-    const legalRegionsForMove = legalPlacementRegions(state, power, follower.id);
     for (const regionId of legalRegionsForMove) {
       if (regionId === follower.regionId) continue; // skip same region
       const region = state.regions[regionId]!;

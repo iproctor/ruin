@@ -5,7 +5,10 @@
       "Bash(npm test:*)",
       "Bash(npx jest:*)",
       "Bash(git stash:*)",
-      "Bash(grep -v \"^$\\\\|npm warn\")"
+      "Bash(grep -v \"^$\\\\|npm warn\")",
+      "Bash(node --prof --import tsx packages/server/src/scripts/headless-game.ts --seed 42 --players 4)",
+      "Read(//tmp/**)",
+      "Bash(ls isolate-*.log)"
     ]
   }
 }

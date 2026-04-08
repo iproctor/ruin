@@ -6,7 +6,11 @@
     "build": "pnpm --filter engine build && pnpm --filter ai build && pnpm --filter client build && pnpm --filter server build",
     "test": "pnpm --filter engine test",
     "headless": "tsx packages/server/src/scripts/headless-game.ts",
-    "benchmark": "tsx packages/server/src/scripts/benchmark.ts"
+    "benchmark": "tsx packages/server/src/scripts/benchmark.ts",
+    "benchmark:parallel": "tsx packages/server/src/scripts/benchmark-parallel.ts",
+    "collect": "tsx packages/server/src/scripts/collect-data.ts",
+    "collect:parallel": "tsx packages/server/src/scripts/collect-parallel.ts",
+    "train": "python3 packages/ai/scripts/train_mlp.py --in packages/ai/data/training.jsonl --out packages/ai/data/model.json"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

@@ -1,5 +1,10 @@
 import type { GameState, Power, RegionId } from '@ruin/engine';
 import { REGIONS, getRegionDomination, getRegionResistance, getPowerDomination } from '@ruin/engine';
+import { evaluateLearned, hasModel } from './learn/evaluator.js';
+
+// If a learned model has been loaded (via loadModel in a server/script entry
+// point), it takes over as the evaluator. The hand-tuned code below serves as
+// the bootstrap evaluator for the first round of self-play data collection.
 
 // Region IDs for iterating over the board
 const ALL_REGIONS: RegionId[] = [
@@ -49,6 +54,10 @@ const LASHA_SNEAK_THRESHOLD = 7;
 export function evaluateState(state: GameState, power: Power): number {
   if (state.winners !== null) {
     return state.winners.includes(power) ? 1.0 : 0.0;
+  }
+
+  if (hasModel()) {
+    return evaluateLearned(state, power);
   }
 
   const ps = state.powers[power];

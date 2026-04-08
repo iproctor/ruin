@@ -43,7 +43,15 @@
       "Bash(npm run:*)",
       "Bash(sed:*)",
       "Bash(perl -pi -e ':*)",
-      "Bash(pnpm headless:*)"
+      "Bash(pnpm headless:*)",
+      "Bash(pnpm collect:*)",
+      "Bash(pnpm train:*)",
+      "Bash(pnpm benchmark:*)",
+      "Bash(wait)",
+      "Bash(npx --package=typescript tsc -p packages/server --noEmit)",
+      "Bash(pnpm collect:parallel --games 200 --seed 2000 --workers 6 --epsilon 0.05)",
+      "Bash(pnpm benchmark:parallel --games 24 --seed 100 --workers 6 --out packages/ai/data/v3_24games.json)",
+      "Bash(pnpm --filter server build)"
     ]
   }
 }

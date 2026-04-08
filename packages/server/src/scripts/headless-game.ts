@@ -11,6 +11,9 @@ import {
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
 import type { Power, Action } from '@ruin/engine';
+import { loadLearnedModelIfPresent } from './load-model.js';
+
+loadLearnedModelIfPresent();
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
