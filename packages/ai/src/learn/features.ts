@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerClass, TokenType } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, getRegionResistance } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -53,6 +53,24 @@ const WORLD_CARD_INDEX = new Map(WORLD_CARD_IDS.map((id, i) => [id, i]));
 // Quick lookup: is a chaos card a magic-symbol card?
 const MAGIC_SYMBOL_CARDS = new Set(CHAOS_CARDS.filter(c => c.hasMagicSymbol).map(c => c.id));
 
+// Persistent chaos cards whose region-level effect changes the game enough to
+// be worth a dedicated binary feature. Order is fixed (sorted) so the column
+// indices are stable across builds.
+export const PERSISTENT_EFFECT_IDS: string[] = [
+  'gormen_deaths_perfume',
+  'gormen_pestilent_aura',
+  'lasha_ecstasy',
+  'lasha_hollow_pact',
+  'tenzen_changer_of_fate',
+  'tenzen_persistence_matrix',
+  'tenzen_stasis_web',
+  'xarm_bloody_rebirth',
+  'xarm_carnage_trap',
+  'xarm_ritual_death',
+  'xarm_the_red_throne',
+  'xarm_war_cry',
+];
+
 const DIAL_MAX: Record<Power, number> = {
   xarm: 9, gormen: 10, tenzen: 8, lasha: 7,
 };
@@ -70,7 +88,7 @@ const PER_POWER_BASIC = 14;
 const UPGRADE_COUNT = UPGRADE_IDS.length;
 const PER_POWER = PER_POWER_BASIC + UPGRADE_COUNT;
 
-// Per-region: region-level + per-power breakdown + card slots + token counts + magic symbols
+// Per-region: region-level + per-power breakdown + card slots + token counts + magic symbols + persistent effects
 const REGION_BASIC = 5;
 // resistance, conquestValue, populous, ruined, ruinationCardIndex
 const PER_REGION_PER_POWER = 5;
@@ -78,7 +96,14 @@ const PER_REGION_PER_POWER = 5;
 const CARD_SLOT_DIMS = 2 * (1 + POWERS.length); // 2 slots × (filled + playedBy_onehot)
 const TOKEN_DIMS = TOKEN_TYPES.length;
 const MAGIC_SYMBOL_DIMS = 1; // single per-region count of magic-symbol cards
-const PER_REGION = REGION_BASIC + POWERS.length * PER_REGION_PER_POWER + CARD_SLOT_DIMS + TOKEN_DIMS + MAGIC_SYMBOL_DIMS;
+const PERSISTENT_EFFECT_DIMS = PERSISTENT_EFFECT_IDS.length; // 12 binary flags per region
+const PER_REGION =
+  REGION_BASIC +
+  POWERS.length * PER_REGION_PER_POWER +
+  CARD_SLOT_DIMS +
+  TOKEN_DIMS +
+  MAGIC_SYMBOL_DIMS +
+  PERSISTENT_EFFECT_DIMS;
 
 // World track one-hot (both slots concatenated)
 const WORLD_TRACK_DIMS = 2 * WORLD_CARD_IDS.length;
@@ -143,7 +168,9 @@ export function extractFeatures(state: GameState): Float32Array {
     const region = state.regions[r];
     if (!region) { i += PER_REGION; continue; }
 
-    out[i++] = Math.min(region.resistance / 10, 1);
+    // Use the LIVE resistance, not the stale field — this reflects pandemic,
+    // ratmen tokens, raise_the_militia, etc.
+    out[i++] = Math.min(getRegionResistance(state, r) / 10, 1);
     out[i++] = Math.min(region.conquestValue / 8, 1);
     out[i++] = region.populous ? 1 : 0;
     out[i++] = region.ruinationCardIndex !== null ? 1 : 0;
@@ -172,6 +199,17 @@ export function extractFeatures(state: GameState): Float32Array {
       if (card && MAGIC_SYMBOL_CARDS.has(card.cardId)) magicSymbols++;
     }
     out[i++] = magicSymbols / 2;
+
+    // Persistent strategically-significant effect flags. Each is 1 if any
+    // chaos card in this region matches the cardId, else 0. Order is fixed
+    // by PERSISTENT_EFFECT_IDS.
+    for (const effectId of PERSISTENT_EFFECT_IDS) {
+      let active = 0;
+      for (const card of region.chaosCards) {
+        if (card && card.cardId === effectId) { active = 1; break; }
+      }
+      out[i++] = active;
+    }
 
     // Chaos card slots: filled flag + playedBy one-hot
     for (let slot = 0; slot < 2; slot++) {
