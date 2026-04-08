@@ -287,6 +287,9 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
   // ── Fate Shield (protected) figure counts per region ────────────────────
   // 3 counts per region (cultist / warrior / incarnation), regardless of
   // controller. Skipped figures: tipped (already filtered out everywhere).
+  // Normalized to a /2 cap because in practice 1 protected figure of a class
+  // is the realistic max (Fate Shield protects exactly one per cast); the /2
+  // gives the model headroom to encode a rare double without saturating.
   for (const r of REGION_ORDER) {
     const region = state.regions[r];
     let pCult = 0, pWar = 0, pInc = 0;
@@ -298,9 +301,9 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
         else if (f.class === 'incarnation') pInc++;
       }
     }
-    out[i++] = pCult / 3;
-    out[i++] = pWar / 2;
-    out[i++] = pInc / 1;
+    out[i++] = Math.min(pCult / 2, 1);
+    out[i++] = Math.min(pWar / 2, 1);
+    out[i++] = Math.min(pInc / 2, 1);
   }
 
   // ── Per-region count of protected figures controlled by lasha ───────────
@@ -315,7 +318,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
         if ((f.controlledBy ?? f.power) === 'lasha') n++;
       }
     }
-    out[i++] = n / 3;
+    out[i++] = Math.min(n / 2, 1);
   }
 
   return out;
