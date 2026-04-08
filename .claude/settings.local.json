@@ -53,7 +53,8 @@
       "Bash(pnpm benchmark:parallel --games 24 --seed 100 --workers 6 --out packages/ai/data/v3_24games.json)",
       "Bash(pnpm --filter server build)",
       "Bash(ls packages/ai/data/model_iter_*.json)",
-      "Bash(ls packages/ai/data/training_iter_*.jsonl)"
+      "Bash(ls packages/ai/data/training_iter_*.jsonl)",
+      "Bash(ls packages/ai/data/bench_iter_*.json)"
     ]
   }
 }

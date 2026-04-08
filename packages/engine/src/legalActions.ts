@@ -64,9 +64,25 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
       const queue = state.pendingDialRewards ?? [];
       const reward = queue[0];
       if (!reward || reward.kind !== 'remove_corruption') return [];
-      return REGION_ORDER
-        .filter(r => state.regions[r]!.corruptionTokens[power] > 0)
-        .map(regionId => ({ kind: 'dial_remove_corruption' as const, power, regionId } satisfies DialRemoveCorruptionAction));
+      // Remove ANY power's corruption from any region — the dial reward is
+      // strategic: you can clean up your own to redeploy, OR strip an
+      // opponent's contribution from a high-corruption region.
+      const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+      const actions: DialRemoveCorruptionAction[] = [];
+      for (const regionId of REGION_ORDER) {
+        const region = state.regions[regionId]!;
+        for (const targetPower of allPowers) {
+          if ((region.corruptionTokens[targetPower] ?? 0) > 0) {
+            actions.push({
+              kind: 'dial_remove_corruption' as const,
+              power,
+              regionId,
+              targetPower,
+            });
+          }
+        }
+      }
+      return actions;
     }
 
     case 'dial_remove_world_token': {

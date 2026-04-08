@@ -129,7 +129,7 @@ const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('forced_discard'),            power: zPower, cardIds: z.array(z.string()) }),
   z.object({ kind: z.literal('battle_hit_assignment'),     power: zPower, regionId: zRegionId, followerIds: z.array(z.string()), peasantsToTake: z.number().int().min(0).optional() }),
   z.object({ kind: z.literal('dial_place_token'),          power: zPower, regionId: zRegionId }),
-  z.object({ kind: z.literal('dial_remove_corruption'),    power: zPower, regionId: zRegionId }),
+  z.object({ kind: z.literal('dial_remove_corruption'),    power: zPower, regionId: zRegionId, targetPower: zPower }),
   z.object({ kind: z.literal('dial_remove_world_token'),   power: zPower, regionId: zRegionId, tokenType: zTokenType }),
 ]);
 

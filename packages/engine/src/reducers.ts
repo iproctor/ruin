@@ -150,8 +150,11 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       const reward = queue[0];
       if (!reward || reward.kind !== 'remove_corruption') throw new Error('No remove_corruption reward pending');
       const region = s.regions[action.regionId]!;
-      const curr = region.corruptionTokens[action.power];
-      if (curr <= 0) throw new Error(`No ${action.power} corruption in ${action.regionId}`);
+      // The dial reward strips corruption belonging to `targetPower` — which
+      // can be the acting power's own (cleanup) or any opponent's (disruption).
+      const target = action.targetPower;
+      const curr = region.corruptionTokens[target];
+      if (curr <= 0) throw new Error(`No ${target} corruption in ${action.regionId}`);
       s = {
         ...s,
         pendingAction: null,
@@ -159,14 +162,15 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           ...s.regions,
           [action.regionId]: {
             ...region,
-            corruptionTokens: { ...region.corruptionTokens, [action.power]: curr - 1 },
+            corruptionTokens: { ...region.corruptionTokens, [target]: curr - 1 },
           },
         },
         pendingDialRewards: reward.remaining <= 1
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
-      result = { state: s, log: [`${action.power} (dial) removes 1 corruption from ${action.regionId}.`] };
+      const targetLabel = target === action.power ? 'own' : `${target}'s`;
+      result = { state: s, log: [`${action.power} (dial) removes 1 ${targetLabel} corruption from ${action.regionId}.`] };
       break;
     }
 

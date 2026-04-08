@@ -107,11 +107,24 @@ function runGame(seed: number): GameResult {
 
     let action: Action;
     try {
-      // Use MCTS for both summoning and battle hit assignment — the latter
-      // benefits from per-(power, class) action enumeration + lookahead.
+      // Use MCTS for any decision where lookahead matters strategically.
+      // - summoning_action: the main strategic phase
+      // - battle_hit_assignment: per-(power, class) kill commitments
+      // - dial_*: rewards from advancing the dial — affect long-term board state
+      // - world_choice / world_card_effect: token placements that shape the game
+      // - upgrade_choice: a permanent, game-changing choice
+      // These are all infrequent enough that MCTS overhead is acceptable.
       const useMcts =
         pending.actionKind === 'summoning_action' ||
-        pending.actionKind === 'battle_hit_assignment';
+        pending.actionKind === 'battle_hit_assignment' ||
+        pending.actionKind === 'dial_place_token' ||
+        pending.actionKind === 'dial_remove_corruption' ||
+        pending.actionKind === 'dial_remove_world_token' ||
+        pending.actionKind === 'upgrade_choice' ||
+        pending.actionKind === 'world_choice' ||
+        pending.actionKind === 'hero_removal' ||
+        pending.actionKind === 'corruption_harvest_choice' ||
+        pending.actionKind === 'card_on_play_choice';
       action = useMcts
         ? runMcts(state, pending.waitingFor)
         : greedyAction(state, pending.waitingFor);

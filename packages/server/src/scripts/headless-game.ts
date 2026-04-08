@@ -92,7 +92,15 @@ while (state.winners === null && state.phase !== 'completed') {
   try {
     const useMcts =
       pending.actionKind === 'summoning_action' ||
-      pending.actionKind === 'battle_hit_assignment';
+      pending.actionKind === 'battle_hit_assignment' ||
+      pending.actionKind === 'dial_place_token' ||
+      pending.actionKind === 'dial_remove_corruption' ||
+      pending.actionKind === 'dial_remove_world_token' ||
+      pending.actionKind === 'upgrade_choice' ||
+      pending.actionKind === 'world_choice' ||
+      pending.actionKind === 'hero_removal' ||
+      pending.actionKind === 'corruption_harvest_choice' ||
+      pending.actionKind === 'card_on_play_choice';
     if (useMcts) {
       action = runMcts(state, waitingFor);
     } else {

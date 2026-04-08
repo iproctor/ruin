@@ -45,11 +45,31 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
     // Need enemy figures present (any class)
     case 'xarm_carnage_trap':
     case 'lasha_hollow_pact':
-    case 'lasha_ecstasy':
     case 'xarm_war_frenzy':
     case 'tenzen_the_meddling_of_rats':
     case 'gormen_pestilent_touch':
       return enemyFigs.length === 0;
+
+    // Ecstasy stops dice from being rolled — useless if there are no enemy
+    // dice to stop. Cultists usually have 0 attack and don't count, EXCEPT
+    // for xarm cultists when xarm has the Heartseekers upgrade in play
+    // (which gives them 1 attack die). War Frenzy as a card also rolls dice
+    // independently of figures.
+    case 'lasha_ecstasy': {
+      const xarmHasHeartseekers =
+        state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+      const enemyDiceFigs = enemyFigs.filter(f => {
+        if (f.class === 'warrior' || f.class === 'incarnation') return true;
+        // Upgraded xarm cultists also roll battle dice
+        const ctrl = f.controlledBy ?? f.power;
+        if (f.class === 'cultist' && ctrl === 'xarm' && xarmHasHeartseekers) return true;
+        return false;
+      });
+      const enemyHasWarFrenzy = region.chaosCards.some(
+        c => c !== null && c.cardId === 'xarm_war_frenzy' && c.playedBy !== power,
+      );
+      return enemyDiceFigs.length === 0 && !enemyHasWarFrenzy;
+    }
 
     // Need enemy cultists present
     case 'lasha_narcotic_musk':
@@ -88,11 +108,13 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
       return nobleOrHero.length === 0;
     }
 
-    // Hidden Influence: moves a Peasant/Hero/Noble token from region — needs one
+    // Hidden Influence: moves a Peasant/Hero/Noble token from region.
+    // Mechanically a Peasant is movable, but Peasants are common and low-value;
+    // burning Hidden Influence (cost 1) on a Peasant is almost always wasteful.
+    // Block unless there's a Noble or Hero to move — those are the high-value
+    // targets the card is actually meant for.
     case 'lasha_hidden_influence': {
-      const movable = region.tokens.filter(
-        t => t === 'peasant' || t === 'noble' || t === 'hero',
-      );
+      const movable = region.tokens.filter(t => t === 'noble' || t === 'hero');
       return movable.length === 0;
     }
 

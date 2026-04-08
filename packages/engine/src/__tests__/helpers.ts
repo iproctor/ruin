@@ -430,9 +430,25 @@ export function autoResolveEndPhase(
         break;
       }
       case 'dial_remove_corruption': {
-        const region = REGION_ORDER.find(r => s.regions[r]!.corruptionTokens[power] > 0);
+        // Default test behavior: remove the acting power's own corruption first;
+        // if none, fall through to any corruption in any region.
+        let region = REGION_ORDER.find(r => s.regions[r]!.corruptionTokens[power] > 0);
+        let targetPower: import('../types.js').Power = power;
+        if (!region) {
+          const ALL: import('../types.js').Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+          for (const r of REGION_ORDER) {
+            for (const tp of ALL) {
+              if ((s.regions[r]!.corruptionTokens[tp] ?? 0) > 0) {
+                region = r;
+                targetPower = tp;
+                break;
+              }
+            }
+            if (region) break;
+          }
+        }
         if (!region) break;
-        next = applyAction(s, { kind: 'dial_remove_corruption', power, regionId: region });
+        next = applyAction(s, { kind: 'dial_remove_corruption', power, regionId: region, targetPower });
         s = next.state; log = [...log, ...next.log];
         break;
       }

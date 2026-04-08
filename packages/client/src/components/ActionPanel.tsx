@@ -1285,27 +1285,33 @@ function DialRemoveCorruptionPanel({
   onAction: (action: Action) => void;
 }) {
   const remaining = (context['remaining'] as number) ?? 1;
-  const regionsWithOwn = ALL_REGIONS.filter(
-    r => (state.regions[r]!.corruptionTokens[myPower] ?? 0) > 0,
-  );
+  const POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+  // Enumerate every (region, power) combination with at least one corruption token
+  const candidates: Array<{ regionId: typeof ALL_REGIONS[number]; targetPower: Power; count: number }> = [];
+  for (const r of ALL_REGIONS) {
+    for (const tp of POWERS) {
+      const count = state.regions[r]!.corruptionTokens[tp] ?? 0;
+      if (count > 0) candidates.push({ regionId: r, targetPower: tp, count });
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — remove 1 of your corruption tokens ({remaining} remaining):
+        Dial reward — remove 1 corruption token from anywhere ({remaining} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {regionsWithOwn.length === 0 && (
+        {candidates.length === 0 && (
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No corruption to remove.</span>
         )}
-        {regionsWithOwn.map(r => (
+        {candidates.map(({ regionId, targetPower, count }) => (
           <button
-            key={r}
-            className="danger"
-            onClick={() => onAction({ kind: 'dial_remove_corruption', power: myPower, regionId: r })}
+            key={`${regionId}-${targetPower}`}
+            className={targetPower === myPower ? 'secondary' : 'danger'}
+            onClick={() => onAction({ kind: 'dial_remove_corruption', power: myPower, regionId, targetPower })}
             style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
           >
-            {REGION_LABELS[r]} ({state.regions[r]!.corruptionTokens[myPower]})
+            {REGION_LABELS[regionId]} {targetPower} ({count})
           </button>
         ))}
       </div>

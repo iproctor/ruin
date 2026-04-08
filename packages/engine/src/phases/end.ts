@@ -611,9 +611,13 @@ function advanceDial(
       break;
 
     case 'remove_corruption': {
-      // Only queue if there's actually something to remove.
-      const hasOwn = REGION_ORDER.some(r => s.regions[r]!.corruptionTokens[power] > 0);
-      if (hasOwn) {
+      // Only queue if there's any corruption anywhere — the dial reward can
+      // remove any power's corruption, not just the rewarded power's own.
+      const anyCorruption = REGION_ORDER.some(r => {
+        const tokens = s.regions[r]!.corruptionTokens;
+        return Object.values(tokens).some(v => v > 0);
+      });
+      if (anyCorruption) {
         rewards.push({ kind: 'remove_corruption', power, remaining: entry.instruction.amount });
       }
       break;

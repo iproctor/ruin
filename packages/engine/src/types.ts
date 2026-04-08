@@ -102,7 +102,7 @@ export type ActionKind =
   | 'card_on_play_choice'      // on-play card effect requiring player choice
   | 'forced_discard'           // player must discard N cards (deferred opponent effect)
   | 'dial_place_token'         // dial reward: place a noble or chaos stone on any region
-  | 'dial_remove_corruption'   // dial reward: remove own corruption token from a region
+  | 'dial_remove_corruption'   // dial reward: remove a corruption token (any power's) from a region
   | 'dial_remove_world_token'; // dial reward: remove a world token from a region
 
 export interface PendingAction {
@@ -299,8 +299,9 @@ export interface DialPlaceTokenAction {
 
 export interface DialRemoveCorruptionAction {
   kind: 'dial_remove_corruption';
-  power: Power;
+  power: Power;          // the player who earned the dial reward
   regionId: RegionId;
+  targetPower: Power;    // whose corruption token to remove (any power)
 }
 
 export interface DialRemoveWorldTokenAction {

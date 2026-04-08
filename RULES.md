@@ -204,7 +204,7 @@ There is **no hand size limit**.
 
 Players may act **simultaneously** during the draw phase.
 
-**Tenzen special rule:** Tenzen draws up to 5 cards in the draw phase (or 6 with the Deluge of Magic upgrade), bringing their hand to that total rather than simply adding 2. Tenzen may discard 1 card from hand before drawing.
+**Tenzen special rule:** Tenzen draws up to 5 cards in the draw phase (or 6 with the Flood of Magic upgrade), bringing their hand to that total rather than simply adding 2. Tenzen may discard 1 card from hand before drawing.
 
 Power points are **never carried over** between rounds.
 
@@ -752,50 +752,50 @@ Each card entry lists: **Cost | Magic Symbol | Count | Effect**. "Magic" = 1 mea
 | Card | Cost | Magic | Count | Effect |
 |---|---|---|---|---|
 | War Frenzy | 0 | — | 4 | At the start of battle, roll two dice and apply hits before normal battle dice are rolled. |
-| Scorched Earth | 1 | — | 4 | No corruption tokens may be placed in this region this round. |
-| Killing Ground | 1 | — | 3 | No figures other than yours may be summoned away from this region. |
-| Heart Offering | 1 | — | 3 | Each time you kill a figure here, draw a Chaos card. |
-| The Altar | 1 | — | 4 | When calculating your domination value in this region, count the sum of your figures' attack values instead of the quantity of figures. |
-| Undying Fury | 2 | — | 3 | During the battle phase, conduct an additional battle in this region. |
-| War March | 2 | — | 3 | Move up to two of your figures into this region from other regions. |
+| War Cry | 1 | — | 4 | No corruption tokens may be placed in this region this round. |
+| Carnage Trap | 1 | — | 3 | No figures other than yours may be summoned away from this region. |
+| Ritual Death | 1 | — | 3 | Each time you kill a figure here, draw a Chaos card. |
+| The Red Throne | 1 | — | 4 | When calculating your domination value in this region, count the sum of your figures' attack values instead of the quantity of figures. |
+| Bloody Rebirth | 2 | — | 3 | During the battle phase, conduct an additional battle in this region. |
+| Call to War | 2 | — | 3 | Move up to two of your figures into this region from other regions. |
 
 ### Gormen Chaos Cards
 
 | Card | Cost | Magic | Count | Effect |
 |---|---|---|---|---|
 | Pestilent Aura | 0 | ✦ | 4 | Each of your corruption tokens in this region adds one to your domination value. |
-| Rotting Grasp | 0 | — | 3 | Enemy figures' defense value is reduced by one (minimum 1). |
-| Epidemic | 1 | — | 4 | This region's Resistance is reduced by two. |
-| Blight Ward | 1 | — | 3 | Your figures' defense value is increased by one. |
-| Entropy | 1 | — | 2 | Remove one corruption token (any player) from this region. |
-| Plague Bloom | 2 | — | 3 | **No effect when played.** At the end of the Corruption phase, after all corruption tokens have been placed but before the ruination check: remove all of your figures from this region, then place one corruption token for every two figures removed. |
-| Corruption's Harvest | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. You choose which figures to kill. |
+| Pestilent Touch | 0 | — | 3 | Enemy figures' defense value is reduced by one (minimum 1). |
+| Pandemic | 1 | — | 4 | This region's Resistance is reduced by two. |
+| Rain of Bile | 1 | — | 3 | Your figures' defense value is increased by one. |
+| Decay | 1 | — | 2 | Remove one corruption token (any player) from this region. |
+| Vile Consumption | 2 | — | 3 | **No effect when played.** At the end of the Corruption phase, after all corruption tokens have been placed but before the ruination check: remove all of your figures from this region, then place one corruption token for every two figures removed. |
+| Inevitable Rot | 2 | — | 3 | After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. You choose which figures to kill. |
 | Death's Perfume | 3 | ✦ | 2 | If you dominate this region, place two corruption tokens here. |
 
 ### Tenzen Chaos Cards
 
 | Card | Cost | Magic | Count | Effect |
 |---|---|---|---|---|
-| Null Weave | 0 | ✦ | 3 | The text effects of all other Chaos cards in this region are canceled. |
-| Fate's Aegis | 0 | — | 3 | Choose one of your figures; it cannot be killed in battle this round. |
-| Phase Shift | 1 | — | 4 | Move any Cultist or Warrior in this region to any other region. |
-| Stolen Thoughts | 1 | — | 3 | Choose one opponent with figures in this region; that opponent discards two Chaos cards. |
+| Changer of Fate | 0 | ✦ | 3 | The text effects of all other Chaos cards in this region are canceled. |
+| Fate Shield | 0 | — | 3 | Choose one of your figures; it cannot be killed in battle this round. |
+| Teleport | 1 | — | 4 | Move any Cultist or Warrior in this region to any other region. |
+| The Meddling of Rats | 1 | — | 3 | Choose one opponent with figures in this region; that opponent discards two Chaos cards. |
 | Stasis Web | 1 | ✦ | 3 | Opponents pay +2 power points to summon figures or play Chaos cards in this region. |
-| Recursive Pattern | 1 | ✦ | 3 | If you kill one or more figures in battle here, you may keep this card on the board rather than discarding it at end of round. It remains in its card space and its effects persist into the next round. |
-| Kaleidoscope | 2 | ✦ | 3 | During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region. |
-| Arcane Siphon | 0 | — | 2 | Each other player with at least one Cultist in this region loses one power point; you gain one power point. |
+| Persistence Matrix | 1 | ✦ | 3 | If you kill one or more figures in battle here, you may keep this card on the board rather than discarding it at end of round. It remains in its card space and its effects persist into the next round. |
+| Shimmer | 2 | ✦ | 3 | During the corruption phase, one Cultist per opponent does not count toward their corruption total in this region. |
+| Siphon Power | 0 | — | 2 | Each other player with at least one Cultist in this region loses one power point; you gain one power point. |
 
 ### Lasha Chaos Cards
 
 | Card | Cost | Magic | Count | Effect |
 |---|---|---|---|---|
 | Hollow Pact | 0 | ✦ | 2 | Enemy figures contribute nothing to their owners' domination values in this region. |
-| Silent Taint | 0 | — | 4 | Place one corruption token in this region. This does not trigger your dial advancement condition. |
-| Sweet Deceit | 1 | — | 4 | For each Noble and Hero token in this region, add two to your domination value. |
-| The Invisible Hand | 1 | ✦ | 4 | Move a Peasant, Hero, or Noble token from this region to any other region. |
-| Enthrallment | 2 | ✦ | 4 | Choose one enemy Cultist in this region; you control it until this card is discarded. |
-| Euphoric Haze | 2 | — | 3 | No figures roll battle dice in this region this round. |
-| Debauched Court | 3 | — | 3 | If this region contains three or more corruption tokens when you play this card, reduce the cost by three. (The printed cost still counts toward domination.) |
+| Depraved Infiltration | 0 | — | 4 | Place one corruption token in this region. This does not trigger your dial advancement condition. |
+| Sweet Lies | 1 | — | 4 | For each Noble and Hero token in this region, add two to your domination value. |
+| Hidden Influence | 1 | ✦ | 4 | Move a Peasant, Hero, or Noble token from this region to any other region. |
+| Narcotic Musk | 2 | ✦ | 4 | Choose one enemy Cultist in this region; you control it until this card is discarded. |
+| Ecstasy | 2 | — | 3 | No figures roll battle dice in this region this round. |
+| Debauched Royalty | 3 | — | 3 | If this region contains three or more corruption tokens when you play this card, reduce the cost by three. (The printed cost still counts toward domination.) |
 
 ---
 
@@ -862,8 +862,8 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 ### Xarm Upgrade Cards
 
 **Chaos Power Upgrades:**
-- **Deluge of Ferocity:** Draw one additional Chaos card in each draw phase.
-- **Power of Blood:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
+- **Flood of Ferocity:** Draw one additional Chaos card in each draw phase.
+- **Power of War:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
 
 **Follower Upgrades:**
 - **Heartseekers Upgrade** *(Cost 1 / Attack 1 / Defense 1):* Heartseekers gain an attack value of 1.
@@ -875,8 +875,8 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 ### Gormen Upgrade Cards
 
 **Chaos Power Upgrades:**
-- **Provender of Ruin:** Score 3 victory points each time any region is ruined.
-- **Power of Pestilence:** When you recover power points in the draw phase, gain two power points more than the highlighted value.
+- **Provender of Rot:** Score 3 victory points each time any region is ruined.
+- **Power of Decay:** When you recover power points in the draw phase, gain two power points more than the highlighted value.
 
 **Follower Upgrades:**
 - **Plaguecarriers Upgrade** *(Cost 1 / Attack 0 / Defense 1):* A Plaguecarrier's cost is 0 if placed in a region where you have no other figures. A given Plaguecarrier may only be summoned for free once per round.
@@ -888,8 +888,8 @@ Each Power has five upgrade cards: two **Chaos Power Upgrades** and three **Foll
 ### Tenzen Upgrade Cards
 
 **Chaos Power Upgrades:**
-- **Deluge of Magic:** Draw to six Chaos cards in each draw phase instead of five.
-- **Power of Magic:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
+- **Flood of Magic:** Draw to six Chaos cards in each draw phase instead of five.
+- **Power of Fate:** When you recover power points in the draw phase, gain one power point more than the highlighted value.
 
 **Follower Upgrades:**
 - **Apprentices Upgrade** *(Cost 1 / Attack 0 / Defense 1):* When summoned from the board (rather than from your stockpile), an Apprentice may bring one Chaos Stone token (if present) from its origin region to its destination region.

@@ -114,12 +114,22 @@ const WORLD_TRACK_DIMS = 2 * WORLD_CARD_IDS.length;
 // right-pad (no mid-vector insertion).
 const VIEWPOINT_HAND_DIMS = CHAOS_CARD_IDS.length;
 
+// Fate Shield protected-figure counts per region.
+//   - 3 features per region: protected cultist / warrior / incarnation count
+//   - 1 feature per region: protected figures currently controlled by lasha
+//     (because Narcotic Musk can transfer a protected tenzen cultist to lasha)
+// Sits at the end of the vector for clean append-style upgrades.
+const PROTECTED_PER_CLASS_DIMS = 3 * REGION_ORDER.length;
+const PROTECTED_LASHA_DIMS = REGION_ORDER.length;
+
 export const FEATURE_DIM =
   GLOBAL_DIMS +
   POWERS.length * PER_POWER +
   REGION_ORDER.length * PER_REGION +
   WORLD_TRACK_DIMS +
-  VIEWPOINT_HAND_DIMS;
+  VIEWPOINT_HAND_DIMS +
+  PROTECTED_PER_CLASS_DIMS +
+  PROTECTED_LASHA_DIMS;
 
 // ── Extractor ────────────────────────────────────────────────────────────────
 
@@ -273,6 +283,40 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     }
   }
   i += CHAOS_CARD_IDS.length;
+
+  // ── Fate Shield (protected) figure counts per region ────────────────────
+  // 3 counts per region (cultist / warrior / incarnation), regardless of
+  // controller. Skipped figures: tipped (already filtered out everywhere).
+  for (const r of REGION_ORDER) {
+    const region = state.regions[r];
+    let pCult = 0, pWar = 0, pInc = 0;
+    if (region) {
+      for (const f of region.placements) {
+        if (!f.protected || f.tipped) continue;
+        if (f.class === 'cultist') pCult++;
+        else if (f.class === 'warrior') pWar++;
+        else if (f.class === 'incarnation') pInc++;
+      }
+    }
+    out[i++] = pCult / 3;
+    out[i++] = pWar / 2;
+    out[i++] = pInc / 1;
+  }
+
+  // ── Per-region count of protected figures controlled by lasha ───────────
+  // Tracks the specific case where Narcotic Musk transfers a protected
+  // tenzen cultist into lasha's control.
+  for (const r of REGION_ORDER) {
+    const region = state.regions[r];
+    let n = 0;
+    if (region) {
+      for (const f of region.placements) {
+        if (!f.protected || f.tipped) continue;
+        if ((f.controlledBy ?? f.power) === 'lasha') n++;
+      }
+    }
+    out[i++] = n / 3;
+  }
 
   return out;
 }
