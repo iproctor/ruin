@@ -90,7 +90,10 @@ while (state.winners === null && state.phase !== 'completed') {
   // Use MCTS for summoning; greedy 1-ply eval for all other choices
   let action: Action;
   try {
-    if (pending.actionKind === 'summoning_action') {
+    const useMcts =
+      pending.actionKind === 'summoning_action' ||
+      pending.actionKind === 'battle_hit_assignment';
+    if (useMcts) {
       action = runMcts(state, waitingFor);
     } else {
       action = greedyAction(state, waitingFor);

@@ -50,11 +50,28 @@ interface GameResult {
   error?: string;
 }
 
+// Matches log lines like "norrsund: gormen earns a dial advancement counter."
+const DAC_LOG_RE = /(xarm|gormen|tenzen|lasha) earns? a dial advancement counter/i;
+
+function scanLogForDac(
+  log: string[],
+  round: number,
+  dacByRound: Record<number, Partial<Record<Power, boolean>>>,
+): void {
+  for (const line of log) {
+    const m = line.match(DAC_LOG_RE);
+    if (m) {
+      const p = m[1]!.toLowerCase() as Power;
+      if (!dacByRound[round]) dacByRound[round] = {};
+      dacByRound[round]![p] = true;
+    }
+  }
+}
+
 function runGame(seed: number): GameResult {
   const dacByRound: Record<number, Partial<Record<Power, boolean>>> = {};
-  const prevDialCounters: Partial<Record<Power, number>> = {};
 
-  let { state } = autoAdvance({
+  let { state, log: initialLog } = autoAdvance({
     state: createInitialState({
       gameId: `bench-${seed}`,
       activePowers,
@@ -64,7 +81,8 @@ function runGame(seed: number): GameResult {
     log: [],
   });
 
-  for (const p of activePowers) prevDialCounters[p] = 0;
+  // Scan initial setup log too — DAC may not fire there but be safe
+  scanLogForDac(initialLog, state.round, dacByRound);
 
   let actionCount = 0;
 
@@ -89,7 +107,12 @@ function runGame(seed: number): GameResult {
 
     let action: Action;
     try {
-      action = pending.actionKind === 'summoning_action'
+      // Use MCTS for both summoning and battle hit assignment — the latter
+      // benefits from per-(power, class) action enumeration + lookahead.
+      const useMcts =
+        pending.actionKind === 'summoning_action' ||
+        pending.actionKind === 'battle_hit_assignment';
+      action = useMcts
         ? runMcts(state, pending.waitingFor)
         : greedyAction(state, pending.waitingFor);
     } catch (err) {
@@ -97,21 +120,18 @@ function runGame(seed: number): GameResult {
     }
 
     try {
-      state = applyAction(state, action).state;
+      const result = applyAction(state, action);
+      // Scan the log for DAC events. Doing this via the log (not via
+      // dialCounters deltas) is the only correct way: corruption-phase
+      // increments + end-phase reset happen inside one applyAction call,
+      // so by the time we observe state, dialCounters is always 0 — hiding
+      // all non-xarm DACs which are earned in the corruption phase.
+      // Attribute to the pre-applyAction round (the round whose battle/
+      // corruption phases produced the events).
+      scanLogForDac(result.log, state.round, dacByRound);
+      state = result.state;
     } catch (err) {
       return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, error: `${err}` };
-    }
-
-    // Track DAC per round. dialCounters reset at end phase, so we detect any
-    // increase and mark it, keeping a single "got a DAC this round" bit per power.
-    for (const p of activePowers) {
-      const cur = state.powers[p]?.dialCounters ?? 0;
-      const prev = prevDialCounters[p] ?? 0;
-      if (cur > prev) {
-        if (!dacByRound[state.round]) dacByRound[state.round] = {};
-        dacByRound[state.round]![p] = true;
-      }
-      prevDialCounters[p] = cur;
     }
 
     actionCount++;

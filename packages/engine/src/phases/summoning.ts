@@ -2,7 +2,7 @@ import type {
   GameState, Power, RegionId,
   SummonFigureAction, PlayCardAction, SummoningPassAction,
 } from '../types.js';
-import { CARD_BY_ID, FOLLOWERS, UPGRADES } from '../constants.js';
+import { CARD_BY_ID, FOLLOWERS, UPGRADES, UPGRADE_BY_ID } from '../constants.js';
 import {
   updatePower, updateRegion, legalPlacementRegions,
   cardSlotsAvailable, isRuined, followersInRegion, isWorldCardActive,
@@ -77,7 +77,7 @@ export function applySummonFigure(
         },
       });
     }
-    log.push(`Gormen Plaguefather places 2 corruption tokens in ${toRegion}.`);
+    log.push(`Gormen ${FOLLOWERS.gormen.incarnation.name} places 2 corruption tokens in ${toRegion}.`);
   }
 
   // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board
@@ -91,7 +91,7 @@ export function applySummonFigure(
       });
       s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
       s = addTokenIfAvailable(s, toRegion, 'chaos_stone');
-      log.push(`Tenzen Apprentice carries Chaos Stone from ${from} to ${toRegion}.`);
+      log.push(`Tenzen ${FOLLOWERS.tenzen.cultist.name} carries Chaos Stone from ${from} to ${toRegion}.`);
     }
   }
 
@@ -149,7 +149,7 @@ export function applyPlayCard(
       s = updateRegion(s, toRegion, {
         placements: [...s.regions[toRegion]!.placements, updated],
       });
-      log.push(`Tenzen Fractals upgrade: free Fractal summoned to ${toRegion}.`);
+      log.push(`Tenzen ${UPGRADE_BY_ID['tenzen_fractals_up']!.name}: free ${FOLLOWERS.tenzen.warrior.name.replace(/s$/, '')} summoned to ${toRegion}.`);
     }
   }
 
@@ -395,7 +395,7 @@ function applyOnPlayEffect(
           s = updateRegion(s, regionId, {
             corruptionTokens: { ...region.corruptionTokens, [p]: region.corruptionTokens[p] - 1 },
           });
-          log.push(`Gormen Entropy removes 1 ${p} corruption token from ${regionId}.`);
+          log.push(`Gormen ${CARD_BY_ID['gormen_decay']!.name} removes 1 ${p} corruption token from ${regionId}.`);
           break;
         }
       }
@@ -418,7 +418,7 @@ function applyOnPlayEffect(
       }
       if (gained) {
         s = updatePower(s, power, { powerPoints: s.powers[power]!.powerPoints + 1 });
-        log.push(`Tenzen Arcane Siphon: gained 1 PP.`);
+        log.push(`Tenzen ${CARD_BY_ID['tenzen_siphon_power']!.name}: gained 1 PP.`);
       }
       break;
     }
@@ -429,7 +429,7 @@ function applyOnPlayEffect(
           lasha: s.regions[regionId]!.corruptionTokens.lasha + 1,
         },
       });
-      log.push(`Lasha Silent Taint: 1 corruption token placed in ${regionId} (no dial trigger).`);
+      log.push(`Lasha ${CARD_BY_ID['lasha_depraved_infiltration']!.name}: 1 corruption token placed in ${regionId} (no dial trigger).`);
       break;
     }
     case 'lasha_debauched_royalty': {

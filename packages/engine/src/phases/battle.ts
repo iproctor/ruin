@@ -3,7 +3,7 @@ import type {
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
 } from '../types.js';
 import {
-  REGION_ORDER, FOLLOWERS, UPGRADES,
+  CARD_BY_ID, REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, WORLD_CARD_BY_ID,
 } from '../constants.js';
 import {
   updatePower, updateRegion, isWorldCardActive,
@@ -78,7 +78,7 @@ export function applyBattleHitAssignment(
           ),
         });
       }
-      log.push(`${regionId}: War Frenzy — ${hits} hit(s) applied to ${followerId} (not killed).`);
+      log.push(`${regionId}: ${CARD_BY_ID['xarm_war_frenzy']!.name} — ${hits} hit(s) applied to ${followerId} (not killed).`);
     }
   }
 
@@ -123,7 +123,7 @@ export function applyBattleHitAssignment(
           xarm: s.regions[regionId]!.corruptionTokens.xarm + 1,
         },
       });
-      log.push(`${regionId}: Xarm Heartrippers place 1 corruption token.`);
+      log.push(`${regionId}: Xarm ${FOLLOWERS.xarm.warrior.name} place 1 corruption token.`);
     }
 
     // Tenzen Recursive Pattern: mark for persistence if Tenzen killed a figure
@@ -281,7 +281,7 @@ function resolveRegion(
             f.id === target.id ? { ...f, controlledBy: 'lasha' } : f
           ),
         });
-        log.push(`${regionId}: Rapture upgrade — Lasha controls ${target.power} ${target.class} (${target.id}).`);
+        log.push(`${regionId}: ${UPGRADE_BY_ID['lasha_rapture_up']!.name} — Lasha controls ${target.power} ${target.class} (${target.id}).`);
       }
     }
   }
@@ -294,7 +294,7 @@ function resolveRegion(
     const rolls = rollWithExplosions(2, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
-    log.push(`${regionId}: War Frenzy — Xarm rolls ${rolls.join(',')} → ${hits} hit(s).`);
+    log.push(`${regionId}: ${CARD_BY_ID['xarm_war_frenzy']!.name} — Xarm rolls ${rolls.join(',')} → ${hits} hit(s).`);
     if (hits > 0) {
       const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
       const enemiesWF = getEnemyFigures(s, regionId, 'xarm', nullWeaveActive);
@@ -444,7 +444,7 @@ function runUndyingFury(
     const rolls = rollWithExplosions(diceCap, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
-    log.push(`${regionId}: Undying Fury extra battle — ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
+    log.push(`${regionId}: ${CARD_BY_ID['xarm_bloody_rebirth']!.name} extra battle — ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
 
     if (hits > 0) {
       const peasantsAvailableUF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
@@ -512,7 +512,7 @@ function runPostUndying(
             context: { regionId, maxKills: gormenCorr },
           },
         };
-        log.push(`${regionId}: Corruption's Harvest — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.`);
+        log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.`);
         return { state: s, log };
       }
     }
@@ -648,7 +648,7 @@ function killFollower(
 ): { state: GameState; log: string[] } {
   const figure = state.regions[regionId]!.placements.find(f => f.id === followerId);
   if (!figure) return { state, log };
-  log.push(`${regionId}: Corruption's Harvest kills ${figure.power} ${figure.class} (${followerId}).`);
+  log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} kills ${figure.power} ${figure.class} (${followerId}).`);
   return removeFigureFromBoard(state, regionId, followerId, log);
 }
 
@@ -675,7 +675,7 @@ function finalizeBattle(
         )[0]!;
         const r = removeFigureFromBoard(s, regionId, target.id, log);
         s = r.state;
-        log.push(`${regionId}: Armistice — ${power} removes ${target.class} (${target.id}).`);
+        log.push(`${regionId}: ${WORLD_CARD_BY_ID['eastern_armistice']!.name} — ${power} removes ${target.class} (${target.id}).`);
       }
     }
   }
@@ -778,7 +778,7 @@ function drawCardForPower(state: GameState, power: Power, log: string[]): GameSt
   }
 
   const drawn = deckIds[0]!;
-  log.push(`${power} draws ${drawn} (Heart Offering).`);
+  log.push(`${power} draws ${drawn} (${CARD_BY_ID['xarm_ritual_death']!.name}).`);
   return updatePower(state, power, {
     hand: [...hand, drawn],
     deckIds: deckIds.slice(1),

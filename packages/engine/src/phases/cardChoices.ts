@@ -5,7 +5,7 @@
 import type {
   GameState, Power, RegionId, TokenType, CardOnPlayChoiceAction,
 } from '../types.js';
-import { REGION_ORDER } from '../constants.js';
+import { CARD_BY_ID, REGION_ORDER } from '../constants.js';
 import { updatePower, updateRegion } from '../helpers.js';
 import { advanceSummoningTurn } from './summoning.js';
 
@@ -41,7 +41,7 @@ export function applyCardOnPlayChoice(
         s = updatePower(s, power, {
           followers: s.powers[power]!.followers.map(f => f.id === fId ? moved : f),
         });
-        log.push(`War March: ${power} moves ${fId} from ${fromRegion} to ${regionId}.`);
+        log.push(`${CARD_BY_ID['xarm_call_to_war']!.name}: ${power} moves ${fId} from ${fromRegion} to ${regionId}.`);
       }
       break;
     }
@@ -63,7 +63,7 @@ export function applyCardOnPlayChoice(
         s = updatePower(s, figure.power as Power, {
           followers: s.powers[figure.power as Power]!.followers.map(f => f.id === followerId ? moved : f),
         });
-        log.push(`Phase Shift: ${figure.power} ${figure.class} moved from ${regionId} to ${toRegion}.`);
+        log.push(`${CARD_BY_ID['tenzen_teleport']!.name}: ${figure.power} ${figure.class} moved from ${regionId} to ${toRegion}.`);
       }
       break;
     }
@@ -74,7 +74,7 @@ export function applyCardOnPlayChoice(
       const targetPower = choices['targetPower'] as Power;
       const current = s.powers[targetPower]!.pendingForcedDiscards;
       s = updatePower(s, targetPower, { pendingForcedDiscards: current + 2 });
-      log.push(`Meddling of Rats: ${targetPower} must discard 2 cards on their next turn.`);
+      log.push(`${CARD_BY_ID['tenzen_the_meddling_of_rats']!.name}: ${targetPower} must discard 2 cards on their next turn.`);
       break;
     }
 
@@ -94,7 +94,7 @@ export function applyCardOnPlayChoice(
             f.id === followerId ? { ...f, protected: true } : f
           ),
         });
-        log.push(`Fate's Aegis: ${followerId} is protected from death this round.`);
+        log.push(`${CARD_BY_ID['tenzen_fate_shield']!.name}: ${followerId} is protected from death this round.`);
       }
       break;
     }
@@ -114,7 +114,7 @@ export function applyCardOnPlayChoice(
           s = updateRegion(s, toRegion, {
             tokens: [...s.regions[toRegion]!.tokens, token],
           });
-          log.push(`Invisible Hand: ${token} moved from ${fromRegion} to ${toRegion}.`);
+          log.push(`${CARD_BY_ID['lasha_hidden_influence']!.name}: ${token} moved from ${fromRegion} to ${toRegion}.`);
         }
       }
       break;
@@ -139,7 +139,7 @@ export function applyCardOnPlayChoice(
             f.id === followerId ? { ...f, controlledBy: 'lasha' } : f
           ),
         });
-        log.push(`Enthrallment: Lasha controls ${figure.power} cultist ${followerId}.`);
+        log.push(`${CARD_BY_ID['lasha_narcotic_musk']!.name}: Lasha controls ${figure.power} cultist ${followerId}.`);
       }
       break;
     }

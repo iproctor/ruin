@@ -2,6 +2,8 @@ import type { GameState, Action, Power } from '@ruin/engine';
 import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1 } from './node.js';
+import { filterPointlessActions, actionBuildsTowardDac } from './filter-actions.js';
+import { enumerateKillActions } from './hit-allocation.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -17,7 +19,26 @@ export interface MctsOptions {
 const DEFAULT_ITERATIONS = 2000;
 const DEFAULT_TIME_MS = 300;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
-const MAX_ROLLOUT_DEPTH = 20;
+
+/**
+ * Adaptive rollout depth: roll out further when the value network is least
+ * reliable (early game) and shorter when it's most reliable (late game).
+ *
+ * The model is trained on game outcomes, so its predictions get sharper
+ * monotonically through the game — round-1 states have nearly-uniform soft
+ * targets, round-7 states are essentially deterministic.
+ *
+ * Pushing the rollout leaf into rounds where the model is more accurate
+ * partially compensates for the early-state weakness, at the cost of more
+ * random-rollout-policy noise.
+ */
+function rolloutDepthForRound(round: number): number {
+  if (round <= 1) return 35;
+  if (round <= 2) return 28;
+  if (round <= 3) return 20;
+  if (round <= 5) return 14;
+  return 10;
+}
 
 // Probability of picking a non-pass action when one is available in rollouts.
 // This biases simulations toward aggressive play and avoids pass-heavy rollouts
@@ -47,19 +68,35 @@ export function runMcts(
   const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
   const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
 
-  const legalRoot = getLegalActions(state, forPower);
-  if (legalRoot.length === 0) {
+  // For battle_hit_assignment, use a richer per-(power, class) enumeration
+  // instead of the engine's 3 hand-picked strategies. This gives MCTS the
+  // ability to discriminate between "kill 2 cultists" vs "kill 1 warrior"
+  // vs "kill mixed" — the granularity the value model needs to compare.
+  let legalRootRaw: Action[];
+  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
+    legalRootRaw = enumerateKillActions(state, forPower);
+  } else {
+    legalRootRaw = getLegalActions(state, forPower);
+  }
+  if (legalRootRaw.length === 0) {
     throw new Error(`runMcts: no legal actions for ${forPower}`);
   }
-  // Fast path: only one legal action.
+  // Strip out card plays whose preconditions can't fire (Hollow Pact in empty
+  // region, Ritual Death without own figures, etc). Always keeps at least pass
+  // and any non-card actions.
+  const legalRoot = filterPointlessActions(state, legalRootRaw);
   if (legalRoot.length === 1) {
     return legalRoot[0]!;
   }
 
-  // Prune the root action set to keep tree coverage manageable.
+  // Random downsample to keep root branching tractable.
   const prunedRoot = pruneActions(state, forPower, legalRoot);
 
   const root = createNode(state, null, null, null, forPower, [...prunedRoot]);
+
+  // Adaptive rollout depth based on the root state's round — see
+  // rolloutDepthForRound for the rationale.
+  const rolloutDepth = rolloutDepthForRound(state.round);
 
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
@@ -72,7 +109,7 @@ export function runMcts(
     const expanded = expand(selected, forPower);
 
     // 3. Simulation (rollout)
-    const score = rollout(expanded.state, forPower, state.rngSeed + iteration);
+    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
 
     // 4. Backpropagation
     backpropagate(expanded, score);
@@ -143,23 +180,34 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
 }
 
 /**
- * Simulation (rollout): from `state`, play random actions until the game ends
- * or `MAX_ROLLOUT_DEPTH` half-moves have been played.
+ * Simulation (rollout): from `state`, play biased-random actions until the
+ * game ends or `maxDepth` half-moves have been played.
  *
- * Uses a biased selection policy: in the summoning phase, pass actions are
- * chosen only ROLLOUT_AGGRESSION% of the time to simulate aggressive play.
- * All other phases use uniform random selection.
+ * Selection policy:
+ *   - In summoning phase, strongly prefers non-pass and filters out pointless
+ *     card plays via filterPointlessActions (keeps the random play realistic).
+ *   - In other phases, uniform random over legal actions.
+ *
+ * `maxDepth` is set adaptively by the caller based on the root state's round
+ * (see rolloutDepthForRound) — deeper rollouts in early game push the leaf
+ * state into rounds where the value network is more reliable.
  */
-function rollout(state: GameState, forPower: Power, seed: number): number {
+function rollout(state: GameState, forPower: Power, seed: number, maxDepth: number): number {
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;
 
-  while (!isTerminal(current) && depth < MAX_ROLLOUT_DEPTH) {
+  while (!isTerminal(current) && depth < maxDepth) {
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
-    const actions = getLegalActions(current, waitingFor);
+    const rawActions = getLegalActions(current, waitingFor);
+    if (rawActions.length === 0) break;
+
+    // Filter out card plays whose preconditions can't fire — same rule the
+    // root and tree expansion use. Keeps rollouts from wasting plies on
+    // dead actions and producing nonsense leaf states.
+    const actions = filterPointlessActions(current, rawActions);
     if (actions.length === 0) break;
 
     let action: (typeof actions)[number] | undefined;
@@ -218,7 +266,13 @@ function getChildUntriedActions(state: GameState): Action[] {
   if (isTerminal(state)) return [];
   if (state.pendingAction === null) return [];
   const waiting = state.pendingAction.waitingFor;
-  return getLegalActions(state, waiting);
+  // For battle_hit_assignment, use the richer per-(power, class) enumeration.
+  if (state.pendingAction.actionKind === 'battle_hit_assignment') {
+    return enumerateKillActions(state, waiting);
+  }
+  // Apply the same pointless-card filter inside the tree, so we don't waste
+  // node expansions on actions whose effect cannot fire.
+  return filterPointlessActions(state, getLegalActions(state, waiting));
 }
 
 /**
@@ -261,15 +315,20 @@ function bestAction(root: MctsNode): Action {
  * Non-summoning actions are returned as-is (sets are typically small).
  */
 function pruneActions(state: GameState, _power: Power, actions: Action[]): Action[] {
-  // Minimal cap on the root branching factor. No strategic heuristics — just
-  // a random down-sample with `summoning_pass` always preserved. The learned
-  // evaluator + MCTS does the strategic thinking; this exists solely to keep
-  // iteration count tractable when the legal set is huge.
+  // Cap root branching, with light DAC bias: actions that move toward earning
+  // DAC for the acting power are preferentially preserved in the sampled set.
+  // The remaining slots are random samples from the rest. Pass is always kept.
   if (actions.length <= MAX_ROOT_ACTIONS) return actions;
   if (state.pendingAction?.actionKind !== 'summoning_action') return actions;
 
   const passActions = actions.filter(a => a.kind === 'summoning_pass');
-  const nonPass = actions.filter(a => a.kind !== 'summoning_pass');
+  const dacActions: Action[] = [];
+  const otherActions: Action[] = [];
+  for (const a of actions) {
+    if (a.kind === 'summoning_pass') continue;
+    if (actionBuildsTowardDac(state, a)) dacActions.push(a);
+    else otherActions.push(a);
+  }
 
   // Deterministic pseudo-random pick based on state.rngSeed so replay is stable.
   let seed = state.rngSeed | 0;
@@ -277,15 +336,26 @@ function pruneActions(state: GameState, _power: Power, actions: Action[]): Actio
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   }
-  // Fisher–Yates partial shuffle to sample without replacement.
-  const pool = [...nonPass];
-  const take = Math.max(0, MAX_ROOT_ACTIONS - passActions.length);
-  const sampled: Action[] = [];
-  for (let i = 0; i < take && pool.length > 0; i++) {
-    const j = Math.floor(rand() * pool.length);
-    sampled.push(pool[j]!);
-    pool[j] = pool[pool.length - 1]!;
-    pool.pop();
+  function fisherYatesPick<T>(pool: T[], k: number): T[] {
+    const arr = [...pool];
+    const out: T[] = [];
+    for (let i = 0; i < k && arr.length > 0; i++) {
+      const j = Math.floor(rand() * arr.length);
+      out.push(arr[j]!);
+      arr[j] = arr[arr.length - 1]!;
+      arr.pop();
+    }
+    return out;
   }
-  return [...sampled, ...passActions];
+
+  // Reserve up to half the budget for DAC-helpful actions (or all of them
+  // if there are fewer). The other half is random exploration.
+  const budget = MAX_ROOT_ACTIONS - passActions.length;
+  const dacQuota = Math.min(dacActions.length, Math.ceil(budget * 0.6));
+  const otherQuota = Math.max(0, budget - dacQuota);
+
+  const sampledDac = fisherYatesPick(dacActions, dacQuota);
+  const sampledOther = fisherYatesPick(otherActions, otherQuota);
+
+  return [...sampledDac, ...sampledOther, ...passActions];
 }

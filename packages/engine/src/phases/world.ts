@@ -189,7 +189,7 @@ function applyWorldCardImmediate(
 
     case 'accelerating_doom': {
       // Draw another card immediately — caller handles this by re-running resolveWorldPhase
-      log.push('False Lead: drawing another World card.');
+      log.push(`${WORLD_CARD_BY_ID['accelerating_doom']!.name}: drawing another World card.`);
       s = { ...s, phase: 'world' };
       return { state: s, log, needsChoice: false };
     }
@@ -213,7 +213,7 @@ function applyWorldCardImmediate(
         let vp = claimed;
         if (claimed === maxClaimed && maxClaimed > 0) vp += 3;
         s = scoreVP(s, p, vp);
-        if (vp > 0) log.push(`${p} scores ${vp} VP from Peasant Harvest (${claimed} claimed Peasants).`);
+        if (vp > 0) log.push(`${p} scores ${vp} VP from ${WORLD_CARD_BY_ID['peasant_harvest']!.name} (${claimed} claimed Peasants).`);
       }
       return { state: s, log, needsChoice: false };
     }
@@ -285,7 +285,7 @@ function applyWorldCardImmediate(
         (ADJACENCY[r] ?? []).some(adj => s.regions[adj]!.tokens.includes('chaos_stone'))
       );
       if (eligible.length === 0) {
-        log.push('Forward Scouts: no Chaos Stone tokens on board. No effect.');
+        log.push(`${WORLD_CARD_BY_ID['forward_scouts']!.name}: no Chaos Stone tokens on board. No effect.`);
         return { state: s, log, needsChoice: false };
       }
       return { state: s, log, needsChoice: true };

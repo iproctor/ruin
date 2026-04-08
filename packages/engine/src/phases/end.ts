@@ -1,6 +1,6 @@
 import type { GameState, Power, RegionId, DialPendingReward } from '../types.js';
 import {
-  REGION_ORDER, RUINATION_CARDS, THREAT_DIALS, UPGRADES,
+  CARD_BY_ID, REGION_ORDER, RUINATION_CARDS, THREAT_DIALS, UPGRADES, WORLD_CARD_BY_ID,
 } from '../constants.js';
 import {
   updatePower, updateRegion, scoreVP, isWorldCardActive, lowestThreatPower,
@@ -180,7 +180,7 @@ function removeChaosCards(
               f.id === controlled.id ? { ...f, controlledBy: null } : f
             ),
           });
-          log.push(`Enthrallment discarded: ${controlled.power} ${controlled.id} released.`);
+          log.push(`${CARD_BY_ID['lasha_narcotic_musk']!.name} discarded: ${controlled.power} ${controlled.id} released.`);
         }
       }
 
@@ -289,7 +289,7 @@ function applyWorldCardPersistentEffect(
             hand: s.powers[power]!.hand.slice(0, -1),
             discardIds: [...s.powers[power]!.discardIds, card],
           });
-          log.push(`Strategic Vanguard: ${power} discards ${card}.`);
+          log.push(`${WORLD_CARD_BY_ID['normagne_heir']!.name}: ${power} discards ${card}.`);
         }
       }
       break;
@@ -306,7 +306,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, target, {
           tokens: [...s.regions[target]!.tokens, 'noble'],
         });
-        log.push(`The Gambit: ${lowest} places a Noble on ${target}.`);
+        log.push(`${WORLD_CARD_BY_ID['northern_heir']!.name}: ${lowest} places a Noble on ${target}.`);
       }
       break;
     }
@@ -321,7 +321,7 @@ function applyWorldCardPersistentEffect(
         const tokens = [...s.regions[target]!.tokens];
         tokens.splice(tokens.indexOf('noble'), 1);
         s = updateRegion(s, target, { tokens });
-        log.push(`Diplomatic Envoy: ${lowest} removes a Noble from ${target}.`);
+        log.push(`${WORLD_CARD_BY_ID['diplomatic_envoy']!.name}: ${lowest} removes a Noble from ${target}.`);
       }
       break;
     }
@@ -336,7 +336,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, target, {
           tokens: [...s.regions[target]!.tokens, 'hero'],
         });
-        log.push(`The Hunt: ${lowest} places a Hero on ${target}.`);
+        log.push(`${WORLD_CARD_BY_ID['chaos_countermeasures']!.name}: ${lowest} places a Hero on ${target}.`);
       }
       break;
     }
@@ -360,7 +360,7 @@ function applyWorldCardPersistentEffect(
           });
         }
         if (figures.length > 0) {
-          log.push(`The Exodus: removed all figures from ${regionId}.`);
+          log.push(`${WORLD_CARD_BY_ID['great_exorcism']!.name}: removed all figures from ${regionId}.`);
         }
       }
 
@@ -384,7 +384,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, mostCorrupt, {
           tokens: [...existing, ...Array(totalEvents).fill('event')],
         });
-        log.push(`The Exodus: moved ${totalEvents} Event token(s) to ${mostCorrupt}.`);
+        log.push(`${WORLD_CARD_BY_ID['great_exorcism']!.name}: moved ${totalEvents} Event token(s) to ${mostCorrupt}.`);
       }
       break;
     }
@@ -397,7 +397,7 @@ function applyWorldCardPersistentEffect(
         const tokens = [...region.tokens];
         tokens.splice(tokens.indexOf('peasant'), 1);
         s = updateRegion(s, regionId, { tokens });
-        log.push(`Misdirection: Peasant removed from ${regionId}.`);
+        log.push(`${WORLD_CARD_BY_ID['central_overpopulation']!.name}: Peasant removed from ${regionId}.`);
       }
       break;
     }
@@ -409,7 +409,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, regionId, {
           corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
         });
-        log.push(`Cleansing Wave: all corruption tokens removed from ${regionId}.`);
+        log.push(`${WORLD_CARD_BY_ID['cleansing_wave']!.name}: all corruption tokens removed from ${regionId}.`);
       }
       break;
     }
@@ -429,7 +429,7 @@ function applyWorldCardPersistentEffect(
             [richest]: s.regions[regionId]!.corruptionTokens[richest] - 1,
           },
         });
-        log.push(`Noble Scrutiny: ${richest} removes 1 corruption token from ${regionId}.`);
+        log.push(`${WORLD_CARD_BY_ID['noble_scrutiny']!.name}: ${richest} removes 1 corruption token from ${regionId}.`);
       }
       break;
     }

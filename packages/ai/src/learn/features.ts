@@ -108,12 +108,22 @@ const PER_REGION =
 // World track one-hot (both slots concatenated)
 const WORLD_TRACK_DIMS = 2 * WORLD_CARD_IDS.length;
 
+// Viewpoint-power's hand contents (multi-hot over chaos cards). Other powers'
+// hands are NOT encoded — that would leak hidden information across viewpoints.
+// This block sits at the END of the vector so the v2→v3 upgrade is a simple
+// right-pad (no mid-vector insertion).
+const VIEWPOINT_HAND_DIMS = CHAOS_CARD_IDS.length;
+
 export const FEATURE_DIM =
-  GLOBAL_DIMS + POWERS.length * PER_POWER + REGION_ORDER.length * PER_REGION + WORLD_TRACK_DIMS;
+  GLOBAL_DIMS +
+  POWERS.length * PER_POWER +
+  REGION_ORDER.length * PER_REGION +
+  WORLD_TRACK_DIMS +
+  VIEWPOINT_HAND_DIMS;
 
 // ── Extractor ────────────────────────────────────────────────────────────────
 
-export function extractFeatures(state: GameState): Float32Array {
+export function extractFeatures(state: GameState, viewpoint: Power): Float32Array {
   const out = new Float32Array(FEATURE_DIM);
   let i = 0;
 
@@ -137,7 +147,10 @@ export function extractFeatures(state: GameState): Float32Array {
     out[i++] = Math.min(ps.deckIds.length / 20, 1);
     out[i++] = Math.min(ps.discardIds.length / 20, 1);
 
-    const onBoard = ps.followers.filter(f => f.regionId !== null);
+    // Tipped figures are dead but not yet cleared from the board (cleanup
+    // happens at end of battle round). Don't count them — they don't
+    // contribute to combat or domination.
+    const onBoard = ps.followers.filter(f => f.regionId !== null && !f.tipped);
     const inReserve = ps.followers.length - onBoard.length;
     out[i++] = onBoard.length / 12;
     out[i++] = inReserve / 12;
@@ -179,7 +192,11 @@ export function extractFeatures(state: GameState): Float32Array {
     // Per-power breakdown
     for (const p of POWERS) {
       out[i++] = Math.min((region.corruptionTokens[p] ?? 0) / 8, 1);
-      const figs = region.placements.filter(f => (f.controlledBy ?? f.power) === p);
+      // Skip tipped (dead-but-not-cleared) figures — they no longer contribute
+      // to combat or domination this round.
+      const figs = region.placements.filter(
+        f => !f.tipped && (f.controlledBy ?? f.power) === p,
+      );
       out[i++] = Math.min(figs.length / 6, 1);
       let c = 0, w = 0, inc = 0;
       for (const f of figs) {
@@ -242,6 +259,20 @@ export function extractFeatures(state: GameState): Float32Array {
     if (idx !== undefined) out[slot2Start + idx] = 1;
   }
   i += WORLD_CARD_IDS.length;
+
+  // ── Viewpoint power's hand (multi-hot over chaos cards) ──────────────────
+  // Only the viewpoint sees its own hand. Other powers' hands are hidden info
+  // and are NOT encoded.
+  const handStart = i;
+  for (let k = 0; k < CHAOS_CARD_IDS.length; k++) out[handStart + k] = 0;
+  const viewpointState = state.powers[viewpoint];
+  if (viewpointState) {
+    for (const cardId of viewpointState.hand) {
+      const idx = CHAOS_CARD_INDEX.get(cardId);
+      if (idx !== undefined) out[handStart + idx] = 1;
+    }
+  }
+  i += CHAOS_CARD_IDS.length;
 
   return out;
 }

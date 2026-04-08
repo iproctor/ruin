@@ -1,6 +1,6 @@
 import type { GameState, Power, RegionId } from '../types.js';
 import {
-  REGION_ORDER, FOLLOWERS, UPGRADES, RUINATION_CARDS, CARD_BY_ID,
+  REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, RUINATION_CARDS, CARD_BY_ID,
   CORRUPTION_RUIN_THRESHOLD, MAX_RUINATION_CARDS,
 } from '../constants.js';
 import {
@@ -136,7 +136,7 @@ function resolveDomination(
             },
           });
         }
-        log.push(`${regionId}: Gormen Death's Perfume — 2 corruption tokens placed.`);
+        log.push(`${regionId}: Gormen ${CARD_BY_ID['gormen_deaths_perfume']!.name} — 2 corruption tokens placed.`);
       }
     } else {
       log.push(`${regionId}: ${winner} has highest domination (${maxDom}) but does not exceed resistance (${resistance}).`);
@@ -276,7 +276,7 @@ function resolveCorruption(
     // Ruined or scorched regions skip corruption placement
     if (isRuined(region)) continue;
     if (regionCardActive(s, regionId, 'xarm_war_cry')) {
-      log.push(`${regionId}: Scorched Earth — no corruption tokens placed.`);
+      log.push(`${regionId}: ${CARD_BY_ID['xarm_war_cry']!.name} — no corruption tokens placed.`);
       continue;
     }
 
@@ -320,7 +320,7 @@ function resolveCorruption(
           ),
         });
         if (tokensToPlace > 0) placedBy.add('gormen');
-        log.push(`${regionId}: Plague Bloom — ${gormenFigures.length} Gormen figures removed, ${tokensToPlace} corruption token(s) placed.`);
+        log.push(`${regionId}: ${CARD_BY_ID['gormen_vile_consumption']!.name} — ${gormenFigures.length} Gormen figures removed, ${tokensToPlace} corruption token(s) placed.`);
       }
     }
 
@@ -445,7 +445,7 @@ function applyRuination(
   for (const power of s.activePowers) {
     if (s.powers[power]!.upgradesInPlay.includes('gormen_provender_of_rot')) {
       s = scoreVP(s, power, 3);
-      log.push(`Gormen Provender of Ruin: ${power} scores 3 VP.`);
+      log.push(`Gormen ${UPGRADE_BY_ID['gormen_provender_of_rot']!.name}: ${power} scores 3 VP.`);
     }
   }
 
