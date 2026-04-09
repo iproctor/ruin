@@ -1,6 +1,7 @@
 import type {
   GameState, Power, RegionId,
   SummonFigureAction, PlayCardAction, SummoningPassAction,
+  TenzenApprenticeChoiceAction,
 } from '../types.js';
 import { CARD_BY_ID, FOLLOWERS, UPGRADES, UPGRADE_BY_ID } from '../constants.js';
 import {
@@ -80,18 +81,30 @@ export function applySummonFigure(
     log.push(`Gormen ${FOLLOWERS.gormen.incarnation.name} places 2 corruption tokens in ${toRegion}.`);
   }
 
-  // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board
+  // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board.
+  // This is a player choice — we set a pending action and pause the
+  // summoning turn until the player decides whether to carry the stone.
   if (power === 'tenzen' && follower.class === 'cultist' &&
       s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
       follower.regionId !== null) {
     const from = follower.regionId;
-    if (s.regions[from]!.tokens.includes('chaos_stone') && s.tokenSupply.chaos_stone > 0) {
-      s = updateRegion(s, from, {
-        tokens: removeFirst(s.regions[from]!.tokens, 'chaos_stone'),
-      });
-      s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
-      s = addTokenIfAvailable(s, toRegion, 'chaos_stone');
-      log.push(`Tenzen ${FOLLOWERS.tenzen.cultist.name} carries Chaos Stone from ${from} to ${toRegion}.`);
+    if (s.regions[from]!.tokens.includes('chaos_stone')) {
+      log.push(`${power} summons ${follower.class} (${followerId}) to ${toRegion} (cost ${cost}).`);
+      // Pause for the player to decide whether to carry the chaos stone.
+      // Do NOT call advanceSummoningTurn yet — that happens after the choice.
+      s = {
+        ...s,
+        pendingAction: {
+          waitingFor: 'tenzen',
+          actionKind: 'tenzen_apprentice_choice',
+          context: {
+            followerId,
+            fromRegion: from,
+            toRegion,
+          },
+        },
+      };
+      return { state: s, log };
     }
   }
 
@@ -120,9 +133,12 @@ export function applyPlayCard(
   const cost = getCardCost(s, power, cardId, toRegion);
   if (p.powerPoints < cost) throw new Error(`Not enough power points`);
 
-  // Remove from hand
+  // Remove one copy from hand
+  const handIdx = p.hand.indexOf(cardId);
+  if (handIdx === -1) throw new Error(`Card ${cardId} not in ${power}'s hand`);
+  const newHand = [...p.hand.slice(0, handIdx), ...p.hand.slice(handIdx + 1)];
   s = updatePower(s, power, {
-    hand: p.hand.filter(id => id !== cardId),
+    hand: newHand,
     powerPoints: p.powerPoints - cost,
   });
 
@@ -211,6 +227,34 @@ export function applySummoningPass(
   let s = updatePower(state, power, { powerPoints: 0, passedSummoning: true });
   const log = [`${power} passes summoning.`];
   return { state: advanceSummoningTurn(s, power), log };
+}
+
+// ─── Tenzen Apprentices: chaos stone carry choice ────────────────────────────
+
+export function applyTenzenApprenticeChoice(
+  state: GameState,
+  action: TenzenApprenticeChoiceAction,
+): { state: GameState; log: string[] } {
+  let s = state;
+  const log: string[] = [];
+  if (action.carry) {
+    const fromRegion = s.regions[action.fromRegion];
+    if (fromRegion && fromRegion.tokens.includes('chaos_stone') && s.tokenSupply.chaos_stone >= 0) {
+      // Move the chaos stone from origin to destination.
+      s = updateRegion(s, action.fromRegion, {
+        tokens: removeFirst(fromRegion.tokens, 'chaos_stone'),
+      });
+      // Return to supply briefly so addTokenIfAvailable will use it.
+      s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
+      s = addTokenIfAvailable(s, action.toRegion, 'chaos_stone');
+      log.push(`Tenzen ${FOLLOWERS.tenzen.cultist.name} carries Chaos Stone from ${action.fromRegion} to ${action.toRegion}.`);
+    }
+  } else {
+    log.push(`Tenzen ${FOLLOWERS.tenzen.cultist.name} leaves Chaos Stone in ${action.fromRegion}.`);
+  }
+  // Clear the pending action and resume the summoning turn order.
+  s = { ...s, pendingAction: null };
+  return { state: advanceSummoningTurn(s, 'tenzen'), log };
 }
 
 // ─── Turn advancement ─────────────────────────────────────────────────────────

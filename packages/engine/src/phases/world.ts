@@ -1,5 +1,5 @@
 import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
-import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER } from '../constants.js';
+import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
 import {
   lowestThreatPower, addTokenToRegion, removeTokenFromRegion,
   isWorldCardActive, updateRegion, updatePower, scoreVP,
@@ -319,9 +319,15 @@ function applyWorldCardChoice(
 ): { state: GameState; log: string[] } {
   let s = state;
 
+  const cardName = WORLD_CARD_BY_ID[cardId]?.name ?? cardId;
+  const rname = (r: RegionId) => REGIONS[r]?.name ?? r;
+  const rlist = (rs: (RegionId | undefined)[]) => rs.filter(Boolean).map(r => rname(r as RegionId)).join(', ');
+  const logChoice = (desc: string) => log.push(`${cardName} choice: ${desc}`);
+
   switch (cardId) {
     case 'purchased_title': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`replace Peasant with Noble in ${rname(regionId)}`);
       s = removeTokenFromRegion(s, regionId, 'peasant');
       s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
       s = addTokenIfAvailable(s, regionId, 'noble', log);
@@ -329,24 +335,32 @@ function applyWorldCardChoice(
     }
     case 'ratmen_incursion': {
       const [r1, r2] = choices['regions'] as RegionId[];
+      logChoice(`Ratmen → ${rlist([r1, r2])}`);
       if (r1) s = addTokenIfAvailable(s, r1, 'ratmen', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'ratmen', log);
       break;
     }
     case 'peasant_prosperity': {
       const [r1, r2] = choices['regions'] as RegionId[];
+      logChoice(`Peasants → ${rlist([r1, r2])}`);
       if (r1) s = addTokenIfAvailable(s, r1, 'peasant', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'peasant', log);
       break;
     }
     case 'chaos_storm': {
       const [r1, r2] = choices['regions'] as RegionId[];
+      logChoice(`Chaos Stones → ${rlist([r1, r2])}`);
       if (r1) s = addTokenIfAvailable(s, r1, 'chaos_stone', log);
       if (r2) s = addTokenIfAvailable(s, r2, 'chaos_stone', log);
       break;
     }
     case 'grand_muster': {
       const { peasantRegions, nobleRegions, ratmenRegions } = choices as Record<string, RegionId[]>;
+      const parts: string[] = [];
+      if (peasantRegions?.length) parts.push(`Peasants → ${rlist(peasantRegions)}`);
+      if (nobleRegions?.length)   parts.push(`Nobles → ${rlist(nobleRegions)}`);
+      if (ratmenRegions?.length)  parts.push(`Ratmen → ${rlist(ratmenRegions)}`);
+      logChoice(parts.join('; '));
       for (const r of peasantRegions ?? []) s = addTokenIfAvailable(s, r, 'peasant', log);
       for (const r of nobleRegions ?? []) s = addTokenIfAvailable(s, r, 'noble', log);
       for (const r of ratmenRegions ?? []) s = addTokenIfAvailable(s, r, 'ratmen', log);
@@ -354,49 +368,58 @@ function applyWorldCardChoice(
     }
     case 'normagne_heir': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`Noble → ${rname(regionId)}`);
       s = addTokenIfAvailable(s, regionId, 'noble', log);
       break;
     }
     case 'northern_heir': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['norrsund', 'volensk'] : ['talvimaa', 'mittelreich'];
+      logChoice(`Nobles → ${rlist(regions)}`);
       for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
       break;
     }
     case 'mittelreich_diplomacy': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`Event → ${rname(regionId)}`);
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
     case 'great_exorcism': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`Event → ${rname(regionId)}`);
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
     case 'heroes_of_order': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['normagne', 'mittelreich'] : ['almerida', 'toscavar'];
+      logChoice(`Heroes → ${rlist(regions)}`);
       for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);
       break;
     }
     case 'cleansing_wave': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`Event → ${rname(regionId)} (adjacent to Normagne)`);
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
     case 'forward_scouts': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`Hero → ${rname(regionId)}`);
       s = addTokenIfAvailable(s, regionId, 'hero', log);
       break;
     }
     case 'the_exchange': {
       const regionId = choices['regionId'] as RegionId;
+      logChoice(`2× Chaos Stone → ${rname(regionId)}`);
       s = addTokenIfAvailable(s, regionId, 'chaos_stone', log);
       s = addTokenIfAvailable(s, regionId, 'chaos_stone', log);
       break;
     }
     case 'diplomatic_envoy': {
       const regions = choices['regions'] as RegionId[];
+      logChoice(`Nobles → ${rlist(regions)}`);
       for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
       break;
     }

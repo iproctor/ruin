@@ -101,6 +101,7 @@ export type ActionKind =
   | 'corruption_harvest_choice'// Gormen chooses which figures to kill
   | 'card_on_play_choice'      // on-play card effect requiring player choice
   | 'forced_discard'           // player must discard N cards (deferred opponent effect)
+  | 'tenzen_apprentice_choice' // Tenzen Apprentices upgrade: carry a chaos stone or leave it
   | 'dial_place_token'         // dial reward: place a noble or chaos stone on any region
   | 'dial_remove_corruption'   // dial reward: remove a corruption token (any power's) from a region
   | 'dial_remove_world_token'; // dial reward: remove a world token from a region
@@ -311,6 +312,15 @@ export interface DialRemoveWorldTokenAction {
   tokenType: TokenType;
 }
 
+export interface TenzenApprenticeChoiceAction {
+  kind: 'tenzen_apprentice_choice';
+  power: Power;          // always tenzen
+  followerId: string;    // the apprentice that just moved
+  fromRegion: RegionId;  // origin (where the chaos stone is)
+  toRegion: RegionId;    // destination (where it would go if carried)
+  carry: boolean;        // true = carry the chaos stone, false = leave it
+}
+
 export type Action =
   | TenzenDiscardAction
   | SummonFigureAction
@@ -323,6 +333,7 @@ export type Action =
   | CorruptionHarvestChoiceAction
   | CardOnPlayChoiceAction
   | ForcedDiscardAction
+  | TenzenApprenticeChoiceAction
   | DialPlaceTokenAction
   | DialRemoveCorruptionAction
   | DialRemoveWorldTokenAction

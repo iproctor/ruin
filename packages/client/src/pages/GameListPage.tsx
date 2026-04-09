@@ -115,9 +115,14 @@ export default function GameListPage() {
           </p>
         </div>
       )}
-      {games.map((g) => (
-        <GameRow key={g.id} game={g} userId={userId} />
-      ))}
+      {[...games]
+        .sort((a, b) => {
+          if (a.isComplete !== b.isComplete) return a.isComplete ? 1 : -1;
+          return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+        })
+        .map((g) => (
+          <GameRow key={g.id} game={g} userId={userId} />
+        ))}
     </div>
   );
 }

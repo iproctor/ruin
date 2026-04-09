@@ -132,6 +132,7 @@ const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('dial_place_token'),          power: zPower, regionId: zRegionId }),
   z.object({ kind: z.literal('dial_remove_corruption'),    power: zPower, regionId: zRegionId, targetPower: zPower }),
   z.object({ kind: z.literal('dial_remove_world_token'),   power: zPower, regionId: zRegionId, tokenType: zTokenType }),
+  z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPower, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
 ]);
 
 const actionSchema = z.object({ action: zAction });

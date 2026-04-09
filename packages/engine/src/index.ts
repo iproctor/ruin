@@ -30,7 +30,7 @@ export type { Rng } from './dice.js';
 export {
   CARD_BY_ID, WORLD_CARD_BY_ID, UPGRADE_BY_ID,
   CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS,
-  REGIONS, REGION_ORDER,
+  REGIONS, REGION_ORDER, ADJACENCY,
   THREAT_DIALS,
 } from './constants.js';
 export type { CardDef, WorldCardDef, UpgradeDef, DialPosition } from './constants.js';

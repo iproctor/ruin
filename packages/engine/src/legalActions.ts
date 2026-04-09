@@ -60,6 +60,18 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
         .map(regionId => ({ kind: 'dial_place_token' as const, power, regionId } satisfies DialPlaceTokenAction));
     }
 
+    case 'tenzen_apprentice_choice': {
+      const ctx = state.pendingAction.context;
+      const followerId = ctx['followerId'] as string;
+      const fromRegion = ctx['fromRegion'] as RegionId;
+      const toRegion = ctx['toRegion'] as RegionId;
+      // Two options: carry the chaos stone or leave it.
+      return [
+        { kind: 'tenzen_apprentice_choice', power: 'tenzen', followerId, fromRegion, toRegion, carry: true },
+        { kind: 'tenzen_apprentice_choice', power: 'tenzen', followerId, fromRegion, toRegion, carry: false },
+      ];
+    }
+
     case 'dial_remove_corruption': {
       const queue = state.pendingDialRewards ?? [];
       const reward = queue[0];

@@ -1,7 +1,7 @@
 import type { GameState, Action, Power, DialPendingReward } from './types.js';
 import { resolveWorldPhase, applyWorldChoice } from './phases/world.js';
 import { beginDrawPhase, applyTenzenDiscard, getBasePP } from './phases/draw.js';
-import { applySummonFigure, applyPlayCard, applySummoningPass } from './phases/summoning.js';
+import { applySummonFigure, applyPlayCard, applySummoningPass, applyTenzenApprenticeChoice } from './phases/summoning.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
 import { resolveEndPhase } from './phases/end.js';
@@ -66,6 +66,10 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
 
     case 'card_on_play_choice':
       result = applyCardOnPlayChoice(s, action);
+      break;
+
+    case 'tenzen_apprentice_choice':
+      result = applyTenzenApprenticeChoice(s, action);
       break;
 
     case 'forced_discard': {

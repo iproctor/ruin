@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination, getRegionResistance } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination, getRegionResistance, ADJACENCY } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
@@ -77,17 +77,19 @@ function FigureCluster({ figures, x, y, powers }: {
     if (pa !== pb) return pa - pb;
     return RANK_ORDER[a.class] - RANK_ORDER[b.class];
   });
-  const MAX = 9;
+  const COLS = 10;
+  const STEP = 15;
+  const MAX = 20;
   const visible = sorted.slice(0, MAX);
   const overflow = sorted.length - MAX;
 
   return (
     <g>
       {visible.map((fig, i) => {
-        const col = i % 5;
-        const row = Math.floor(i / 5);
-        const fx = x + col * 18 + 9;
-        const fy = y + row * 18 + 9;
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        const fx = x + col * STEP + 8;
+        const fy = y + row * STEP + 8;
         const color = POWER_COLORS[fig.controlledBy ?? fig.power];
         const op = fig.tipped ? 0.35 : 0.9;
         const glowStroke = fig.protected ? '#facc15' : undefined;
@@ -107,7 +109,7 @@ function FigureCluster({ figures, x, y, powers }: {
         );
       })}
       {overflow > 0 && (
-        <text x={x + 95} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
+        <text x={x + COLS * STEP + 2} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
       )}
       {hovered && (
         <FollowerTooltip
@@ -134,7 +136,7 @@ function MiniCard({ cardId, width, height, onHover, isPending }: {
   const isChaos = 'power' in def;
   const isPersistent = def.timing === 'persistent' || def.timing === 'constant';
   const accentColor = isChaos ? POWER_COLORS[(def as { power: Power }).power] : '#6366f1';
-  const name = shortCardName(def.name);
+  const name = shortCardName(('shortName' in def && def.shortName) || def.name);
   const cost = isChaos ? (def as { cost: number }).cost : null;
   const hasMagic = isChaos ? (def as { hasMagicSymbol: boolean }).hasMagicSymbol : false;
 
@@ -312,17 +314,45 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         {pos.label}
       </text>
 
-      {/* Stats */}
-      <text x={x + 5}     y={y + 25} fill="#64748b" fontSize="8">{`R${getRegionResistance(state, regionId)}`}</text>
-      <text x={x + 30}    y={y + 25} fill="#64748b" fontSize="8">{`C${region.conquestValue + (tokenCounts.get('noble') ?? 0)}`}</text>
+      {/* Stats: R V D C CULT (with red ! if C+CULT ≥ 12) */}
       {(() => {
-        const { leader, value } = getRegionDomination(state, regionId);
-        if (!leader) return null;
+        const R = getRegionResistance(state, regionId);
+        const V = region.conquestValue + (tokenCounts.get('noble') ?? 0);
+        const dom = getRegionDomination(state, regionId);
+        const corruptionTotal =
+          (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
+          (tokenCounts.get('chaos_stone') ?? 0);
+        const cultCount = region.placements.filter(f => f.class === 'cultist').length;
+        const danger = corruptionTotal + cultCount >= 12;
+        // Leading ruiner: most (corruption tokens + cultists) in region
+        const ruinerScore: Partial<Record<Power, number>> = { ...region.corruptionTokens };
+        for (const f of region.placements) {
+          if (f.class !== 'cultist') continue;
+          const pw = (f.controlledBy ?? f.power) as Power;
+          ruinerScore[pw] = (ruinerScore[pw] ?? 0) + 1;
+        }
+        let topRuiner: Power | null = null;
+        let topCount = 0;
+        for (const [pw, n] of Object.entries(ruinerScore) as [Power, number][]) {
+          if (n > topCount) { topCount = n; topRuiner = pw; }
+        }
+        const cColor = topRuiner ? POWER_COLORS[topRuiner] : '#64748b';
+        const parts: { label: string; color: string; bold?: boolean }[] = [
+          { label: `R${R}`, color: '#64748b' },
+          { label: `V${V}`, color: '#64748b' },
+        ];
+        if (dom.leader) parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
+        parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
+        const step = (w / 2) / parts.length;
         return (
-          <text x={x + 46} y={y + 25} fill={POWER_COLORS[leader]} fontSize="8" fontWeight="700"
-            style={{ userSelect: 'none' }}>
-            D{value}
-          </text>
+          <g>
+            {parts.map((p, i) => (
+              <text key={i} x={x + 5 + i * step} y={y + 25} fill={p.color} fontSize="8" fontWeight={p.bold ? 700 : 400}
+                style={{ userSelect: 'none' }}>
+                {p.label}
+              </text>
+            ))}
+          </g>
         );
       })()}
       {region.populous && (
@@ -333,9 +363,9 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       {tokenCounts.size > 0 && (
         <g transform={`translate(${x + 4}, ${y + 30})`}>
           {Array.from(tokenCounts.entries()).map(([token, count], i) => (
-            <g key={token} transform={`translate(${i * 22}, 0)`}>
-              <rect width={20} height={13} rx={2} fill={TOKEN_COLORS[token]} opacity={0.85} />
-              <text x={10} y={10} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700">
+            <g key={token} transform={`translate(${i * 23}, 0)`}>
+              <rect width={22} height={13} rx={2} fill={TOKEN_COLORS[token]} opacity={0.85} />
+              <text x={11} y={10} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700">
                 {TOKEN_LABELS[token]}{count > 1 ? `×${count}` : ''}
               </text>
             </g>
@@ -343,13 +373,13 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         </g>
       )}
 
-      {/* Corruption */}
+      {/* Corruption (right-aligned, same row as tokens) */}
       {corruptionEntries.length > 0 && (
-        <g transform={`translate(${x + 4}, ${y + 46})`}>
+        <g transform={`translate(${x + w - 4 - corruptionEntries.length * 15}, ${y + 30})`}>
           {corruptionEntries.map(([pw, count], i) => (
-            <g key={pw} transform={`translate(${i * 22}, 0)`}>
-              <circle cx={10} cy={6} r={7} fill={POWER_COLORS[pw]} opacity={0.75} />
-              <text x={10} y={10} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700">{count}</text>
+            <g key={pw} transform={`translate(${i * 15}, 0)`}>
+              <circle cx={7} cy={6} r={6} fill={POWER_COLORS[pw]} opacity={0.75} />
+              <text x={7} y={9} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700">{count}</text>
             </g>
           ))}
         </g>
@@ -357,7 +387,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 58} powers={state.powers} />
+        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} />
       )}
 
       {/* Card slots */}
@@ -418,6 +448,31 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         viewBox="0 0 800 615"
         style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: '#0d0d1f' }}
       >
+        {/* Connection lines between adjacent regions */}
+        <g>
+          {(() => {
+            const drawn = new Set<string>();
+            const lines: React.ReactNode[] = [];
+            for (const [a, neighbors] of Object.entries(ADJACENCY) as [RegionId, RegionId[]][]) {
+              const pa = REGION_POSITIONS[a];
+              for (const b of neighbors) {
+                const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+                if (drawn.has(key)) continue;
+                drawn.add(key);
+                const pb = REGION_POSITIONS[b];
+                const x1 = pa.x + pa.w / 2;
+                const y1 = pa.y + pa.h / 2;
+                const x2 = pb.x + pb.w / 2;
+                const y2 = pb.y + pb.h / 2;
+                lines.push(
+                  <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
+                    stroke="#3a3a6e" strokeWidth={1.5} opacity={0.35} strokeDasharray="4 3" />
+                );
+              }
+            }
+            return lines;
+          })()}
+        </g>
         {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).map(
           ([regionId, pos]) => (
             <RegionContent
@@ -465,13 +520,13 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                 return (RANK_ORDER[a.class] ?? 9) - (RANK_ORDER[b.class] ?? 9);
               });
               const figX = pos.x + 4;
-              const figY = pos.y + 58;
-              return sorted.slice(0, 9).flatMap((fig, i) => {
+              const figY = pos.y + 46;
+              return sorted.slice(0, 20).flatMap((fig, i) => {
                 if ((fig.controlledBy ?? fig.power) !== myPower) return [];
-                const col = i % 5;
-                const row = Math.floor(i / 5);
-                const svgX = figX + col * 18 + 9;
-                const svgY = figY + row * 18 + 9;
+                const col = i % 10;
+                const row = Math.floor(i / 10);
+                const svgX = figX + col * 15 + 8;
+                const svgY = figY + row * 15 + 8;
                 return [
                   <DraggableFigureOverlay
                     key={fig.id}

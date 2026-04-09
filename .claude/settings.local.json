@@ -56,7 +56,8 @@
       "Bash(ls packages/ai/data/training_iter_*.jsonl)",
       "Bash(ls packages/ai/data/bench_iter_*.json)",
       "Bash(pnpm duel:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(ls -lt packages/ai/data/bench-*.json)"
     ]
   }
 }
