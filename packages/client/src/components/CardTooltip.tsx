@@ -76,6 +76,9 @@ export default function CardTooltip({ cardId, x, y }: CardTooltipProps) {
 
       {/* Meta row */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: '0.72rem', color: '#94a3b8' }}>
+        {isWorld && (card as { hasCometIcon?: boolean }).hasCometIcon && (
+          <span style={{ color: '#fbbf24' }}>☄ Comet</span>
+        )}
         {isChaos && (
           <>
             <span style={{ color: powerColor }}>
@@ -90,11 +93,6 @@ export default function CardTooltip({ cardId, x, y }: CardTooltipProps) {
               </>
             )}
           </>
-        )}
-        {isWorld && (
-          <span style={{ color: '#6366f1' }}>
-            {TIMING_LABELS[(card as { timing: string }).timing] ?? (card as { timing: string }).timing}
-          </span>
         )}
       </div>
 

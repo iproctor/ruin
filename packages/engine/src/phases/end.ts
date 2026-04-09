@@ -509,6 +509,19 @@ function scoreRuinedRegions(
         log.push(`${regionId}: Ruination scoring — ${secondPlayers.join('/')} each score ${shared} VP (second).`);
       }
     }
+
+    // Cosmetic: clear corruption tokens from the ruined region now that
+    // scoring is complete — they have no further mechanical effect.
+    s = {
+      ...s,
+      regions: {
+        ...s.regions,
+        [regionId]: {
+          ...s.regions[regionId]!,
+          corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
+        },
+      },
+    };
   }
 
   return { state: s, log };

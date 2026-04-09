@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, getRegionDomination, getRegionResistance, ADJACENCY } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
@@ -17,7 +18,7 @@ const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: n
   mittelreich: { x: 335, y: 180, w: 170, h: 120, label: 'Mittelreich' },
   normagne:    { x: 125, y: 340, w: 170, h: 120, label: 'Normagne' },
   almerida:    { x: 20,  y: 490, w: 170, h: 120, label: 'Almerida' },
-  toscavar:    { x: 390, y: 340, w: 170, h: 120, label: 'Toscavar' },
+  toscavar:    { x: 335, y: 415, w: 170, h: 120, label: 'Toscavar' },
   pelascos:    { x: 570, y: 340, w: 170, h: 120, label: 'Pelascos' },
   the_barrens: { x: 590, y: 490, w: 170, h: 120, label: 'The Barrens' },
 };
@@ -252,7 +253,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -260,6 +261,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   isDimmed: boolean;
   pendingCardSlot: { slotIndex: number; cardId: string } | null;
   onCardHover: (id: string | null, x: number, y: number) => void;
+  onTokenHover: (token: TokenType | null, x: number, y: number) => void;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -363,7 +365,14 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       {tokenCounts.size > 0 && (
         <g transform={`translate(${x + 4}, ${y + 30})`}>
           {Array.from(tokenCounts.entries()).map(([token, count], i) => (
-            <g key={token} transform={`translate(${i * 23}, 0)`}>
+            <g
+              key={token}
+              transform={`translate(${i * 23}, 0)`}
+              onMouseEnter={(e) => onTokenHover(token, e.clientX, e.clientY)}
+              onMouseMove={(e) => onTokenHover(token, e.clientX, e.clientY)}
+              onMouseLeave={() => onTokenHover(null, 0, 0)}
+              style={{ cursor: 'help' }}
+            >
               <rect width={22} height={13} rx={2} fill={TOKEN_COLORS[token]} opacity={0.85} />
               <text x={11} y={10} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700">
                 {TOKEN_LABELS[token]}{count > 1 ? `×${count}` : ''}
@@ -411,6 +420,121 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   );
 }
 
+// ── World token tooltip ──────────────────────────────────────────────────────
+
+const TOKEN_NAMES: Record<TokenType, string> = {
+  event: 'Event Token',
+  hero: 'Hero Token',
+  noble: 'Noble Token',
+  peasant: 'Peasant Token',
+  ratmen: 'Ratmen Token',
+  chaos_stone: 'Chaos Stone',
+};
+
+const TOKEN_DESCRIPTIONS: Record<TokenType, string> = {
+  event: 'Placed by World cards. Many events trigger off the presence of Event tokens; they remain on the region until removed by a card or effect.',
+  hero: 'At the End Phase, a hero will remove a figure of the highest threat player present. Lasha gains dial advancement when corrupting this region.',
+  noble: 'Adds +1 to the region\'s VP reward when conquered. Lasha gains dial advancement when corrupting this region.',
+  peasant: 'Potential target of attacks. May tie in with events.',
+  ratmen: 'Hostile tokens that consume Peasants and may interfere with player figures. Reduce influence in the region until removed.',
+  chaos_stone: 'Counts as +1 corruption in this region during the corruption phase. Tenzen gains dial advancement when corrupting a region with 2 chaos stones/magic symbols.',
+};
+
+function TokenTooltip({ token, x, y }: { token: TokenType; x: number; y: number }) {
+  const left = Math.min(x + 14, window.innerWidth - 240);
+  const top  = Math.min(y + 14, window.innerHeight - 140);
+  return createPortal(
+    <div style={{
+      position: 'fixed', left, top, width: 230,
+      background: '#0d0d1f', border: `1px solid ${TOKEN_COLORS[token]}`,
+      borderRadius: 8, padding: '8px 10px',
+      pointerEvents: 'none', zIndex: 9999,
+      boxShadow: `0 0 12px ${TOKEN_COLORS[token]}55`,
+      fontSize: '0.78rem', lineHeight: 1.5, color: '#e5e7eb',
+    }}>
+      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{TOKEN_NAMES[token]}</div>
+      <div style={{ color: '#cbd5e1', fontSize: '0.74rem' }}>{TOKEN_DESCRIPTIONS[token]}</div>
+    </div>,
+    document.body,
+  );
+}
+
+// ── Region info tooltip ──────────────────────────────────────────────────────
+
+const POWER_LABELS: Record<Power, string> = {
+  xarm: 'Xarm', gormen: 'Gormen', tenzen: 'Tenzen', lasha: 'Lasha',
+};
+
+function RegionInfoTooltip({ state, regionId, x, y }: {
+  state: GameState; regionId: RegionId; x: number; y: number;
+}) {
+  const region = state.regions[regionId];
+  if (!region) return null;
+  const def = REGIONS[regionId];
+  const tokenCounts = new Map<TokenType, number>();
+  for (const t of region.tokens) tokenCounts.set(t, (tokenCounts.get(t) ?? 0) + 1);
+  const corruptionTotal =
+    (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
+    (tokenCounts.get('chaos_stone') ?? 0);
+  const cultCount = region.placements.filter(f => f.class === 'cultist').length;
+  const willRuin = corruptionTotal + cultCount >= 12;
+  const resistance = getRegionResistance(state, regionId);
+  const vp = region.conquestValue + (tokenCounts.get('noble') ?? 0);
+
+  const presentPowers = new Set<Power>();
+  for (const f of region.placements) presentPowers.add((f.controlledBy ?? f.power) as Power);
+  for (const slot of region.chaosCards) if (slot) presentPowers.add(slot.playedBy);
+  const powers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+  const domEntries = powers
+    .filter(p => presentPowers.has(p))
+    .map(p => ({ p, d: getPowerDomination(state, regionId, p) }));
+
+  const left = Math.min(x + 14, window.innerWidth - 240);
+  const top  = Math.min(y + 14, window.innerHeight - 200);
+
+  return createPortal(
+    <div style={{
+      position: 'fixed', left, top, width: 230,
+      background: '#0d0d1f', border: '1px solid #3a3a6e',
+      borderRadius: 8, padding: '10px 12px',
+      pointerEvents: 'none', zIndex: 9999,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+      fontSize: '0.78rem', lineHeight: 1.5, color: '#e5e7eb',
+    }}>
+      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 6, fontSize: '0.9rem' }}>{def.name}</div>
+      {def.populous && (
+        <div style={{ color: '#facc15', fontSize: '0.72rem', marginBottom: 4 }}>Populous</div>
+      )}
+      <div>Resistance: <span style={{ color: '#fff', fontWeight: 600 }}>{resistance}</span></div>
+      <div>VP reward: <span style={{ color: '#fff', fontWeight: 600 }}>{vp}</span>
+        {(tokenCounts.get('noble') ?? 0) > 0 && (
+          <span style={{ color: '#94a3b8' }}> ({region.conquestValue} base + {tokenCounts.get('noble')} noble)</span>
+        )}
+      </div>
+      <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+        Domination
+      </div>
+      {domEntries.length === 0 && <div style={{ color: '#64748b' }}>—</div>}
+      {domEntries.map(({ p, d }) => (
+        <div key={p}>
+          <span style={{ color: POWER_COLORS[p], fontWeight: 600 }}>{POWER_LABELS[p]}</span>
+          : <span style={{ color: d > resistance ? '#fff' : '#64748b' }}>{d}</span>
+        </div>
+      ))}
+      <div style={{ marginTop: 6 }}>
+        Corruption: <span style={{ color: '#fff', fontWeight: 600 }}>{corruptionTotal}</span>
+        {cultCount > 0 && <span style={{ color: '#94a3b8' }}> (+{cultCount} incoming)</span>}
+      </div>
+      {willRuin && (
+        <div style={{ marginTop: 6, color: '#ef4444', fontWeight: 700 }}>
+          ⚠ This region may ruin this round
+        </div>
+      )}
+    </div>,
+    document.body,
+  );
+}
+
 // ── Board ─────────────────────────────────────────────────────────────────────
 
 interface BoardProps {
@@ -424,6 +548,11 @@ interface BoardProps {
 
 export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
+  const [regionTooltip, setRegionTooltip] = useState<{ regionId: RegionId; x: number; y: number } | null>(null);
+  const [tokenTooltip, setTokenTooltip] = useState<{ token: TokenType; x: number; y: number } | null>(null);
+  const handleTokenHover = useCallback((token: TokenType | null, x: number, y: number) => {
+    setTokenTooltip(token ? { token, x, y } : null);
+  }, []);
 
   const handleCardHover = useCallback((cardId: string | null, x: number, y: number) => {
     setTooltip(cardId ? { cardId, x, y } : null);
@@ -484,6 +613,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               isDimmed={isDragging && !(highlightRegions?.includes(regionId) ?? false)}
               pendingCardSlot={getPendingCard(regionId)}
               onCardHover={handleCardHover}
+              onTokenHover={handleTokenHover}
             />
           ),
         )}
@@ -542,7 +672,38 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         </div>
       )}
 
+      {/* Region info hover triggers (top ~30px of each region: title + stats) */}
+      {!isDragging && (
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).map(
+            ([regionId, pos]) => (
+              <div
+                key={regionId}
+                onMouseEnter={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
+                onMouseMove={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
+                onMouseLeave={() => setRegionTooltip(null)}
+                style={{
+                  position: 'absolute',
+                  left:   `${(pos.x / 800) * 100}%`,
+                  top:    `${(pos.y / 615) * 100}%`,
+                  width:  `${(pos.w / 800) * 100}%`,
+                  height: `${(30 / 615) * 100}%`,
+                  pointerEvents: 'auto',
+                  cursor: 'help',
+                }}
+              />
+            ),
+          )}
+        </div>
+      )}
+
       {tooltip && <CardTooltip cardId={tooltip.cardId} x={tooltip.x} y={tooltip.y} />}
+      {regionTooltip && (
+        <RegionInfoTooltip state={state} regionId={regionTooltip.regionId} x={regionTooltip.x} y={regionTooltip.y} />
+      )}
+      {tokenTooltip && (
+        <TokenTooltip token={tokenTooltip.token} x={tokenTooltip.x} y={tokenTooltip.y} />
+      )}
     </div>
   );
 }

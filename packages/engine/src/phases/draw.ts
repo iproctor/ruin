@@ -12,7 +12,7 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: strin
   if (s.activePowers.includes('tenzen')) {
     const tenzen = s.powers['tenzen']!;
     const drawTarget = getTenzenDrawTarget(s);
-    if (tenzen.hand.length > 0 && tenzen.hand.length >= drawTarget) {
+    if (tenzen.hand.length >= 1) {
       // Tenzen may want to discard first — always prompt if they have cards
       s = {
         ...s,

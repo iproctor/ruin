@@ -68,9 +68,10 @@ function DragGhost({ item }: { item: DragItem }) {
 interface GameInnerProps {
   gameId: string;
   myPowers: Power[];
+  players: import('../api/client.js').GamePlayerInfo[];
 }
 
-function GameInner({ gameId, myPowers }: GameInnerProps) {
+function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
   const { state: streamState, eventLog, chat, connected } = useGameStream(gameId);
 
@@ -321,7 +322,7 @@ function GameInner({ gameId, myPowers }: GameInnerProps) {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
-        <StatusBar state={statusState} myPower={myPower} />
+        <StatusBar state={statusState} myPower={myPower} players={players} />
 
         {/* Main area */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: 8 }}>
@@ -413,6 +414,7 @@ export default function GamePage() {
   const { id } = useParams<{ id: string }>();
   const { userId } = useAuth();
   const [myPowers, setMyPowers] = useState<Power[]>([]);
+  const [players, setPlayers] = useState<import('../api/client.js').GamePlayerInfo[]>([]);
   const [initialState, setInitialState] = useState<GameState | null>(null);
   const [error, setError] = useState('');
 
@@ -420,11 +422,12 @@ export default function GamePage() {
     if (!id || !userId) return;
     let cancelled = false;
     getGame(id)
-      .then(({ state, myPower, myPowers }) => {
+      .then(({ state, myPower, myPowers, players }) => {
         if (cancelled) return;
         // Seed the display with the HTTP state so the board is visible immediately,
         // before the SSE 'history' event arrives.
         setInitialState(state);
+        setPlayers(players ?? []);
         // Server returns every power this user controls (hot-seat: one user can own multiple).
         if (myPowers && myPowers.length > 0) {
           setMyPowers(myPowers as Power[]);
@@ -444,7 +447,7 @@ export default function GamePage() {
   return (
     <GameProvider gameId={id} myPower={myPowers[0] ?? null} initialState={initialState}>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <GameInner gameId={id} myPowers={myPowers} />
+        <GameInner gameId={id} myPowers={myPowers} players={players} />
       </div>
     </GameProvider>
   );

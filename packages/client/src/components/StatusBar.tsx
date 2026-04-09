@@ -6,9 +6,12 @@ import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADE_BY_ID } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 
+import type { GamePlayerInfo } from '../api/client.js';
+
 interface StatusBarProps {
   state: GameState;
   myPower: Power | null;
+  players?: GamePlayerInfo[];
 }
 
 // ── World card mini chip ──────────────────────────────────────────────────────
@@ -28,7 +31,7 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: 48,
+          width: 78,
           height: 34,
           borderRadius: 4,
           overflow: 'hidden',
@@ -57,16 +60,16 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
           {isDiscard ? 'DISC' : `W${slot}`}
         </div>
 
-        {/* Persistent indicator */}
-        {isPersistent && (
+        {/* Comet indicator */}
+        {def?.hasCometIcon && (
           <div style={{
             position: 'absolute',
             top: 2,
             right: 3,
-            fontSize: '0.5rem',
-            color: '#a78bfa',
+            fontSize: '0.6rem',
+            color: '#fbbf24',
             lineHeight: 1,
-          }}>⬡</div>
+          }}>☄</div>
         )}
 
         {/* Card name */}
@@ -98,7 +101,7 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
 
 import type { PowerState } from '@ruin/engine';
 
-function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed }: {
+function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, controller }: {
   power: Power;
   ps: PowerState;
   isActing: boolean;
@@ -106,6 +109,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed }: {
   color: string;
   ticksLeft: number;
   dimmed: boolean;
+  controller?: GamePlayerInfo;
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
 
@@ -146,8 +150,15 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed }: {
           lineHeight: 1.5,
           color: '#e5e7eb',
         }}>
-          <div style={{ fontWeight: 700, color: '#fff', marginBottom: 6, fontSize: '0.9rem' }}>
+          <div style={{ fontWeight: 700, color: '#fff', marginBottom: 2, fontSize: '0.9rem' }}>
             {POWER_LABELS[power]}
+          </div>
+          <div style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: 6 }}>
+            {controller
+              ? controller.playerType === 'ai'
+                ? 'AI ✨'
+                : (controller.username ?? 'Human')
+              : '—'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', color: '#ccc', fontSize: '0.73rem', marginBottom: 6 }}>
             <span><span style={{ color: '#64748b' }}>Threat: </span>{ps.threatValue}</span>
@@ -184,7 +195,8 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed }: {
 
 // ── Status bar ────────────────────────────────────────────────────────────────
 
-export default function StatusBar({ state, myPower }: StatusBarProps) {
+export default function StatusBar({ state, myPower, players }: StatusBarProps) {
+  const playerByPower = new Map((players ?? []).map((p) => [p.power, p]));
   const waiting = state.pendingAction?.waitingFor ?? null;
   const phaseLabel = PHASE_LABELS[state.phase] ?? state.phase;
   const { slot1, slot2, discardCard } = state.worldTrack;
@@ -265,6 +277,7 @@ export default function StatusBar({ state, myPower }: StatusBarProps) {
               color={color}
               ticksLeft={ticksLeft}
               dimmed={!!state.winners}
+              controller={playerByPower.get(power)}
             />
           );
         })}

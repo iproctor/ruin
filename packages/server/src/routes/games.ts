@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Power, PlayerType, Action } from '@ruin/engine';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
@@ -97,12 +97,23 @@ router.get('/:id', optionalAuth, async (req, res) => {
   // an empty hand (empty hands are indistinguishable from masked empty hands).
   let myPower: string | null = null;
   let myPowers: string[] = [];
+  const playerRows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
   if (req.userId) {
-    const rows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
-    myPowers = rows.filter((r) => r.userId === req.userId).map((r) => r.power);
+    myPowers = playerRows.filter((r) => r.userId === req.userId).map((r) => r.power);
     myPower = myPowers[0] ?? null;
   }
-  res.json({ state, myPower, myPowers });
+  // Build per-power player descriptors with usernames for human players
+  const userIds = Array.from(new Set(playerRows.map((r) => r.userId).filter((u): u is string => !!u)));
+  const userRows = userIds.length
+    ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, userIds))
+    : [];
+  const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
+  const players = playerRows.map((r) => ({
+    power: r.power,
+    playerType: r.playerType,
+    username: r.userId ? (usernameById.get(r.userId) ?? null) : null,
+  }));
+  res.json({ state, myPower, myPowers, players });
 });
 
 // ---------------------------------------------------------------------------

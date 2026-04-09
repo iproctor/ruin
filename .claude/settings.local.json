@@ -57,7 +57,10 @@
       "Bash(ls packages/ai/data/bench_iter_*.json)",
       "Bash(pnpm duel:*)",
       "Bash(node:*)",
-      "Bash(ls -lt packages/ai/data/bench-*.json)"
+      "Bash(ls -lt packages/ai/data/bench-*.json)",
+      "Bash(ls -lT packages/ai/data/model_iter_026?.json)",
+      "Bash(grep:*)",
+      "Bash(pnpm --filter engine test --run end.test)"
     ]
   }
 }

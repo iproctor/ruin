@@ -433,10 +433,7 @@ function applyRuination(
 
   const card = RUINATION_CARDS[nextCardIndex - 1]!;
   s = { ...s, ruinationCardsUsed: nextCardIndex };
-  s = updateRegion(s, regionId, {
-    ruinationCardIndex: nextCardIndex,
-    corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
-  });
+  s = updateRegion(s, regionId, { ruinationCardIndex: nextCardIndex });
 
   // Score ruiners VP
   for (const power of placedBy) {

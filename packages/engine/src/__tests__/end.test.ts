@@ -4,6 +4,7 @@
  * and draw-phase upgrades.
  */
 import { resolveEndPhase } from '../phases/end.js';
+import { resolveCorruptionPhase } from '../phases/corruption.js';
 import { beginDrawPhase, applyTenzenDiscard } from '../phases/draw.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
@@ -127,6 +128,40 @@ describe('ruined region scoring', () => {
     // Tied first with no second-place player: floor((6+0)/2) = 3 each
     expect(state.powers.xarm!.victoryPoints).toBe(vpXBefore + 3);
     expect(state.powers.gormen!.victoryPoints).toBe(vpGBefore + 3);
+  });
+
+  test('end-phase ruination scoring runs when region is ruined via corruption phase (regression)', () => {
+    // Regression: clearing corruptionTokens inside applyRuination would cause
+    // the end-phase scoreRuinedRegions pass to see zero tokens and award no
+    // VP. This test drives the real corruption→end flow.
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    // Set up a ruination on this corruption phase: 11 existing tokens + 1 placed.
+    s = addCorruption(s, 'norrsund', 'xarm', 11);
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    // Add a competing power with fewer corruption tokens for second-place scoring.
+    s = addCorruption(s, 'norrsund', 'gormen', 5);
+
+    const vpXBefore = s.powers.xarm!.victoryPoints;
+    const vpGBefore = s.powers.gormen!.victoryPoints;
+
+    // Run corruption phase — this should ruin the region.
+    const corr = resolveCorruptionPhase(s);
+    s = corr.state;
+    expect(s.regions.norrsund!.ruinationCardIndex).not.toBeNull();
+
+    // Now end phase must score the ruined region from the corruption-token leaders.
+    const end = resolveEndPhase({ ...s, phase: 'end', pendingAction: null });
+
+    // xarm had the most tokens → should have gained the first-place VP from
+    // both immediate ruination scoring AND end-phase ruination scoring.
+    // Specifically, end-phase scoring alone should add at least 1 VP for first place.
+    const xarmGain = end.state.powers.xarm!.victoryPoints - vpXBefore;
+    const gormenGain = end.state.powers.gormen!.victoryPoints - vpGBefore;
+    // First place must clearly out-score second place from end-phase scoring.
+    expect(xarmGain).toBeGreaterThan(gormenGain);
+    // And the end-phase scoring log line must be present.
+    const allLog = [...corr.log, ...end.log];
+    expect(allLog.some(l => l.includes('Ruination scoring') && l.includes('xarm'))).toBe(true);
   });
 });
 

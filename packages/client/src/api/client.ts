@@ -106,8 +106,14 @@ export async function listGames(): Promise<GameSummary[]> {
   return res.games;
 }
 
-export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null; myPowers: string[] }> {
-  return request<{ state: GameState; myPower: string | null; myPowers: string[] }>(`/games/${gameId}`);
+export interface GamePlayerInfo {
+  power: string;
+  playerType: string; // 'human' | 'ai' | 'guest'
+  username: string | null;
+}
+
+export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[] }> {
+  return request<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[] }>(`/games/${gameId}`);
 }
 
 export async function submitAction(gameId: string, action: Action): Promise<GameState> {
