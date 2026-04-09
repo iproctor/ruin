@@ -2,7 +2,7 @@ import type { GameState, Action, Power } from '@ruin/engine';
 import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, actionBuildsTowardDac } from './filter-actions.js';
+import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { policyForState } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
@@ -59,16 +59,15 @@ function makeRootPriors(
 }
 
 /**
- * Adaptive rollout depth: roll out further when the value network is least
- * reliable (early game) and shorter when it's most reliable (late game).
+ * Adaptive minimum rollout depth (passed as `minDepth` to rollout()).
  *
- * The model is trained on game outcomes, so its predictions get sharper
- * monotonically through the game — round-1 states have nearly-uniform soft
- * targets, round-7 states are essentially deterministic.
+ * The rollout exits as soon as the round number changes AND minDepth has
+ * been reached. So minDepth is a *floor*: rollouts won't bail before this
+ * many plies even if something causes early exit conditions.
  *
- * Pushing the rollout leaf into rounds where the model is more accurate
- * partially compensates for the early-state weakness, at the cost of more
- * random-rollout-policy noise.
+ * In normal play, a round takes ~40-60 plies to traverse (summoning + battle
+ * + corruption + end), so the round-change exit fires well after the floor.
+ * The floor matters mainly when the game ends mid-round.
  */
 function rolloutDepthForRound(round: number): number {
   if (round <= 1) return 35;
@@ -295,24 +294,37 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
 }
 
 /**
- * Simulation (rollout): from `state`, play biased-random actions until the
- * game ends or `maxDepth` half-moves have been played.
+ * Simulation (rollout): from `state`, play biased-random actions until either
+ *   - the round number changes (we've finished the current round, including
+ *     the corruption phase where most card effects pay off), AND we've gone
+ *     at least `minDepth` plies, OR
+ *   - the hard cap of HARD_ROLLOUT_CAP plies is hit (safety brake), OR
+ *   - the game ends.
  *
- * Selection policy:
- *   - In summoning phase, strongly prefers non-pass and filters out pointless
- *     card plays via filterPointlessActions (keeps the random play realistic).
- *   - In other phases, uniform random over legal actions.
+ * The "until end of round" guarantee is what gives MCTS visibility into
+ * delayed card effects (War Cry blocking corruption, Bloody Rebirth firing
+ * an extra battle, Ritual Death stacking draws). Without it, the rollout
+ * leaf state often sits mid-summoning and the value head can't see whether
+ * the action paid off.
  *
- * `maxDepth` is set adaptively by the caller based on the root state's round
- * (see rolloutDepthForRound) — deeper rollouts in early game push the leaf
- * state into rounds where the value network is more reliable.
+ * The `minDepth` floor (passed in by the caller via rolloutDepthForRound)
+ * ensures rollouts never bail too early. The hard cap prevents pathological
+ * very-long rollouts in busy late-game states.
  */
-function rollout(state: GameState, forPower: Power, seed: number, maxDepth: number): number {
+const HARD_ROLLOUT_CAP = 120;
+
+function rollout(state: GameState, forPower: Power, seed: number, minDepth: number): number {
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;
+  const startRound = state.round;
 
-  while (!isTerminal(current) && depth < maxDepth) {
+  while (!isTerminal(current) && depth < HARD_ROLLOUT_CAP) {
+    // Stop early if we've reached at least minDepth AND the round has
+    // advanced — meaning battle + corruption + end have resolved for the
+    // round we started in.
+    if (depth >= minDepth && current.round !== startRound) break;
+
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
@@ -430,19 +442,32 @@ function bestAction(root: MctsNode): Action {
  * Non-summoning actions are returned as-is (sets are typically small).
  */
 function pruneActions(state: GameState, _power: Power, actions: Action[]): Action[] {
-  // Cap root branching, with light DAC bias: actions that move toward earning
-  // DAC for the acting power are preferentially preserved in the sampled set.
-  // The remaining slots are random samples from the rest. Pass is always kept.
+  // Cap root branching with class-aware sampling.
+  //
+  // Sampling buckets (sample independently to ensure each kind gets
+  // explored, since otherwise the model's preference for summons would
+  // dominate the random sample):
+  //   1. always-keep:  pass + 0-cost cards + xarm-delay plays
+  //   2. card plays:   gets ~half the remaining budget
+  //   3. summons:      gets the rest
+  //
+  // The class-aware split is important because the value head systematically
+  // under-values card plays (their effects fire later, indirectly), so a
+  // uniform random sample concentrates visits on summons. By forcing cards
+  // into ~half the slots, we guarantee the policy head sees card plays in
+  // training data and can learn to value them.
   if (actions.length <= MAX_ROOT_ACTIONS) return actions;
   if (state.pendingAction?.actionKind !== 'summoning_action') return actions;
 
-  const passActions = actions.filter(a => a.kind === 'summoning_pass');
-  const dacActions: Action[] = [];
-  const otherActions: Action[] = [];
+  const passActions: Action[] = [];
+  const alwaysKeep: Action[] = [];
+  const cardPool: Action[] = [];
+  const summonPool: Action[] = [];
   for (const a of actions) {
-    if (a.kind === 'summoning_pass') continue;
-    if (actionBuildsTowardDac(state, a)) dacActions.push(a);
-    else otherActions.push(a);
+    if (a.kind === 'summoning_pass') passActions.push(a);
+    else if (isZeroCostCardPlay(state, a) || isXarmDelayPlay(state, a)) alwaysKeep.push(a);
+    else if (a.kind === 'summoning_play_card') cardPool.push(a);
+    else summonPool.push(a);
   }
 
   // Deterministic pseudo-random pick based on state.rngSeed so replay is stable.
@@ -451,7 +476,7 @@ function pruneActions(state: GameState, _power: Power, actions: Action[]): Actio
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
   }
-  function fisherYatesPick<T>(pool: T[], k: number): T[] {
+  function sampleN<T>(pool: T[], k: number): T[] {
     const arr = [...pool];
     const out: T[] = [];
     for (let i = 0; i < k && arr.length > 0; i++) {
@@ -463,14 +488,18 @@ function pruneActions(state: GameState, _power: Power, actions: Action[]): Actio
     return out;
   }
 
-  // Reserve up to half the budget for DAC-helpful actions (or all of them
-  // if there are fewer). The other half is random exploration.
-  const budget = MAX_ROOT_ACTIONS - passActions.length;
-  const dacQuota = Math.min(dacActions.length, Math.ceil(budget * 0.6));
-  const otherQuota = Math.max(0, budget - dacQuota);
+  const budget = Math.max(0, MAX_ROOT_ACTIONS - passActions.length - alwaysKeep.length);
+  // Split budget ~half/half, but cap by what each pool can offer
+  const cardSlots = Math.min(cardPool.length, Math.ceil(budget / 2));
+  const summonSlots = Math.min(summonPool.length, budget - cardSlots);
+  // If summon pool was exhausted, top up cards with the leftover
+  const extraCardSlots = Math.min(
+    cardPool.length - cardSlots,
+    budget - cardSlots - summonSlots,
+  );
 
-  const sampledDac = fisherYatesPick(dacActions, dacQuota);
-  const sampledOther = fisherYatesPick(otherActions, otherQuota);
+  const sampledCards = sampleN(cardPool, cardSlots + extraCardSlots);
+  const sampledSummons = sampleN(summonPool, summonSlots);
 
-  return [...sampledDac, ...sampledOther, ...passActions];
+  return [...alwaysKeep, ...sampledCards, ...sampledSummons, ...passActions];
 }

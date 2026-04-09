@@ -94,30 +94,62 @@ export function ucb1(node: MctsNode, explorationC: number): number {
 }
 
 /**
- * PUCT selection score (AlphaZero-style).
+ * PUCT selection score (AlphaZero-style) with First-Play Urgency (FPU).
  *
  *   PUCT(child) = Q(child) + c * P(action) * sqrt(N_parent) / (1 + n_child)
+ *
+ * For UNVISITED children, Q is unknown. The naive choice (Q=0.5 or Q=0)
+ * makes PUCT either over- or under-visit them. FPU instead estimates Q from
+ * the parent's average score, with a small reduction so unvisited children
+ * don't immediately look better than visited siblings:
+ *
+ *   Q_unvisited = max(0, parent_avg_Q - FPU_REDUCTION)
+ *
+ * This matters for under-explored action types. Without FPU, an action that
+ * gets one noisy negative rollout looks "bad" and PUCT never returns to it.
+ * With FPU, it's treated as "unknown but probably about average," which
+ * encourages a second look and prevents premature convergence.
  *
  * Differs from UCB1 in three ways:
  *   - Uses sqrt(N_parent) (not log(N_parent)) so exploration grows faster.
  *   - Multiplies the exploration bonus by P(action) — the policy prior — so
  *     promising actions get visited more from the very first iteration.
  *   - Uses (1 + n_child) so unvisited children get a finite (large) score
- *     rather than infinity. They still get visited first by virtue of the
- *     prior * sqrt(N_parent) term being large when n_child = 0.
+ *     rather than infinity.
  *
  * Same paranoid flip as UCB1: opponent nodes use (1 - Q) for exploitation.
  */
+const FPU_REDUCTION = 0.1;
+
 export function puct(node: MctsNode, explorationC: number): number {
   const parent = node.parent;
   const parentVisits = parent !== null ? Math.max(1, parent.visits) : Math.max(1, node.visits);
 
-  const exploitation = node.visits > 0 ? node.totalScore / node.visits : 0.5;
+  // Compute exploitation Q. For visited children, use their actual Q. For
+  // unvisited, use the FPU estimate from the parent's average.
+  let exploitation: number;
+  if (node.visits > 0) {
+    exploitation = node.totalScore / node.visits;
+  } else if (parent !== null && parent.visits > 0) {
+    const parentAvg = parent.totalScore / parent.visits;
+    // From the perspective of an opponent node, a high parent Q means
+    // *the AI* is doing well, so we'd want the opponent's children to look
+    // bad (low Q). Mirror the same logic as the final return below.
+    const isOpponentNode = node.power !== null && node.power !== node.forPower;
+    const parentQFromMyView = isOpponentNode ? 1 - parentAvg : parentAvg;
+    exploitation = Math.max(0, parentQFromMyView - FPU_REDUCTION);
+  } else {
+    // Root child with no parent visits yet — neutral guess
+    exploitation = 0.5;
+  }
+
   const exploration =
     explorationC * node.prior * Math.sqrt(parentVisits) / (1 + node.visits);
 
   const isOpponentNode = node.power !== null && node.power !== node.forPower;
-  if (isOpponentNode) {
+  // For opponent nodes, when we have a real Q, flip it. For FPU we already
+  // computed in "my view" space above, so don't flip again.
+  if (isOpponentNode && node.visits > 0) {
     return (1 - exploitation) + exploration;
   }
   return exploitation + exploration;

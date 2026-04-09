@@ -56,7 +56,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lr", type=float, default=5e-3)
     ap.add_argument("--l2", type=float, default=1e-5)
     ap.add_argument("--val", type=float, default=0.1)
-    ap.add_argument("--hidden1", type=int, default=128)
+    ap.add_argument("--hidden1", type=int, default=256)
     ap.add_argument("--hidden2", type=int, default=64)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--policy-alpha", type=float, default=1.0,

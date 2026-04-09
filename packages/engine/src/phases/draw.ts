@@ -84,6 +84,12 @@ function resolveAllDraws(state: GameState, log: string[]): { state: GameState; l
     s = updatePower(s, power, { passedSummoning: false });
   }
 
+  // Emit the SUMMONING banner here. autoAdvance can't emit it because the
+  // phase transition + pendingAction set happen in the same step, so
+  // autoAdvance immediately breaks on pendingAction before reaching its
+  // banner-emit branch.
+  log = [...log, `== Round ${s.round}: SUMMONING ==`];
+
   return { state: s, log };
 }
 

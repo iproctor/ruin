@@ -16,7 +16,28 @@ import { CHAOS_CARDS } from '@ruin/engine';
 
 const MAGIC_SYMBOL_CARDS = new Set(CHAOS_CARDS.filter(c => c.hasMagicSymbol).map(c => c.id));
 
+// Cards that cost 0 PP. Playing one of these (with preconditions met) is
+// nearly always strictly better than passing or summoning a low-value figure
+// — they're free utility and they consume a card slot the opponent can't
+// use later. Used by pruneActions to always-keep these in the root sample.
+const ZERO_COST_CARDS = new Set(CHAOS_CARDS.filter(c => c.cost === 0).map(c => c.id));
+
 export function isPointlessAction(state: GameState, action: Action): boolean {
+  // Pointless pass: passing while you still have PP AND something to do is
+  // wasteful. Real play almost never voluntarily forfeits resources. We
+  // detect this here and let filterPointlessActions strip pass from the
+  // legal set so MCTS has to commit to a real action.
+  if (action.kind === 'summoning_pass') {
+    const ps = state.powers[action.power];
+    if (!ps) return false;
+    if (ps.powerPoints <= 0) return false;       // out of PP, pass is fine
+    // Hand or reserve followers available?
+    const hasReserve = ps.followers.some(f => f.regionId === null);
+    const hasHand = ps.hand.length > 0;
+    if (!hasReserve && !hasHand) return false;   // nothing to spend on
+    return true;                                  // resources + things to do = wasteful pass
+  }
+
   if (action.kind !== 'summoning_play_card') return false;
 
   const region = state.regions[action.toRegion];
@@ -138,7 +159,88 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
 }
 
 export function filterPointlessActions(state: GameState, actions: Action[]): Action[] {
-  return actions.filter(a => !isPointlessAction(state, a));
+  const filtered = actions.filter(a => !isPointlessAction(state, a));
+  // Safety: if the filter removes everything (unlikely but possible in
+  // edge cases — e.g. no reserve, no useful cards, but PP remaining),
+  // fall back to the unfiltered set so MCTS has something to expand.
+  return filtered.length > 0 ? filtered : actions;
+}
+
+/**
+ * Returns true if `action` plays a high-value xarm DELAY card. War Cry and
+ * Bloody Rebirth are the two main "delay opponents long enough for xarm to
+ * dial-win" tools. Their value is mostly indirect (denied opponent VP, denied
+ * future corruption placers) and not visible to a value head trained on
+ * outcomes alone — so we hand-bias the search toward sampling them when their
+ * preconditions look strong.
+ *
+ *   War Cry — blocks new corruption placement in the region for the round.
+ *     Triggers:
+ *       1. corruption + chaos_stones + cultists ≥ 12 — region is about to ruin
+ *       2. cultists > 6 — massive incoming corruption
+ *
+ *   Bloody Rebirth — adds a second battle round in the region. Doubles kill
+ *     potential, eradicating opponent cultists who would otherwise corrupt
+ *     next round. The DAC reward caps at one per region per round, so the
+ *     extra kills are "wasted" from the value head's perspective even though
+ *     they materially delay opponents.
+ *     Triggers:
+ *       1. xarm has attack dice present AND ≥ 3 enemy figures, OR
+ *       2. enemy cultists ≥ 4 (lots of next-round corruption to deny)
+ */
+export function isXarmDelayPlay(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_play_card') return false;
+  const region = state.regions[action.toRegion];
+  if (!region) return false;
+
+  if (action.cardId === 'xarm_war_cry') {
+    const cultistCount = region.placements.filter(
+      f => f.class === 'cultist' && !f.tipped,
+    ).length;
+    if (cultistCount > 6) return true;
+    const corruptionTotal = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
+    const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
+    return corruptionTotal + chaosStones + cultistCount >= 12;
+  }
+
+  if (action.cardId === 'xarm_bloody_rebirth') {
+    // Bloody Rebirth runs an extra battle in the region — does nothing
+    // unless xarm has attack dice there. The delay value comes specifically
+    // from eradicating enemy cultists (who would otherwise place corruption
+    // next round); killing warriors/incarnations is tactical but doesn't
+    // directly stall the opponent's VP race the same way.
+    const xarmAttackPresent = region.placements.some(f =>
+      !f.tipped &&
+      (f.controlledBy ?? f.power) === 'xarm' &&
+      (f.class === 'warrior' || f.class === 'incarnation'),
+    );
+    if (!xarmAttackPresent) return false;
+    const enemyCultistCount = region.placements.filter(f =>
+      !f.tipped &&
+      f.class === 'cultist' &&
+      (f.controlledBy ?? f.power) !== 'xarm',
+    ).length;
+    return enemyCultistCount >= 3;
+  }
+
+  return false;
+}
+
+// Backward-compat alias — kept so external callers don't break.
+export const isWarCryDelayPlay = isXarmDelayPlay;
+
+/**
+ * Returns true if `action` plays a 0-cost chaos card whose preconditions are
+ * met (i.e. the action would not be filtered as pointless). 0-cost cards are
+ * essentially free utility — they cost no PP, occupy a card slot the opponent
+ * can't reuse, and (when their preconditions hold) have a real positive
+ * effect. Always-keep these in the root MCTS sample.
+ */
+export function isZeroCostCardPlay(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_play_card') return false;
+  if (!ZERO_COST_CARDS.has(action.cardId)) return false;
+  // Defer to the same precondition checks used everywhere else.
+  return !isPointlessAction(state, action);
 }
 
 /**

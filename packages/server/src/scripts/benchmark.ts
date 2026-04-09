@@ -41,17 +41,85 @@ const activePowers = ALL_POWERS.slice(0, playerCount);
 
 // ── Per-game runner ───────────────────────────────────────────────────────────
 
+interface PlayIndicators {
+  // Lasha — should be moving nobles via Hidden Influence
+  lashaNobleMoves: number;
+  // Lasha — VP scoring events from ruination (one per scoring event, ties counted)
+  lashaRuinScores: number;
+  // Xarm — corruption tokens "prevented" by War Cry plays. Computed as
+  // count of enemy cultists in the region at the moment War Cry was played
+  // (each cultist would have placed 1 corruption next phase).
+  xarmWarCryPrevented: number;
+  // Gormen — count of dominations in populous regions (volensk, mittelreich,
+  // normagne, almerida). Repeated dominations across rounds count separately.
+  gormenPopulousDominations: number;
+  // Tenzen — average count of tenzen cultists alive per round (sampled at
+  // each round transition). Higher = more cultist-engine play.
+  tenzenAvgCultists: number;
+  // Tenzen — total cards played per game. Tenzen draws to 5 each round and
+  // should be playing many cards (its strategy is card-driven). Low values
+  // indicate the model isn't using tenzen's deck.
+  tenzenCardsPlayed: number;
+  // Internal: rolling sum + count for tenzen cultists
+  _tenzenCultistSum: number;
+  _tenzenCultistSamples: number;
+}
+
 interface GameResult {
   winners: Power[];
   winCondition: string;
   rounds: number;
   // Round → Power → true if power earned ≥1 DAC that round (capped at 1)
   dacByRound: Record<number, Partial<Record<Power, boolean>>>;
+  indicators: PlayIndicators;
   error?: string;
+}
+
+function emptyIndicators(): PlayIndicators {
+  return {
+    lashaNobleMoves: 0,
+    lashaRuinScores: 0,
+    xarmWarCryPrevented: 0,
+    gormenPopulousDominations: 0,
+    tenzenAvgCultists: 0,
+    tenzenCardsPlayed: 0,
+    _tenzenCultistSum: 0,
+    _tenzenCultistSamples: 0,
+  };
+}
+
+const POPULOUS_REGIONS = new Set(['volensk', 'mittelreich', 'normagne', 'almerida']);
+
+// Error log sidecar — verbose error capture for debugging. Append-only.
+const ERROR_LOG_PATH = '/tmp/benchmark-errors.log';
+function writeErrorLog(entry: Record<string, unknown>): void {
+  try {
+    fs.appendFileSync(
+      ERROR_LOG_PATH,
+      `\n=== ${new Date().toISOString()} ===\n` + JSON.stringify(entry, null, 2) + '\n',
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function captureErr(err: unknown): { message: string; stack: string | null } {
+  if (err instanceof Error) {
+    return { message: err.message, stack: err.stack ?? null };
+  }
+  return { message: String(err), stack: null };
 }
 
 // Matches log lines like "norrsund: gormen earns a dial advancement counter."
 const DAC_LOG_RE = /(xarm|gormen|tenzen|lasha) earns? a dial advancement counter/i;
+// Hidden Influence's Invisible Hand effect: "Invisible Hand: noble moved from X to Y"
+const NOBLE_MOVE_RE = /Invisible Hand:\s*noble moved/i;
+// Ruination scoring lines: "<region>: Ruination scoring — lasha scores N VP (..."
+//   (single winner) "Ruination scoring — lasha scores 10 VP (first)"
+//   (tied)          "Ruination scoring — gormen/lasha each score 5 VP (..."
+const RUIN_SCORE_LASHA_RE = /Ruination scoring.*lasha/i;
+// Domination by gormen: "<region>: gormen dominates (X vs resistance Y) — scores Z VP"
+const DOMINATION_RE = /^(\w+):\s*(xarm|gormen|tenzen|lasha)\s+dominates/i;
 
 function scanLogForDac(
   log: string[],
@@ -68,8 +136,31 @@ function scanLogForDac(
   }
 }
 
+function scanLogForIndicators(log: string[], indicators: PlayIndicators): void {
+  for (const line of log) {
+    if (NOBLE_MOVE_RE.test(line)) {
+      indicators.lashaNobleMoves++;
+      continue;
+    }
+    if (RUIN_SCORE_LASHA_RE.test(line)) {
+      indicators.lashaRuinScores++;
+      continue;
+    }
+    const dom = line.match(DOMINATION_RE);
+    if (dom) {
+      const region = dom[1]!.toLowerCase();
+      const power = dom[2]!.toLowerCase();
+      if (power === 'gormen' && POPULOUS_REGIONS.has(region)) {
+        indicators.gormenPopulousDominations++;
+      }
+      continue;
+    }
+  }
+}
+
 function runGame(seed: number): GameResult {
   const dacByRound: Record<number, Partial<Record<Power, boolean>>> = {};
+  const indicators = emptyIndicators();
 
   let { state, log: initialLog } = autoAdvance({
     state: createInitialState({
@@ -81,28 +172,55 @@ function runGame(seed: number): GameResult {
     log: [],
   });
 
-  // Scan initial setup log too — DAC may not fire there but be safe
+  // Scan initial setup log too
   scanLogForDac(initialLog, state.round, dacByRound);
+  scanLogForIndicators(initialLog, indicators);
+
+  // Sample tenzen cultist count at game start
+  const sampleTenzen = (): void => {
+    const ts = state.powers.tenzen;
+    if (!ts) return;
+    const live = ts.followers.filter(
+      f => f.regionId !== null && !f.tipped && f.class === 'cultist',
+    ).length;
+    indicators._tenzenCultistSum += live;
+    indicators._tenzenCultistSamples += 1;
+  };
+  sampleTenzen();
 
   let actionCount = 0;
 
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) {
-      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, error: `maxActions` };
+      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, indicators, error: `maxActions` };
     }
     const pending = state.pendingAction;
     if (!pending) {
-      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, error: `no pendingAction` };
+      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, indicators, error: `no pendingAction` };
     }
 
     let legal: Action[];
     try {
       legal = getLegalActions(state, pending.waitingFor);
     } catch (err) {
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, error: `${err}` };
+      const e = captureErr(err);
+      writeErrorLog({
+        seed, kind: 'getLegalActions threw',
+        round: state.round, phase: state.phase,
+        actionKind: pending.actionKind, power: pending.waitingFor,
+        context: pending.context,
+        message: e.message, stack: e.stack,
+      });
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `getLegalActions: ${e.message}` };
     }
     if (legal.length === 0) {
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, error: 'no legal actions' };
+      writeErrorLog({
+        seed, kind: 'no legal actions',
+        round: state.round, phase: state.phase,
+        actionKind: pending.actionKind, power: pending.waitingFor,
+        context: pending.context,
+      });
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: 'no legal actions' };
     }
 
     let action: Action;
@@ -129,25 +247,72 @@ function runGame(seed: number): GameResult {
         ? runMcts(state, pending.waitingFor)
         : greedyAction(state, pending.waitingFor);
     } catch (err) {
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, error: `${err}` };
+      const e = captureErr(err);
+      writeErrorLog({
+        seed, kind: 'action selection threw',
+        round: state.round, phase: state.phase,
+        actionKind: pending.actionKind, power: pending.waitingFor,
+        context: pending.context,
+        legalSample: legal.slice(0, 5).map(a => ({ kind: a.kind, ...((a as { cardId?: string }).cardId ? { cardId: (a as { cardId: string }).cardId } : {}) })),
+        legalCount: legal.length,
+        message: e.message, stack: e.stack,
+      });
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `select: ${e.message}` };
+    }
+
+    // War Cry prevented: compute BEFORE applying — count enemy cultists
+    // currently in the region xarm is War-Crying. Each cultist would have
+    // placed 1 corruption in the next corruption phase; War Cry blocks them.
+    if (
+      action.kind === 'summoning_play_card' &&
+      action.cardId === 'xarm_war_cry' &&
+      action.power === 'xarm'
+    ) {
+      const region = state.regions[action.toRegion];
+      if (region) {
+        const enemyCultists = region.placements.filter(
+          f =>
+            !f.tipped &&
+            f.class === 'cultist' &&
+            (f.controlledBy ?? f.power) !== 'xarm',
+        ).length;
+        indicators.xarmWarCryPrevented += enemyCultists;
+      }
+    }
+
+    // Tenzen cards played: count any card play action by tenzen.
+    if (action.kind === 'summoning_play_card' && action.power === 'tenzen') {
+      indicators.tenzenCardsPlayed++;
     }
 
     try {
       const result = applyAction(state, action);
-      // Scan the log for DAC events. Doing this via the log (not via
-      // dialCounters deltas) is the only correct way: corruption-phase
-      // increments + end-phase reset happen inside one applyAction call,
-      // so by the time we observe state, dialCounters is always 0 — hiding
-      // all non-xarm DACs which are earned in the corruption phase.
-      // Attribute to the pre-applyAction round (the round whose battle/
-      // corruption phases produced the events).
+      const prevRound = state.round;
       scanLogForDac(result.log, state.round, dacByRound);
+      scanLogForIndicators(result.log, indicators);
       state = result.state;
+      // Sample tenzen cultists on every round transition (post-end-phase
+      // snapshot of the durable cultist count).
+      if (state.round !== prevRound && state.winners === null) sampleTenzen();
     } catch (err) {
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, error: `${err}` };
+      const e = captureErr(err);
+      writeErrorLog({
+        seed, kind: 'applyAction threw',
+        round: state.round, phase: state.phase,
+        actionKind: pending.actionKind, power: pending.waitingFor,
+        action,
+        message: e.message, stack: e.stack,
+      });
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `apply: ${e.message}` };
     }
 
     actionCount++;
+  }
+
+  // Finalize tenzen cultist average
+  if (indicators._tenzenCultistSamples > 0) {
+    indicators.tenzenAvgCultists =
+      indicators._tenzenCultistSum / indicators._tenzenCultistSamples;
   }
 
   return {
@@ -155,6 +320,7 @@ function runGame(seed: number): GameResult {
     winCondition: state.winCondition ?? 'unknown',
     rounds: state.round,
     dacByRound,
+    indicators,
   };
 }
 
@@ -170,6 +336,15 @@ const winConditions: Record<string, number> = {};
 const roundCounts: number[] = [];
 // Sum of "rounds where power earned ≥1 DAC" across all games:
 const dacRoundsByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+// Per-power play indicators aggregated across games (sums; averaged below)
+const aggIndicators = {
+  lashaNobleMoves: 0,
+  lashaRuinScores: 0,
+  xarmWarCryPrevented: 0,
+  gormenPopulousDominations: 0,
+  tenzenAvgCultistsSum: 0, // sum of per-game averages → divide by completed
+  tenzenCardsPlayed: 0,
+};
 const errors: string[] = [];
 let completed = 0;
 
@@ -195,6 +370,14 @@ for (let i = 0; i < gameCount; i++) {
   roundCounts.push(result.rounds);
   winConditions[result.winCondition] = (winConditions[result.winCondition] ?? 0) + 1;
   for (const w of result.winners) wins[w] += 1 / result.winners.length;
+
+  // Tally play indicators
+  aggIndicators.lashaNobleMoves        += result.indicators.lashaNobleMoves;
+  aggIndicators.lashaRuinScores        += result.indicators.lashaRuinScores;
+  aggIndicators.xarmWarCryPrevented    += result.indicators.xarmWarCryPrevented;
+  aggIndicators.gormenPopulousDominations += result.indicators.gormenPopulousDominations;
+  aggIndicators.tenzenAvgCultistsSum   += result.indicators.tenzenAvgCultists;
+  aggIndicators.tenzenCardsPlayed      += result.indicators.tenzenCardsPlayed;
 
   // Tally DAC-rounds
   for (const roundKey of Object.keys(result.dacByRound)) {
@@ -240,6 +423,15 @@ for (const p of activePowers) {
   console.log(`  ${p.padEnd(8)} ${(rate * 100).toFixed(1).padStart(5)}%  ${bar}${marker}`);
 }
 
+console.log(`\nPLAY INDICATORS (per game avg, ${completed} games):`);
+const perGame = (n: number): string => completed > 0 ? (n / completed).toFixed(2) : '0.00';
+console.log(`  lasha    noble moves:           ${perGame(aggIndicators.lashaNobleMoves)}`);
+console.log(`  lasha    ruination scores:      ${perGame(aggIndicators.lashaRuinScores)}`);
+console.log(`  xarm     war cry prevented:     ${perGame(aggIndicators.xarmWarCryPrevented)}  (cultists blocked)`);
+console.log(`  gormen   populous dominations:  ${perGame(aggIndicators.gormenPopulousDominations)}`);
+console.log(`  tenzen   avg cultists alive:    ${perGame(aggIndicators.tenzenAvgCultistsSum)}  (per round)`);
+console.log(`  tenzen   cards played:          ${perGame(aggIndicators.tenzenCardsPlayed)}  (per game)`);
+
 console.log(`\nROUNDS: avg ${avgRounds.toFixed(1)}, min ${Math.min(...roundCounts) || 0}, max ${Math.max(...roundCounts) || 0}`);
 console.log(`\nWIN CONDITIONS:`);
 for (const [c, n] of Object.entries(winConditions).sort((a, b) => b[1] - a[1])) {
@@ -264,6 +456,14 @@ if (outPath) {
     dacRatePerPower: Object.fromEntries(
       Object.entries(dacRoundsByPower).map(([p, r]) => [p, totalRounds > 0 ? r / totalRounds : 0])
     ),
+    playIndicators: {
+      lashaNobleMovesPerGame: completed > 0 ? aggIndicators.lashaNobleMoves / completed : 0,
+      lashaRuinScoresPerGame: completed > 0 ? aggIndicators.lashaRuinScores / completed : 0,
+      xarmWarCryPreventedPerGame: completed > 0 ? aggIndicators.xarmWarCryPrevented / completed : 0,
+      gormenPopulousDominationsPerGame: completed > 0 ? aggIndicators.gormenPopulousDominations / completed : 0,
+      tenzenAvgCultists: completed > 0 ? aggIndicators.tenzenAvgCultistsSum / completed : 0,
+      tenzenCardsPlayedPerGame: completed > 0 ? aggIndicators.tenzenCardsPlayed / completed : 0,
+    },
     avgRounds,
     winConditions,
     errors: errors.length,
