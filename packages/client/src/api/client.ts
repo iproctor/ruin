@@ -106,8 +106,8 @@ export async function listGames(): Promise<GameSummary[]> {
   return res.games;
 }
 
-export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null }> {
-  return request<{ state: GameState; myPower: string | null }>(`/games/${gameId}`);
+export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null; myPowers: string[] }> {
+  return request<{ state: GameState; myPower: string | null; myPowers: string[] }>(`/games/${gameId}`);
 }
 
 export async function submitAction(gameId: string, action: Action): Promise<GameState> {

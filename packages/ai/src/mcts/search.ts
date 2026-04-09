@@ -1,9 +1,11 @@
 import type { GameState, Action, Power } from '@ruin/engine';
 import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
 import { evaluateState } from '../evaluate.js';
-import { type MctsNode, createNode, ucb1 } from './node.js';
+import { type MctsNode, createNode, ucb1, puct } from './node.js';
 import { filterPointlessActions, actionBuildsTowardDac } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
+import { policyForState } from '../learn/evaluator.js';
+import { canonicalActionIndex } from '../learn/action-canon.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -19,6 +21,42 @@ export interface MctsOptions {
 const DEFAULT_ITERATIONS = 2000;
 const DEFAULT_TIME_MS = 300;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
+
+/**
+ * Build a "lookup the policy prior for this child action" function from the
+ * model's policy head output. Returns null if there's no policy head loaded.
+ *
+ * The priors are normalized so the sum over LEGAL children equals 1.0 (we
+ * renormalize over the actions actually in the pruned root set, not the full
+ * 298-slot output, so the priors sum cleanly within the search space).
+ */
+function makeRootPriors(
+  state: GameState,
+  forPower: Power,
+  rootActions: Action[],
+): ((action: Action) => number) | null {
+  const raw = policyForState(state, forPower);
+  if (raw === null) return null;
+  // Build slot → raw policy
+  const slotPriors = new Map<number, number>();
+  let totalForLegal = 0;
+  for (const a of rootActions) {
+    const idx = canonicalActionIndex(a, state);
+    if (idx >= 0) {
+      const p = raw[idx]!;
+      slotPriors.set(idx, p);
+      totalForLegal += p;
+    }
+  }
+  // Normalize within the legal-action set
+  if (totalForLegal <= 0) return null;
+  return (action: Action) => {
+    const idx = canonicalActionIndex(action, state);
+    if (idx < 0) return 1 / rootActions.length;
+    const raw = slotPriors.get(idx) ?? 0;
+    return raw / totalForLegal;
+  };
+}
 
 /**
  * Adaptive rollout depth: roll out further when the value network is least
@@ -94,6 +132,12 @@ export function runMcts(
 
   const root = createNode(state, null, null, null, forPower, [...prunedRoot]);
 
+  // Attach policy priors at the root if a policy head is loaded.
+  // Selection switches to PUCT when priors are present, UCB1 otherwise.
+  const priors = makeRootPriors(state, forPower, prunedRoot);
+  root.childPriors = priors;
+  const usePuct = priors !== null;
+
   // Adaptive rollout depth based on the root state's round — see
   // rolloutDepthForRound for the rationale.
   const rolloutDepth = rolloutDepthForRound(state.round);
@@ -103,7 +147,7 @@ export function runMcts(
 
   while (iteration < maxIterations && Date.now() < deadline) {
     // 1. Selection
-    const selected = select(root, explorationC);
+    const selected = select(root, explorationC, usePuct);
 
     // 2. Expansion
     const expanded = expand(selected, forPower);
@@ -121,23 +165,88 @@ export function runMcts(
   return bestAction(root);
 }
 
+/**
+ * Same as runMcts but also returns the visit count for each root child,
+ * keyed by the child's action. This is the training signal for a policy
+ * head — the policy is trained to mimic MCTS's visit distribution.
+ */
+export interface MctsStats {
+  action: Action;
+  visitCounts: Array<{ action: Action; visits: number }>;
+}
+
+export function runMctsWithStats(
+  state: GameState,
+  forPower: Power,
+  options?: MctsOptions,
+): MctsStats {
+  const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
+  const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
+  const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
+
+  let legalRootRaw: Action[];
+  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
+    legalRootRaw = enumerateKillActions(state, forPower);
+  } else {
+    legalRootRaw = getLegalActions(state, forPower);
+  }
+  if (legalRootRaw.length === 0) {
+    throw new Error(`runMctsWithStats: no legal actions for ${forPower}`);
+  }
+  const legalRoot = filterPointlessActions(state, legalRootRaw);
+  if (legalRoot.length === 1) {
+    return {
+      action: legalRoot[0]!,
+      visitCounts: [{ action: legalRoot[0]!, visits: 1 }],
+    };
+  }
+
+  const prunedRoot = pruneActions(state, forPower, legalRoot);
+  const root = createNode(state, null, null, null, forPower, [...prunedRoot]);
+
+  const priors = makeRootPriors(state, forPower, prunedRoot);
+  root.childPriors = priors;
+  const usePuct = priors !== null;
+
+  const rolloutDepth = rolloutDepthForRound(state.round);
+  const deadline = Date.now() + maxTimeMs;
+  let iteration = 0;
+
+  while (iteration < maxIterations && Date.now() < deadline) {
+    const selected = select(root, explorationC, usePuct);
+    const expanded = expand(selected, forPower);
+    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
+    backpropagate(expanded, score);
+    iteration += 1;
+  }
+
+  // Walk root children to collect (action, visits) pairs.
+  const visitCounts: Array<{ action: Action; visits: number }> = [];
+  for (const child of root.children) {
+    if (child.action !== null) {
+      visitCounts.push({ action: child.action, visits: child.visits });
+    }
+  }
+  return { action: bestAction(root), visitCounts };
+}
+
 // ─── MCTS phases ─────────────────────────────────────────────────────────────
 
 /**
  * Selection: descend the tree following UCB1 until we reach a node that has
  * untried actions (expandable) or is terminal.
  */
-function select(node: MctsNode, explorationC: number): MctsNode {
+function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNode {
   let current = node;
   while (current.untriedActions.length === 0 && current.children.length > 0) {
     // Terminal node (no children and no untried actions): stop.
     if (isTerminal(current.state)) break;
 
-    // Pick the child with highest UCB1.
+    // Pick the child with highest UCB1 / PUCT.
     let bestChild: MctsNode | null = null;
     let bestScore = -Infinity;
     for (const child of current.children) {
-      const score = ucb1(child, explorationC);
+      const score = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
       if (score > bestScore) {
         bestScore = score;
         bestChild = child;
@@ -174,7 +283,13 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
   // Determine legal actions for whoever is now waiting.
   const childUntriedActions = getChildUntriedActions(newState);
 
-  const child = createNode(newState, action, actingPower, node, forPower, childUntriedActions);
+  // Look up the prior for this child if the parent has a priors function
+  // (only the root sets one — see runMcts). Default 1.0 = uniform.
+  const childPrior = node.childPriors ? node.childPriors(action) : 1.0;
+
+  const child = createNode(
+    newState, action, actingPower, node, forPower, childUntriedActions, childPrior,
+  );
   node.children.push(child);
   return child;
 }

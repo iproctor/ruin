@@ -71,3 +71,17 @@ export function evaluateLearned(state: GameState, power: Power): number {
   const probs = model.forward(x);
   return probs[powerIndex(power)]!;
 }
+
+/**
+ * Returns the policy distribution from the model's policy head, viewed from
+ * `power`'s perspective. Returns null if the loaded model has no policy head
+ * or no model is loaded — caller should fall back to uniform priors.
+ */
+export function policyForState(state: GameState, power: Power): Float32Array | null {
+  const model = perPowerModels.get(power) ?? cachedModel;
+  if (model === null || model === undefined) return null;
+  if (!model.hasPolicyHead()) return null;
+  const x = extractFeatures(state, power);
+  const { policy } = model.forwardWithPolicy(x);
+  return policy;
+}

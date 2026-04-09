@@ -96,12 +96,13 @@ router.get('/:id', optionalAuth, async (req, res) => {
   // Tell the client which power(s) they control so detection works even with
   // an empty hand (empty hands are indistinguishable from masked empty hands).
   let myPower: string | null = null;
+  let myPowers: string[] = [];
   if (req.userId) {
     const rows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
-    const mine = rows.find((r) => r.userId === req.userId);
-    myPower = mine?.power ?? null;
+    myPowers = rows.filter((r) => r.userId === req.userId).map((r) => r.power);
+    myPower = myPowers[0] ?? null;
   }
-  res.json({ state, myPower });
+  res.json({ state, myPower, myPowers });
 });
 
 // ---------------------------------------------------------------------------

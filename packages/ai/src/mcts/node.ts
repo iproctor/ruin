@@ -25,6 +25,11 @@ export interface MctsNode {
   forPower: Power;
   /** Actions not yet expanded from this node. */
   untriedActions: Action[];
+  /** Policy prior for this child (from the policy head). 1.0 = uniform default. */
+  prior: number;
+  /** Optional: lookup table mapping a child's action to its prior probability.
+   *  Only set on the root when a policy head is available. */
+  childPriors: ((action: Action) => number) | null;
 }
 
 export function createNode(
@@ -34,6 +39,7 @@ export function createNode(
   parent: MctsNode | null,
   forPower: Power,
   untriedActions: Action[],
+  prior: number = 1.0,
 ): MctsNode {
   return {
     state,
@@ -45,6 +51,8 @@ export function createNode(
     totalScore: 0,
     forPower,
     untriedActions,
+    prior,
+    childPriors: null,
   };
 }
 
@@ -82,5 +90,35 @@ export function ucb1(node: MctsNode, explorationC: number): number {
     return (1 - exploitation) + exploration;
   }
 
+  return exploitation + exploration;
+}
+
+/**
+ * PUCT selection score (AlphaZero-style).
+ *
+ *   PUCT(child) = Q(child) + c * P(action) * sqrt(N_parent) / (1 + n_child)
+ *
+ * Differs from UCB1 in three ways:
+ *   - Uses sqrt(N_parent) (not log(N_parent)) so exploration grows faster.
+ *   - Multiplies the exploration bonus by P(action) — the policy prior — so
+ *     promising actions get visited more from the very first iteration.
+ *   - Uses (1 + n_child) so unvisited children get a finite (large) score
+ *     rather than infinity. They still get visited first by virtue of the
+ *     prior * sqrt(N_parent) term being large when n_child = 0.
+ *
+ * Same paranoid flip as UCB1: opponent nodes use (1 - Q) for exploitation.
+ */
+export function puct(node: MctsNode, explorationC: number): number {
+  const parent = node.parent;
+  const parentVisits = parent !== null ? Math.max(1, parent.visits) : Math.max(1, node.visits);
+
+  const exploitation = node.visits > 0 ? node.totalScore / node.visits : 0.5;
+  const exploration =
+    explorationC * node.prior * Math.sqrt(parentVisits) / (1 + node.visits);
+
+  const isOpponentNode = node.power !== null && node.power !== node.forPower;
+  if (isOpponentNode) {
+    return (1 - exploitation) + exploration;
+  }
   return exploitation + exploration;
 }

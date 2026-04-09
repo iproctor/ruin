@@ -420,13 +420,17 @@ export default function GamePage() {
     if (!id || !userId) return;
     let cancelled = false;
     getGame(id)
-      .then(({ state, myPower }) => {
+      .then(({ state, myPower, myPowers }) => {
         if (cancelled) return;
         // Seed the display with the HTTP state so the board is visible immediately,
         // before the SSE 'history' event arrives.
         setInitialState(state);
-        // Use the server-provided myPower — reliable even when the hand is empty.
-        if (myPower) setMyPowers([myPower as Power]);
+        // Server returns every power this user controls (hot-seat: one user can own multiple).
+        if (myPowers && myPowers.length > 0) {
+          setMyPowers(myPowers as Power[]);
+        } else if (myPower) {
+          setMyPowers([myPower as Power]);
+        }
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load game');
