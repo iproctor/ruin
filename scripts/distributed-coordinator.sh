@@ -92,7 +92,7 @@ while true; do
   T0=$(date +%s)
   echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0.05 \
+      --workers "$WORKERS" --epsilon 0.15 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"

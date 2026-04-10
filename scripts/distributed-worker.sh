@@ -77,7 +77,7 @@ while true; do
   echo "[$(date +%H:%M:%S)] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})..."
   T0=$(date +%s)
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0.05 \
+      --workers "$WORKERS" --epsilon 0.15 \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"

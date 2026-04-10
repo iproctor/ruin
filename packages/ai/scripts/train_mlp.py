@@ -168,13 +168,17 @@ class DualHeadMLP:
         policy_mask: np.ndarray,
         l2: float,
         policy_alpha: float,
+        sample_weights: 'np.ndarray | None' = None,
     ) -> dict:
         n = T_value.shape[0]
         v_probs = cache["v_probs"]
         p_probs = cache["p_probs"]
 
-        # Value head: cross-entropy gradient
+        # Value head: cross-entropy gradient, scaled by per-sample weights.
+        # Weights correct for class imbalance (rare winners get amplified).
         grad_zv = (v_probs - T_value) / n
+        if sample_weights is not None:
+            grad_zv = grad_zv * sample_weights[:, None]
 
         # Policy head: cross-entropy gradient ONLY on rows that have a policy
         # target. Rows without one (policy_mask == False) contribute zero.
@@ -301,6 +305,23 @@ def main() -> int:
     n_val = int(n * args.val)
     X_val,  Tv_val, Tp_val, hp_val = X[:n_val], T_value[:n_val], T_policy[:n_val], has_policy[:n_val]
     X_tr,   Tv_tr,  Tp_tr,  hp_tr  = X[n_val:], T_value[n_val:], T_policy[n_val:], has_policy[n_val:]
+    # ── Inverse-frequency reweighting ──────────────────────────────────────────
+    # Break the self-reinforcing loop: if xarm wins 80% of games, xarm-win
+    # samples dominate the gradient and the model learns "predict xarm" instead
+    # of learning to play the other powers. Fix: weight each sample by the
+    # inverse of its winner's frequency. Rare winners (non-xarm) get amplified.
+    winner_class = T_value.argmax(axis=1)  # which power won (0-3)
+    class_counts = np.bincount(winner_class, minlength=4).astype(np.float32)
+    class_counts = np.maximum(class_counts, 1)  # avoid div-by-zero
+    class_freq = class_counts / class_counts.sum()
+    # Weight = 1 / (4 * freq) → uniform classes get weight 1.0, rare classes get > 1
+    inv_freq = 1.0 / (4.0 * class_freq)
+    sample_weights = inv_freq[winner_class].astype(np.float32)
+    # Split into train/val (same permutation as above)
+    sw_val = sample_weights[:n_val]
+    sw_tr = sample_weights[n_val:]
+    _rw_names = ["xarm", "gormen", "tenzen", "lasha"]
+    print(f"reweight: {' '.join(f'{_rw_names[i]}:{inv_freq[i]:.2f}' for i in range(4))}")
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 
     model = DualHeadMLP(d, args.hidden1, args.hidden2, 4, ACTION_DIM, seed=args.seed)
@@ -314,7 +335,7 @@ def main() -> int:
 
     for epoch in range(1, args.epochs + 1):
         idx = rng.permutation(n_tr)
-        X_s = X_tr[idx]; Tv_s = Tv_tr[idx]; Tp_s = Tp_tr[idx]; hp_s = hp_tr[idx]
+        X_s = X_tr[idx]; Tv_s = Tv_tr[idx]; Tp_s = Tp_tr[idx]; hp_s = hp_tr[idx]; sw_s = sw_tr[idx]
         epoch_v_loss = 0.0
         epoch_p_loss = 0.0
         n_batches = 0
@@ -324,10 +345,11 @@ def main() -> int:
             tvb = Tv_s[i:i + args.batch]
             tpb = Tp_s[i:i + args.batch]
             hpb = hp_s[i:i + args.batch]
+            wb = sw_s[i:i + args.batch]
             v_probs, p_probs, cache = model.forward(xb)
             epoch_v_loss += soft_cross_entropy(v_probs, tvb)
             epoch_p_loss += policy_cross_entropy(p_probs, tpb, hpb)
-            grads = model.backward(cache, tvb, tpb, hpb, args.l2, args.policy_alpha)
+            grads = model.backward(cache, tvb, tpb, hpb, args.l2, args.policy_alpha, wb)
             model.adam_step(grads, args.lr)
             n_batches += 1
 
