@@ -120,6 +120,7 @@ export function createInitialState(config: GameConfig): GameState {
     pendingDialRewards: null,
     rngSeed: seed,
     actionCount: 0,
+    events: [],
     winners: null,
     winCondition: null,
   };

@@ -74,11 +74,20 @@ export function resolveCorruptionPhase(
   const log: string[] = [];
   let s = state;
 
+  // Snapshot corruption tokens BEFORE any phase work. Used at ruination time
+  // to determine "ruiners" = anyone whose token count increased this round
+  // (from any source: Heartrippers in battle, Depraved Infiltration in
+  // summoning, Death's Perfume in domination, normal cultists, Plague Bloom).
+  const corruptionSnapshot: Record<string, Record<Power, number>> = {};
+  for (const regionId of REGION_ORDER) {
+    corruptionSnapshot[regionId] = { ...s.regions[regionId]!.corruptionTokens };
+  }
+
   // Step 1: Domination
   ({ state: s } = resolveDomination(s, log));
 
   // Step 2: Corruption placement + ruination checks
-  ({ state: s } = resolveCorruption(s, log));
+  ({ state: s } = resolveCorruption(s, log, corruptionSnapshot));
 
   s = { ...s, phase: 'end', pendingAction: null };
   return { state: s, log };
@@ -123,6 +132,7 @@ function resolveDomination(
     if (maxDom > resistance) {
       const conquestValue = calcConquestValue(s, regionId);
       s = scoreVP(s, winner, conquestValue);
+      s = { ...s, events: [...s.events, { type: 'domination' as const, round: s.round, regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue }] };
       log.push(`${regionId}: ${winner} dominates (${maxDom} vs resistance ${resistance}) — scores ${conquestValue} VP.`);
 
       // Gormen Death's Perfume: place 2 corruption tokens on domination
@@ -267,6 +277,7 @@ function calcConquestValue(state: GameState, regionId: RegionId): number {
 function resolveCorruption(
   state: GameState,
   log: string[],
+  corruptionSnapshot: Record<string, Record<Power, number>>,
 ): { state: GameState; log: string[] } {
   let s = state;
 
@@ -280,8 +291,6 @@ function resolveCorruption(
       continue;
     }
 
-    // Track who places tokens this step (for dial advancement and ruiner scoring)
-    const placedBy = new Set<Power>();
     const nullWeave = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     for (const power of s.activePowers) {
@@ -294,7 +303,6 @@ function resolveCorruption(
           [power]: s.regions[regionId]!.corruptionTokens[power] + tokensToPlace,
         },
       });
-      placedBy.add(power);
       log.push(`${regionId}: ${power} places ${tokensToPlace} corruption token(s).`);
 
       // Dial advancement counters
@@ -319,14 +327,22 @@ function resolveCorruption(
             gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
           ),
         });
-        if (tokensToPlace > 0) placedBy.add('gormen');
         log.push(`${regionId}: ${CARD_BY_ID['gormen_vile_consumption']!.name} — ${gormenFigures.length} Gormen figures removed, ${tokensToPlace} corruption token(s) placed.`);
       }
     }
 
-    // Check ruination
+    // Check ruination — "ruiners" are all powers whose corruption count in
+    // this region increased since the start of the corruption phase (the
+    // snapshot). This correctly credits Heartrippers (battle), Depraved
+    // Infiltration (summoning), Death's Perfume (domination), normal cultists,
+    // and Plague Bloom — any source.
     const total = totalCorruption(s.regions[regionId]!);
     if (total >= CORRUPTION_RUIN_THRESHOLD) {
+      const snap = corruptionSnapshot[regionId]!;
+      const current = s.regions[regionId]!.corruptionTokens;
+      const placedBy = new Set<Power>(
+        s.activePowers.filter(p => current[p] > snap[p]),
+      );
       s = applyRuination(s, regionId, placedBy, log);
     }
   }
@@ -439,6 +455,7 @@ function applyRuination(
   for (const power of placedBy) {
     s = scoreVP(s, power, card.ruinersScore);
   }
+  s = { ...s, events: [...s.events, { type: 'ruination' as const, round: s.round, regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore }] };
   log.push(`${regionId}: RUINED (card ${nextCardIndex}). Ruiners score ${card.ruinersScore} VP each.`);
 
   // Gormen Provender of Ruin upgrade: +3 VP on any ruination

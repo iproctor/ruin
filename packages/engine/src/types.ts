@@ -186,10 +186,18 @@ export interface GameState {
   rngSeed: number;
   actionCount: number;      // incremented per action, used as RNG offset
 
+  // Structured event history (append-only, never mutated)
+  events: GameEvent[];
+
   // Result
   winners: Power[] | null;
   winCondition: WinCondition | null;
 }
+
+export type GameEvent =
+  | { type: 'domination'; round: number; regionId: RegionId; power: Power; value: number; resistance: number; conquered: boolean; vp: number }
+  | { type: 'ruination'; round: number; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number }
+  | { type: 'ruination_scoring'; round: number; regionId: RegionId; cardIndex: number; first: Power[]; firstVP: number; second: Power[]; secondVP: number };
 
 // ─── Win result ───────────────────────────────────────────────────────────────
 

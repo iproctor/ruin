@@ -11,6 +11,7 @@ export type {
   BattleHitAssignmentAction,
   DialPendingReward,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
+  GameEvent,
 } from './types.js';
 
 export { createInitialState } from './setup.js';
@@ -32,5 +33,6 @@ export {
   CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS,
   REGIONS, REGION_ORDER, ADJACENCY,
   THREAT_DIALS,
+  RUINATION_CARDS,
 } from './constants.js';
-export type { CardDef, WorldCardDef, UpgradeDef, DialPosition } from './constants.js';
+export type { CardDef, WorldCardDef, UpgradeDef, DialPosition, RuinationCard } from './constants.js';

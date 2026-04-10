@@ -1,66 +1,88 @@
 #!/bin/bash
 #
-# Push the repo + current model to the Hetzner box.
-#
-# Strategy:
-#   1. Sync source code (excluding node_modules, dist, training artifacts)
-#   2. Sync the current model.json so the box resumes from where the laptop left off
+# Push the repo + current model to all Hetzner boxes in parallel.
 #
 # Usage:  ./scripts/push-hetzner.sh
 
 set -euo pipefail
 
 REMOTE_USER=${REMOTE_USER:-iain}
-REMOTE_HOST=${REMOTE_HOST:-78.46.79.158}
 REMOTE_PATH=${REMOTE_PATH:-/home/iain/code/chaos}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 
+# All boxes to push to. First is the coordinator, rest are workers.
+HOSTS=(
+  78.46.79.158     # hetz1 — coordinator
+  188.40.109.160   # hetz2 — worker
+)
+
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SSH_OPTS="-i $SSH_KEY"
+SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new"
 
-echo "→ Pushing source code to ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}"
+RSYNC_EXCLUDES=(
+  --exclude='node_modules'
+  --exclude='.git'
+  --exclude='packages/*/dist'
+  --exclude='packages/client/dist'
+  --exclude='packages/ai/data/training_iter_*.jsonl'
+  --exclude='packages/ai/data/training_recent.jsonl'
+  --exclude='packages/ai/data/training_w*.jsonl'
+  --exclude='packages/ai/data/training.jsonl'
+  --exclude='packages/ai/data/model_iter_*.json'
+  --exclude='packages/ai/data/bench_iter_*.json'
+  --exclude='packages/ai/data/inbox'
+  --exclude='packages/ai/data/archive'
+  --exclude='packages/ai/data/training_loop.log'
+  --exclude='packages/ai/data/training_W*'
+  --exclude='packages/ai/data/training_smoke.jsonl'
+  --exclude='/tmp'
+)
 
-rsync -avz --delete \
-  --exclude='node_modules' \
-  --exclude='.git' \
-  --exclude='packages/*/dist' \
-  --exclude='packages/client/dist' \
-  --exclude='packages/ai/data/training_iter_*.jsonl' \
-  --exclude='packages/ai/data/training_recent.jsonl' \
-  --exclude='packages/ai/data/training_w*.jsonl' \
-  --exclude='packages/ai/data/training.jsonl' \
-  --exclude='packages/ai/data/model_iter_*.json' \
-  --exclude='packages/ai/data/bench_iter_*.json' \
-  --exclude='packages/ai/data/inbox' \
-  --exclude='packages/ai/data/archive' \
-  --exclude='packages/ai/data/training_loop.log' \
-  --exclude='packages/ai/data/training_W*' \
-  --exclude='packages/ai/data/training_smoke.jsonl' \
-  --exclude='/tmp' \
-  -e "ssh ${SSH_OPTS}" \
-  "${LOCAL_ROOT}/" \
-  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/"
+push_one() {
+  local host=$1
+  echo "[$host] pushing source..."
+  rsync -az --delete \
+    "${RSYNC_EXCLUDES[@]}" \
+    -e "ssh ${SSH_OPTS}" \
+    "${LOCAL_ROOT}/" \
+    "${REMOTE_USER}@${host}:${REMOTE_PATH}/"
 
-echo "→ Ensuring remote data dir exists"
-ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
-  "mkdir -p ${REMOTE_PATH}/packages/ai/data"
+  ssh ${SSH_OPTS} "${REMOTE_USER}@${host}" \
+    "mkdir -p ${REMOTE_PATH}/packages/ai/data"
 
-echo "→ Pushing current model.json"
-if [ -f "${LOCAL_ROOT}/packages/ai/data/model.json" ]; then
-  rsync -avz -e "ssh ${SSH_OPTS}" \
-    "${LOCAL_ROOT}/packages/ai/data/model.json" \
-    "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json"
+  if [ -f "${LOCAL_ROOT}/packages/ai/data/model.json" ]; then
+    rsync -az -e "ssh ${SSH_OPTS}" \
+      "${LOCAL_ROOT}/packages/ai/data/model.json" \
+      "${REMOTE_USER}@${host}:${REMOTE_PATH}/packages/ai/data/model.json"
+  fi
+
+  echo "[$host] building..."
+  ssh ${SSH_OPTS} "${REMOTE_USER}@${host}" \
+    "cd ${REMOTE_PATH} && pnpm --filter engine build && pnpm --filter ai build" 2>&1 \
+    | sed "s/^/[$host] /"
+  echo "[$host] ✓ done"
+}
+
+echo "Pushing to ${#HOSTS[@]} boxes in parallel..."
+echo
+
+pids=()
+for host in "${HOSTS[@]}"; do
+  push_one "$host" &
+  pids+=($!)
+done
+
+# Wait for all
+failed=0
+for pid in "${pids[@]}"; do
+  if ! wait "$pid"; then
+    failed=$((failed + 1))
+  fi
+done
+
+echo
+if [ "$failed" -gt 0 ]; then
+  echo "⚠ ${failed} box(es) failed"
 else
-  echo "  (no local model.json — skipping)"
+  echo "✓ All ${#HOSTS[@]} boxes pushed."
 fi
-
-echo
-echo "✓ Push complete."
-echo
-echo "Next steps on the box:"
-echo "  ssh -i ${SSH_KEY} ${REMOTE_USER}@${REMOTE_HOST}"
-echo "  cd ${REMOTE_PATH}"
-echo "  pnpm install                                          # first time only"
-echo "  pnpm --filter engine build && pnpm --filter ai build  # first time / after source changes"
-echo "  tmux new -s ruin"
-echo "  ITERATIONS=200 WORKERS=14 BENCH_GAMES=48 ./scripts/training-loop.sh"

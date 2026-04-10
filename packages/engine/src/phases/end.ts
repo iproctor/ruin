@@ -494,20 +494,24 @@ function scoreRuinedRegions(
       for (const p of firstPlayers) {
         s = scoreVP(s, p, shared);
       }
+      s = { ...s, events: [...s.events, { type: 'ruination_scoring' as const, round: s.round, regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: shared, second: [], secondVP: 0 }] };
       log.push(`${regionId}: Ruination scoring — ${firstPlayers.join('/')} each score ${shared} VP (tied first).`);
     } else {
       s = scoreVP(s, firstPlayers[0]!, regionVP.first);
-      log.push(`${regionId}: Ruination scoring — ${firstPlayers[0]} scores ${regionVP.first} VP (first).`);
 
+      let secondPlayers: Power[] = [];
+      let secondShared = 0;
       if (sorted.length >= 2) {
         const secondTokens = tokens[sorted[1]!]!;
-        const secondPlayers = sorted.slice(1).filter(p => tokens[p] === secondTokens);
-        const shared = Math.floor(regionVP.second / secondPlayers.length);
+        secondPlayers = sorted.slice(1).filter(p => tokens[p] === secondTokens);
+        secondShared = Math.floor(regionVP.second / secondPlayers.length);
         for (const p of secondPlayers) {
-          s = scoreVP(s, p, shared);
+          s = scoreVP(s, p, secondShared);
         }
-        log.push(`${regionId}: Ruination scoring — ${secondPlayers.join('/')} each score ${shared} VP (second).`);
+        log.push(`${regionId}: Ruination scoring — ${secondPlayers.join('/')} each score ${secondShared} VP (second).`);
       }
+      s = { ...s, events: [...s.events, { type: 'ruination_scoring' as const, round: s.round, regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: regionVP.first, second: secondPlayers, secondVP: secondShared }] };
+      log.push(`${regionId}: Ruination scoring — ${firstPlayers[0]} scores ${regionVP.first} VP (first).`);
     }
 
     // Cosmetic: clear corruption tokens from the ruined region now that

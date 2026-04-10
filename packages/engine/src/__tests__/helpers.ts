@@ -110,6 +110,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
     pendingDialRewards: null,
     rngSeed: 42,
     actionCount: 0,
+    events: [],
     winners: null,
     winCondition: null,
   };

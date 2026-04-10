@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import type { GameState, Power } from '@ruin/engine';
-import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADE_BY_ID } from '@ruin/engine';
+import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
+import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADE_BY_ID, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 
@@ -193,6 +193,164 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
   );
 }
 
+// ── Ruination chip with tooltip ──────────────────────────────────────────────
+
+function RuinChip({ state }: { state: GameState }) {
+  const [hovered, setHovered] = useState(false);
+  const chipRef = useRef<HTMLDivElement>(null);
+
+  // Build map of cardIndex -> regionId for ruined regions
+  const ruinedMap = new Map<number, RegionId>();
+  let ruinCount = 0;
+  for (const rid of REGION_ORDER) {
+    const region = state.regions[rid];
+    if (region?.ruinationCardIndex != null) {
+      ruinedMap.set(region.ruinationCardIndex, rid);
+      ruinCount++;
+    }
+  }
+
+  // Build map of cardIndex -> scoring event
+  const scoringMap = new Map<number, Extract<GameEvent, { type: 'ruination_scoring' }>>();
+  for (const evt of state.events) {
+    if (evt.type === 'ruination_scoring') {
+      scoringMap.set(evt.cardIndex, evt);
+    }
+  }
+
+  const chipBottom = chipRef.current?.getBoundingClientRect().bottom ?? 0;
+
+  return (
+    <>
+      <div
+        ref={chipRef}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 4,
+          border: ruinCount > 0 ? '1.5px solid #991b1b' : '1.5px solid #334155',
+          background: ruinCount > 0 ? '#1a0808' : '#13121f',
+          cursor: 'default',
+          flexShrink: 0,
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: ruinCount > 0 ? '#f87171' : '#64748b',
+        }}
+      >
+        Ruined: {ruinCount}
+      </div>
+
+      {hovered && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            top: chipBottom + 8,
+            background: '#0d0d1f',
+            border: '1px solid #991b1b',
+            borderRadius: 8,
+            padding: '10px 12px',
+            pointerEvents: 'none',
+            zIndex: 9999,
+            boxShadow: '0 0 14px #991b1b44',
+            fontSize: '0.73rem',
+            lineHeight: 1.5,
+            color: '#e5e7eb',
+          }}
+        >
+          <div style={{ fontWeight: 700, color: '#f87171', marginBottom: 6, fontSize: '0.85rem' }}>
+            Ruination Cards
+          </div>
+          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1 }}>
+                <th style={{ textAlign: 'left', padding: '2px 8px 4px 0' }}>Card</th>
+                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>Ruiner VP</th>
+                {REGION_ORDER.map(rid => (
+                  <th key={rid} style={{ textAlign: 'center', padding: '2px 4px 4px', whiteSpace: 'nowrap' }}>
+                    {REGIONS[rid].name}
+                  </th>
+                ))}
+                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>1st</th>
+                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>2nd</th>
+              </tr>
+            </thead>
+            <tbody>
+              {RUINATION_CARDS.map(card => {
+                const usedRegion = ruinedMap.get(card.index);
+                const isUsed = usedRegion != null;
+                const scoring = scoringMap.get(card.index);
+                return (
+                  <tr
+                    key={card.index}
+                    style={{
+                      borderTop: '1px solid #1e1e3a',
+                      opacity: isUsed ? 0.6 : 1,
+                    }}
+                  >
+                    <td style={{ padding: '3px 8px 3px 0', fontWeight: 700, color: isUsed ? '#64748b' : '#e5e7eb' }}>
+                      #{card.index}
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '3px 8px', color: '#fbbf24', fontWeight: 600 }}>
+                      {card.ruinersScore}
+                    </td>
+                    {REGION_ORDER.map(rid => {
+                      const vp = card.endPhaseVP[rid as RegionId];
+                      const isThisRegion = usedRegion === rid;
+                      return (
+                        <td
+                          key={rid}
+                          style={{
+                            textAlign: 'center',
+                            padding: '3px 4px',
+                            background: isThisRegion ? '#7f1d1d33' : 'transparent',
+                            borderRadius: isThisRegion ? 3 : 0,
+                            fontWeight: isThisRegion ? 700 : 400,
+                            color: isThisRegion ? '#f87171' : '#ccc',
+                          }}
+                        >
+                          <span style={{ color: isThisRegion ? '#f87171' : '#e5e7eb' }}>{vp.first}</span>
+                          <span style={{ color: '#64748b' }}>/</span>
+                          <span style={{ color: isThisRegion ? '#fca5a5' : '#94a3b8' }}>{vp.second}</span>
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'center', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                      {scoring
+                        ? scoring.first.map(p => (
+                            <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
+                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} style={{ color: '#64748b' }}>/</span>, el], [])
+                        : <span style={{ color: '#334155' }}>—</span>
+                      }
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                      {scoring && scoring.second.length > 0
+                        ? scoring.second.map(p => (
+                            <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
+                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} style={{ color: '#64748b' }}>/</span>, el], [])
+                        : <span style={{ color: '#334155' }}>—</span>
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 6, fontSize: '0.6rem', color: '#64748b' }}>
+            Values show 1st/2nd place VP per region at end of game. Highlighted column = region ruined by that card.
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ── Status bar ────────────────────────────────────────────────────────────────
 
 export default function StatusBar({ state, myPower, players }: StatusBarProps) {
@@ -255,6 +413,10 @@ export default function StatusBar({ state, myPower, players }: StatusBarProps) {
           </div>
         </>
       )}
+
+      {/* Ruination tracker */}
+      <span className="text-slate-600 shrink-0">|</span>
+      <RuinChip state={state} />
 
       <div className="flex-1" />
 

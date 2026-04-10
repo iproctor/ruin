@@ -159,8 +159,8 @@ describe('Tenzen Kaleidoscope (-1 cultist for opponents)', () => {
 
 // ─── Scorched Earth: no corruption tokens placed ─────────────────────────────
 
-describe('Xarm Scorched Earth (no corruption tokens in region)', () => {
-  test('corruption tokens are not placed when Scorched Earth is active', () => {
+describe('Xarm War Cry (no corruption tokens in region)', () => {
+  test('corruption tokens are not placed when War Cry is active', () => {
     let s = makeState({ phase: 'corruption', pendingAction: null });
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
@@ -168,7 +168,7 @@ describe('Xarm Scorched Earth (no corruption tokens in region)', () => {
     const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
     const { state, log } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
-    expect(log.some(l => l.includes('Scorched Earth'))).toBe(true);
+    expect(log.some(l => l.includes('War Cry'))).toBe(true);
   });
 });
 
