@@ -288,9 +288,10 @@ def main() -> int:
     print(f"policy alpha: {args.policy_alpha}")
     print()
 
+    _t_load = time.time()
     X, T_value, T_policy, has_policy = load_jsonl(args.in_path)
     n, d = X.shape
-    print(f"loaded {n} samples, feature dim {d}")
+    print(f"loaded {n} samples, feature dim {d}  ({time.time() - _t_load:.1f}s)")
     print(f"policy rows: {int(has_policy.sum())} / {n}  ({100 * has_policy.mean():.1f}%)")
     print(f"avg target distribution: {T_value.mean(axis=0).round(3).tolist()}")
 

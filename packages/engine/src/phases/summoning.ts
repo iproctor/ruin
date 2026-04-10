@@ -348,7 +348,7 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
 
 // ─── Cost calculations ────────────────────────────────────────────────────────
 
-function getFollowerCost(
+export function getFollowerCost(
   state: GameState,
   power: Power,
   cls: 'cultist' | 'warrior' | 'incarnation',
@@ -378,7 +378,7 @@ function getFollowerCost(
   return cost;
 }
 
-function getCardCost(state: GameState, power: Power, cardId: string, toRegion: RegionId): number {
+export function getCardCost(state: GameState, power: Power, cardId: string, toRegion: RegionId): number {
   const def = CARD_BY_ID[cardId]!;
   let cost = def.cost;
 

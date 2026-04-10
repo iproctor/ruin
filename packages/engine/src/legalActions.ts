@@ -11,6 +11,7 @@ import {
   legalPlacementRegions, cardSlotsAvailable, isRuined, isWorldCardActive,
 } from './helpers.js';
 import { getWorldChoiceRegions } from './phases/world.js';
+import { getFollowerCost, getCardCost } from './phases/summoning.js';
 
 const WORLD_TWO_REGION_CARDS = new Set(['peasant_prosperity', 'ratmen_incursion', 'chaos_storm']);
 const WORLD_PAIR_CHOICE_CARDS = new Set(['northern_heir', 'heroes_of_order']);
@@ -287,6 +288,10 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
     for (const regionId of legalRegions) {
       const region = state.regions[regionId]!;
       if (isRuined(region)) continue;
+      // Cost depends on (class, region) — Stasis Web adds +2 in some regions,
+      // gormen plaguecarrier upgrade may make it free, etc. Skip unaffordable.
+      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
+      if (p.powerPoints < cost) continue;
       actions.push({
         kind: 'summoning_summon_figure',
         power,
@@ -328,6 +333,8 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
       if (regionId === follower.regionId) continue; // skip same region
       const region = state.regions[regionId]!;
       if (isRuined(region)) continue;
+      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
+      if (p.powerPoints < cost) continue;
       actions.push({
         kind: 'summoning_summon_figure',
         power,
@@ -341,8 +348,9 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
   for (const cardId of p.hand) {
     const def = CARD_BY_ID[cardId];
     if (!def) continue;
-    const cost = getCardCostForLegal(state, power, cardId);
-    if (p.powerPoints < cost) continue;
+    // Cheap upper-bound prefilter: if the base cost alone is unaffordable
+    // there's no region where it could become cheaper enough to matter.
+    if (p.powerPoints < 0) continue;
 
     for (const regionId of REGION_ORDER) {
       const region = state.regions[regionId]!;
@@ -350,6 +358,11 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
       const available = cardSlotsAvailable(state, regionId);
       if (available === 0) continue;
       if (!isCardPlayableInRegion(state, power, cardId, regionId)) continue;
+
+      // Cost depends on destination region (debauched royalty discount, etc).
+      // Use the real getCardCost from the engine to avoid drift.
+      const cost = getCardCost(state, power, cardId, regionId);
+      if (p.powerPoints < cost) continue;
 
       for (let slot = 0; slot <= 1; slot++) {
         if (region.chaosCards[slot as 0 | 1] !== null) continue;
@@ -408,23 +421,6 @@ function isCardPlayableInRegion(
     default:
       return true;
   }
-}
-
-/** Card cost approximation for legal action generation (mirrors summoning.ts logic). */
-function getCardCostForLegal(state: GameState, power: Power, cardId: string): number {
-  const def = CARD_BY_ID[cardId]!;
-  let cost = def.cost;
-
-  if (cardId === 'lasha_debauched_royalty') {
-    const totalCorr = Object.values(
-      state.regions[REGION_ORDER[0]!]!.corruptionTokens
-    ).reduce((a, b) => a + b, 0); // simplified — region not yet chosen
-    if (totalCorr >= 3) cost = Math.max(0, cost - 3);
-  }
-
-  // Stasis Web in some region — simplified check (any region may have it)
-  // Full cost validation is done in applySummonFigure/applyPlayCard
-  return cost;
 }
 
 // ─── Tenzen discard actions ───────────────────────────────────────────────────

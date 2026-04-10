@@ -96,11 +96,23 @@ for i in $(seq $START_ITER $END_ITER); do
   echo "[iter $i] training on $TOTAL samples (rolling window of $WINDOW iters)" | tee -a "$LOG_FILE"
 
   # 3. Train
-  if ! python3 packages/ai/scripts/train_mlp.py \
+  # batch=512 + OMP threads forces openblas to use all cores for the matmuls
+  # (default batch=128 was too small for openblas to bother threading).
+  # Using `env` instead of inline VAR=val to ensure the env vars actually
+  # reach python3 across the pipeline + `if !` wrapping.
+  TRAIN_THREADS=${TRAIN_THREADS:-8}
+  export OMP_NUM_THREADS=$TRAIN_THREADS
+  export OPENBLAS_NUM_THREADS=$TRAIN_THREADS
+  export MKL_NUM_THREADS=$TRAIN_THREADS
+  export NUMEXPR_NUM_THREADS=$TRAIN_THREADS
+  # NOTE: stream python output line-by-line (no `tail` buffering it).
+  # Use stdbuf to force python to line-buffer too, so the loop log shows
+  # progress in real time instead of dumping at the end.
+  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
       --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --epochs "$TRAIN_EPOCHS" 2>&1 \
-      | grep -E "^(loaded|baseline|epoch [^ ]*  train|saved)" \
-      | tail -10 | tee -a "$LOG_FILE"; then
+      --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      | grep --line-buffered -E "^(loaded|baseline|ep |saved)" \
+      | tee -a "$LOG_FILE"; then
     iteration_failed "$i" "training failed"
     continue
   fi
