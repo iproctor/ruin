@@ -6,7 +6,7 @@ import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
 const _fs: any = (() => { try { return (eval('require') as (s: string) => unknown)('node:fs'); } catch { return null; } })();
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion } from './filter-actions.js';
+import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion, isFeedingXarmDac, isRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { policyForState } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
@@ -490,6 +490,8 @@ function pruneActions(state: GameState, _power: Power, actions: Action[]): Actio
   const summonPool: Action[] = [];
   for (const a of actions) {
     if (a.kind === 'summoning_pass') passActions.push(a);
+    else if (isRetreatFromXarm(state, a)) alwaysKeep.push(a);  // retreat always considered
+    else if (isFeedingXarmDac(state, a)) { /* drop — don't add to any pool */ }
     else if (isZeroCostCardPlay(state, a) || isXarmDelayPlay(state, a) || isDacCompletion(state, a)) alwaysKeep.push(a);
     else if (a.kind === 'summoning_play_card') cardPool.push(a);
     else summonPool.push(a);

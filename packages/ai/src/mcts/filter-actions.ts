@@ -321,6 +321,90 @@ export function isDacCompletion(state: GameState, action: Action): boolean {
   return false;
 }
 
+/**
+ * Can xarm deal battle damage in this region? Checks figures (warriors,
+ * incarnation, upgraded cultists) plus War Frenzy card presence.
+ */
+function xarmCanAttackInRegion(state: GameState, regionId: string): boolean {
+  const region = state.regions[regionId as import('@ruin/engine').RegionId];
+  if (!region) return false;
+
+  // Battle-suppressing effects: Ecstasy (no dice rolled) and Mittelreich
+  // Diplomacy world card + event token (no battle at all).
+  const hasEcstasy = region.chaosCards.some(c => c !== null && c.cardId === 'lasha_ecstasy');
+  if (hasEcstasy) return false;
+
+  // Mittelreich Diplomacy world card: no battles in regions with event tokens.
+  const hasDiplomacy = state.worldTrack.slot1 === 'mittelreich_diplomacy'
+    || state.worldTrack.slot2 === 'mittelreich_diplomacy';
+  if (hasDiplomacy && region.tokens.includes('event')) return false;
+
+  const hasWarFrenzy = region.chaosCards.some(
+    c => c !== null && c.cardId === 'xarm_war_frenzy',
+  );
+  if (hasWarFrenzy) return true;
+
+  const xarmHasHeartseekers =
+    state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+
+  return region.placements.some(f => {
+    if (f.tipped) return false;
+    if ((f.controlledBy ?? f.power) !== 'xarm') return false;
+    if (f.class === 'warrior' || f.class === 'incarnation') return true;
+    if (f.class === 'cultist' && xarmHasHeartseekers) return true;
+    return false;
+  });
+}
+
+/**
+ * Returns true if this summon FEEDS xarm a free DAC. Specifically: a non-xarm
+ * power summoning a figure FROM RESERVE into a region where xarm has
+ * warriors/incarnation AND the summoning power has no other figures there.
+ * The lone figure will get killed for a free dial advancement counter.
+ * Used to deprioritize (not hard-block) these actions in pruneActions.
+ */
+export function isFeedingXarmDac(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_summon_figure') return false;
+  if (action.power === 'xarm') return false;
+
+  const region = state.regions[action.toRegion];
+  if (!region) return false;
+
+  if (!xarmCanAttackInRegion(state, action.toRegion)) return false;
+
+  // Would the summoning power's figure be alone (straggler)?
+  const ownFigsThere = region.placements.filter(
+    f => !f.tipped && (f.controlledBy ?? f.power) === action.power,
+  ).length;
+  // Only flag if going from 0 own figures → 1 (the straggler pattern).
+  // If there are already own figures there, reinforcing is fine.
+  return ownFigsThere === 0;
+}
+
+/**
+ * Returns true if this summon moves a figure OUT of a region where xarm has
+ * attackers. Humans instinctively retreat when xarm warriors arrive — this
+ * always-keep bias teaches the AI the same instinct.
+ */
+export function isRetreatFromXarm(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_summon_figure') return false;
+  if (action.power === 'xarm') return false;
+
+  // Only applies to figures already on the board (moving, not from reserve).
+  // Figures from reserve have regionId === null in the follower list, but
+  // the action itself doesn't say — we check the follower.
+  const ps = state.powers[action.power];
+  if (!ps) return false;
+  const follower = ps.followers.find(f => f.id === action.followerId);
+  if (!follower || follower.regionId === null) return false; // from reserve
+
+  // Is the figure's CURRENT region dangerous?
+  if (!xarmCanAttackInRegion(state, follower.regionId)) return false;
+
+  // Moving to a DIFFERENT region = retreat.
+  return action.toRegion !== follower.regionId;
+}
+
 export function actionBuildsTowardDac(state: GameState, action: Action): boolean {
   if (action.kind === 'summoning_summon_figure') {
     const isCultist = action.followerId.includes('_cultist_');
