@@ -1,0 +1,116 @@
+#!/bin/bash
+#
+# Distributed self-play worker. Run this on a laptop to contribute training
+# batches to the Hetzner coordinator.
+#
+# Loop:
+#   1. Pull model.json from coordinator
+#   2. If model has not changed since the last batch we generated, sleep and retry
+#   3. If model is new: run collect-data with a unique seed range
+#   4. Upload the resulting training file to coordinator's inbox/
+#   5. Goto 1
+#
+# Required env (or edit defaults below):
+#   WORKER_ID         unique small int per worker (1, 2, 3, ...) — used in seed sharding
+#   COORD_HOST        DNS name or IP of the Hetzner coordinator (default 78.46.79.158)
+#   COORD_USER        ssh user on the coordinator                (default iain)
+#   COORD_PATH        chaos repo path on the coordinator         (default /home/iain/code/chaos)
+#   SSH_KEY           private key                                (default ~/.ssh/id_ed25519_hetzner)
+#
+# Optional:
+#   GAMES_PER_BATCH   how many games per batch (default 100)
+#   WORKERS           local worker processes for collect:parallel (default 7)
+#   IDLE_SECONDS      sleep between model checks when idle (default 30)
+
+set -uo pipefail
+
+REMOTE_USER=${COORD_USER:-iain}
+REMOTE_HOST=${COORD_HOST:-78.46.79.158}
+REMOTE_PATH=${COORD_PATH:-/home/iain/code/chaos}
+SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
+WORKER_ID=${WORKER_ID:?WORKER_ID env var required (unique small int per worker)}
+
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-100}
+WORKERS=${WORKERS:-7}
+IDLE_SECONDS=${IDLE_SECONDS:-30}
+
+LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
+DATA_DIR="$LOCAL_ROOT/packages/ai/data"
+SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new"
+RSYNC_SSH="ssh ${SSH_OPTS}"
+
+mkdir -p "$DATA_DIR"
+
+# Track which model we last collected against (mtime as a string).
+LAST_MODEL_MTIME=""
+BATCH_COUNTER=0
+
+echo "──────────────────────────────────────────────────"
+echo "Distributed worker starting"
+echo "  WORKER_ID:       $WORKER_ID"
+echo "  COORD:           ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}"
+echo "  GAMES_PER_BATCH: $GAMES_PER_BATCH"
+echo "  WORKERS:         $WORKERS"
+echo "──────────────────────────────────────────────────"
+
+while true; do
+  # 1. Pull the canonical model from the coordinator.
+  echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
+  if ! rsync -az -e "${RSYNC_SSH}" \
+      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
+      "${DATA_DIR}/model.json" 2>/dev/null; then
+    echo "  ! rsync failed, sleeping ${IDLE_SECONDS}s..."
+    sleep "$IDLE_SECONDS"
+    continue
+  fi
+
+  # 2. Skip if the model hasn't changed since last batch.
+  CURRENT_MTIME=$(stat -f "%m" "${DATA_DIR}/model.json" 2>/dev/null \
+                  || stat -c "%Y" "${DATA_DIR}/model.json")
+  if [ "$CURRENT_MTIME" = "$LAST_MODEL_MTIME" ]; then
+    echo "  · model unchanged, sleeping ${IDLE_SECONDS}s"
+    sleep "$IDLE_SECONDS"
+    continue
+  fi
+  LAST_MODEL_MTIME="$CURRENT_MTIME"
+
+  # 3. Run a collection batch with a unique seed range.
+  BATCH_COUNTER=$((BATCH_COUNTER + 1))
+  TS=$(date +%s)
+  SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
+  BATCH_FILE="${DATA_DIR}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
+  rm -f "${DATA_DIR}/training.jsonl"
+
+  echo "[$(date +%H:%M:%S)] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})..."
+  T0=$(date +%s)
+  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+      --workers "$WORKERS" --epsilon 0.05 \
+      --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
+    echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
+    sleep "$IDLE_SECONDS"
+    continue
+  fi
+  if [ ! -s "${DATA_DIR}/training.jsonl" ]; then
+    echo "  ! collection produced no samples, retrying"
+    sleep "$IDLE_SECONDS"
+    continue
+  fi
+  mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
+  SAMPLES=$(wc -l < "$BATCH_FILE")
+  T1=$(date +%s)
+  echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")"
+
+  # 4. Upload to coordinator inbox.
+  echo "[$(date +%H:%M:%S)] uploading batch to coordinator inbox..."
+  if ! rsync -az -e "${RSYNC_SSH}" \
+      "$BATCH_FILE" \
+      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/inbox/" 2>/dev/null; then
+    echo "  ! upload failed — keeping local file for next attempt"
+    sleep "$IDLE_SECONDS"
+    continue
+  fi
+  echo "  ✓ uploaded"
+
+  # 5. (Optional) clean up local copy to save disk on the laptop.
+  rm -f "$BATCH_FILE"
+done
