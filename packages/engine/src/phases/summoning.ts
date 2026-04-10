@@ -89,7 +89,7 @@ export function applySummonFigure(
       follower.regionId !== null) {
     const from = follower.regionId;
     if (s.regions[from]!.tokens.includes('chaos_stone')) {
-      log.push(`${power} summons ${follower.class} (${followerId}) to ${toRegion} (cost ${cost}).`);
+      log.push(`${power} summons ${follower.class} (${followerId}) to ${toRegion} from ${from} (cost ${cost}).`);
       // Pause for the player to decide whether to carry the chaos stone.
       // Do NOT call advanceSummoningTurn yet — that happens after the choice.
       s = {
@@ -108,7 +108,8 @@ export function applySummonFigure(
     }
   }
 
-  log.push(`${power} summons ${follower.class} (${followerId}) to ${toRegion} (cost ${cost}).`);
+  const fromSuffix = follower.regionId !== null ? ` from ${follower.regionId}` : '';
+  log.push(`${power} summons ${follower.class} (${followerId}) to ${toRegion}${fromSuffix} (cost ${cost}).`);
   return { state: advanceSummoningTurn(s, power), log };
 }
 
