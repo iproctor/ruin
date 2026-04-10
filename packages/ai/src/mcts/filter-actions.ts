@@ -274,6 +274,46 @@ export function isZeroCostCardPlay(state: GameState, action: Action): boolean {
  *   lasha  — ≥2 own corruption tokens in a region with a noble or hero token
  */
 /**
+ * Tenzen defensive card plays that protect cultist piles:
+ *   - Stasis Web on a region with ≥2 tenzen cultists (makes it +2 cost for enemies)
+ *   - Teleport when there are enemy attackers in a region with tenzen cultists
+ *     (move the attacker out, preserving the pile)
+ */
+export function isTenzenDefensivePlay(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_play_card') return false;
+  if (action.power !== 'tenzen') return false;
+  const region = state.regions[action.toRegion];
+  if (!region) return false;
+
+  const tenzenCultists = region.placements.filter(
+    f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
+  ).length;
+
+  // Stasis Web: protect a region where tenzen has a cultist pile
+  if (action.cardId === 'tenzen_stasis_web' && tenzenCultists >= 2) return true;
+
+  // Teleport: worth playing when enemy attackers threaten tenzen's cultists
+  if (action.cardId === 'tenzen_teleport' && tenzenCultists >= 1) {
+    const enemyAttackers = region.placements.some(
+      f => !f.tipped && (f.controlledBy ?? f.power) !== 'tenzen' &&
+           (f.class === 'warrior' || f.class === 'incarnation'),
+    );
+    if (enemyAttackers) return true;
+  }
+
+  // Changer of Fate: nullify War Cry (unblocks corruption) or War Frenzy
+  // (prevents xarm bonus battle dice) in a region with tenzen cultists.
+  if (action.cardId === 'tenzen_changer_of_fate' && tenzenCultists >= 1) {
+    const hasWarCryOrFrenzy = region.chaosCards.some(
+      c => c !== null && (c.cardId === 'xarm_war_cry' || c.cardId === 'xarm_war_frenzy'),
+    );
+    if (hasWarCryOrFrenzy) return true;
+  }
+
+  return false;
+}
+
+/**
  * Tighter than actionBuildsTowardDac: returns true only for plays that are
  * one move away from arming the DAC trigger this turn, not vague "moving
  * toward" plays. Used as an always-keep bias in pruneActions.
