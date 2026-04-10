@@ -354,9 +354,9 @@ function TenzenDiscardPanel({
         Choose a card to discard, or keep all:
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-        {visibleCards.map((cardId) => (
+        {visibleCards.map((cardId, i) => (
           <button
-            key={cardId}
+            key={`${cardId}-${i}`}
             className="primary"
             onClick={() =>
               onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })
@@ -381,6 +381,12 @@ function TenzenDiscardPanel({
 
 const WORLD_TWO_REGION_CARDS = new Set(['peasant_prosperity', 'ratmen_incursion', 'chaos_storm']);
 
+// Cards where the player picks between two fixed region pairs (A or B).
+const WORLD_PAIR_CHOICES: Record<string, { ab: [string, string]; cd: [string, string] }> = {
+  northern_heir:   { ab: ['Norrsund', 'Volensk'],     cd: ['Talvimaa', 'Mittelreich'] },
+  heroes_of_order: { ab: ['Normagne', 'Mittelreich'],  cd: ['Almerida', 'Toscavar'] },
+};
+
 function WorldChoicePanel({
   state,
   myPower,
@@ -399,6 +405,7 @@ function WorldChoicePanel({
   const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
   const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
   const isTwoRegion = WORLD_TWO_REGION_CARDS.has(cardId);
+  const pairChoice = WORLD_PAIR_CHOICES[cardId];
 
   function toggleRegion(r: RegionId) {
     setSelectedRegions(prev => {
@@ -437,9 +444,43 @@ function WorldChoicePanel({
           Persistent: {cardDef.persistentEffect}
         </div>
       )}
-      <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
-        {isTwoRegion ? 'Choose up to 2 regions:' : 'Choose a region:'}
-      </div>
+      {pairChoice ? (
+        <>
+          <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
+            Choose one:
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+            {(['ab', 'cd'] as const).map(pair => {
+              const [r1, r2] = pairChoice[pair];
+              return (
+                <button
+                  key={pair}
+                  className="primary"
+                  onClick={() => onAction({ kind: 'world_choice', power: myPower, cardId, choices: { pair } })}
+                  style={{
+                    background: '#1e1e3a',
+                    border: '2px solid #3a3a6e',
+                    borderRadius: 5,
+                    padding: '0.5rem 0.75rem',
+                    color: '#ddd',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  {r1} &amp; {r2}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+      <>
+      {isTwoRegion && (
+        <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
+          Choose up to 2 regions:
+        </div>
+      )}
       {isTwoRegion ? (
         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
           {regions.map(r => {
@@ -475,6 +516,8 @@ function WorldChoicePanel({
             ? `: ${selectedRegions.map(r => REGION_LABELS[r]).join(', ')}`
             : `: ${REGION_LABELS[selectedRegion!]}`}
         </button>
+      )}
+      </>
       )}
     </div>
   );

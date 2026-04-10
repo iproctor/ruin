@@ -63,11 +63,12 @@ function CultistShape({ cx, cy, fill, opacity, stroke, strokeWidth }: {
 
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
-function FigureCluster({ figures, x, y, powers }: {
+function FigureCluster({ figures, x, y, powers, highlightSince }: {
   figures: FollowerInstance[];
   x: number;
   y: number;
   powers: GameState['powers'];
+  highlightSince: number | null;
 }) {
   const [hovered, setHovered] = useState<{ fig: FollowerInstance; mx: number; my: number } | null>(null);
   const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
@@ -93,12 +94,14 @@ function FigureCluster({ figures, x, y, powers }: {
         const fy = y + row * STEP + 8;
         const color = POWER_COLORS[fig.controlledBy ?? fig.power];
         const op = fig.tipped ? 0.35 : 0.9;
+        const isNew = highlightSince !== null && fig.placedAt > highlightSince;
         const glowStroke = fig.protected ? '#facc15' : undefined;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
         return (
           <g
             key={fig.id}
             style={{ cursor: 'default' }}
+            filter={isNew && !fig.protected ? 'url(#new-glow)' : undefined}
             onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
             onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
             onMouseLeave={() => setHovered(null)}
@@ -127,10 +130,11 @@ function FigureCluster({ figures, x, y, powers }: {
 
 // ── Mini card ─────────────────────────────────────────────────────────────────
 
-function MiniCard({ cardId, width, height, onHover, isPending }: {
+function MiniCard({ cardId, width, height, onHover, isPending, isNew }: {
   cardId: string; width: number; height: number;
   onHover: (id: string | null, x: number, y: number) => void;
   isPending?: boolean;
+  isNew?: boolean;
 }) {
   const def = CARD_BY_ID[cardId] ?? WORLD_CARD_BY_ID[cardId];
   if (!def) return null;
@@ -153,6 +157,7 @@ function MiniCard({ cardId, width, height, onHover, isPending }: {
         stroke={isPending ? '#22c55e' : isPersistent ? accentColor : '#3a3a6e'}
         strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
         strokeDasharray={isPending ? '3 2' : undefined}
+        filter={isNew ? 'url(#new-glow)' : undefined}
       />
       <rect width={width} height={3} rx={1} fill={accentColor} opacity={0.85} />
       <text x={3} y={12} fill="#e5e7eb" fontSize="8" fontWeight="700" style={{ userSelect: 'none' }}>
@@ -253,7 +258,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -262,6 +267,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   pendingCardSlot: { slotIndex: number; cardId: string } | null;
   onCardHover: (id: string | null, x: number, y: number) => void;
   onTokenHover: (token: TokenType | null, x: number, y: number) => void;
+  highlightSince: number | null;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -287,7 +293,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   // Merge pending card slot into display
   const displayCards = [...region.chaosCards] as typeof region.chaosCards;
   if (pendingCardSlot) {
-    displayCards[pendingCardSlot.slotIndex] = { cardId: pendingCardSlot.cardId, playedBy: 'xarm' as Power, slotIndex: pendingCardSlot.slotIndex as 0 | 1, persistNextRound: false };
+    displayCards[pendingCardSlot.slotIndex] = { cardId: pendingCardSlot.cardId, playedBy: 'xarm' as Power, slotIndex: pendingCardSlot.slotIndex as 0 | 1, persistNextRound: false, placedAt: 0 };
   }
 
   return (
@@ -400,7 +406,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} />
+        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} />
       )}
 
       {/* Card slots — hidden when region is ruined */}
@@ -411,7 +417,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           return (
             <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
               {card ? (
-                <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending} />
+                <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending}
+                  isNew={highlightSince !== null && card.placedAt > highlightSince} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
                   fill="none" stroke="#2a2a4e" strokeWidth={0.75} strokeDasharray="3 2" />
@@ -580,6 +587,12 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
     };
   }
 
+  // During summoning phase, highlight figures/cards placed since the acting power's last turn
+  const actingPower = state.pendingAction?.waitingFor ?? null;
+  const highlightSince = (state.phase === 'summoning' && actingPower)
+    ? state.powers[actingPower]?.lastSummonTurnAt ?? null
+    : null;
+
   const isDragging = (highlightRegions !== undefined || dimmedRegions !== undefined);
 
   return (
@@ -589,6 +602,11 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         viewBox="0 0 800 615"
         style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: '#0d0d1f' }}
       >
+        <defs>
+          <filter id="new-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#facc15" floodOpacity="0.6" />
+          </filter>
+        </defs>
         {/* Connection lines between adjacent regions */}
         <g>
           {(() => {
@@ -626,6 +644,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               pendingCardSlot={getPendingCard(regionId)}
               onCardHover={handleCardHover}
               onTokenHover={handleTokenHover}
+              highlightSince={highlightSince}
             />
           ),
         )}

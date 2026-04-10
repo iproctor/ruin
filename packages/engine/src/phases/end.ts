@@ -686,7 +686,7 @@ function drawOneCard(
   }
 
   const drawn = deckIds[0]!;
-  log.push(`${power} draws ${drawn} (${source}).`);
+  log.push(`${power} draws a card (${source}).`);
   return updatePower(state, power, {
     hand: [...hand, drawn],
     deckIds: deckIds.slice(1),

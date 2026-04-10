@@ -40,6 +40,7 @@ export interface FollowerInstance {
   tipped: boolean;            // killed this battle round, awaiting removal
   protected: boolean;         // Fate's Aegis: cannot be killed in battle this round
   warFrenzyHits: number;      // partial hits from War Frenzy; count toward Xarm's defense threshold only
+  placedAt: number;           // actionCount when placed/moved to current region (0 = initial)
 }
 
 // ─── Cards ────────────────────────────────────────────────────────────────────
@@ -49,6 +50,7 @@ export interface PlayedCard {
   playedBy: Power;
   slotIndex: 0 | 1;
   persistNextRound: boolean; // Recursive Pattern
+  placedAt: number;          // actionCount when played (0 = initial)
 }
 
 // ─── Regions ──────────────────────────────────────────────────────────────────
@@ -86,6 +88,7 @@ export interface PowerState {
   passedSummoning: boolean;
   pendingForcedDiscards: number; // cards this power must discard at start of their next summoning turn
   followers: FollowerInstance[]; // all followers (on board + reserve)
+  lastSummonTurnAt: number;     // actionCount at start of this power's most recent summoning turn
 }
 
 // ─── Pending action ───────────────────────────────────────────────────────────

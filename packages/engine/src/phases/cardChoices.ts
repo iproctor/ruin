@@ -33,7 +33,7 @@ export function applyCardOnPlayChoice(
           placements: s.regions[fromRegion]!.placements.filter(f => f.id !== fId),
         });
         // Add to target region
-        const moved = { ...figure, regionId };
+        const moved = { ...figure, regionId, placedAt: s.actionCount };
         s = updateRegion(s, regionId, {
           placements: [...s.regions[regionId]!.placements, moved],
         });
@@ -56,7 +56,7 @@ export function applyCardOnPlayChoice(
         s = updateRegion(s, regionId, {
           placements: s.regions[regionId]!.placements.filter(f => f.id !== followerId),
         });
-        const moved = { ...figure, regionId: toRegion };
+        const moved = { ...figure, regionId: toRegion, placedAt: s.actionCount };
         s = updateRegion(s, toRegion, {
           placements: [...s.regions[toRegion]!.placements, moved],
         });

@@ -30,6 +30,7 @@ export function makeFollowers(power: Power): FollowerInstance[] {
         tipped: false,
         protected: false,
         warFrenzyHits: 0,
+        placedAt: 0,
       });
     }
   }
@@ -64,6 +65,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       passedSummoning: false,
       pendingForcedDiscards: 0,
       followers: makeFollowers(power),
+      lastSummonTurnAt: 0,
     };
   };
 
@@ -173,6 +175,7 @@ export function placeCard(
     playedBy: power,
     slotIndex: slot,
     persistNextRound: opts.persistNextRound ?? false,
+    placedAt: 0,
   };
   const slots = [...state.regions[regionId]!.chaosCards] as [
     PlayedCard | null,

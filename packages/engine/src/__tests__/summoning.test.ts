@@ -206,7 +206,7 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     // Place the card on the board
-    s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_vile_consumption', playedBy: 'gormen', slotIndex: 0, persistNextRound: false }, null] } } };
+    s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_vile_consumption', playedBy: 'gormen', slotIndex: 0, persistNextRound: false, placedAt: 0 }, null] } } };
     const { state } = resolveCorruptionPhase(s);
     // 3 figures removed → floor(3/2) = 1 token
     expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(0);

@@ -53,7 +53,7 @@ export function applySummonFigure(
   }
 
   // Update follower
-  const updatedFollower = { ...follower, regionId: toRegion };
+  const updatedFollower = { ...follower, regionId: toRegion, placedAt: s.actionCount };
   const updatedFollowers = p.followers.map(f => f.id === followerId ? updatedFollower : f);
 
   // Add to region placements
@@ -144,7 +144,7 @@ export function applyPlayCard(
   });
 
   // Place on board
-  const playedCard = { cardId, playedBy: power, slotIndex, persistNextRound: false };
+  const playedCard = { cardId, playedBy: power, slotIndex, persistNextRound: false, placedAt: s.actionCount };
   const newSlots = [...s.regions[toRegion]!.chaosCards] as [typeof playedCard | null, typeof playedCard | null];
   newSlots[slotIndex] = playedCard;
   s = updateRegion(s, toRegion, { chaosCards: newSlots });
@@ -159,7 +159,7 @@ export function applyPlayCard(
       f => f.class === 'warrior' && f.regionId === null
     );
     if (reserve) {
-      const updated = { ...reserve, regionId: toRegion };
+      const updated = { ...reserve, regionId: toRegion, placedAt: s.actionCount };
       s = updatePower(s, 'tenzen', {
         followers: s.powers['tenzen']!.followers.map(f => f.id === reserve.id ? updated : f),
       });
@@ -260,18 +260,21 @@ export function applyTenzenApprenticeChoice(
 
 // ─── Turn advancement ─────────────────────────────────────────────────────────
 
-export function advanceSummoningTurn(state: GameState, _justActed: Power): GameState {
-  const activePowers = state.summoningOrder;
+export function advanceSummoningTurn(state: GameState, justActed: Power): GameState {
+  // Record when this power's turn ended, so next time it's their turn
+  // the client can highlight everything placed since this point.
+  let base = updatePower(state, justActed, { lastSummonTurnAt: state.actionCount });
+  const activePowers = base.summoningOrder;
 
   // Check if all are done (power points = 0 or passedSummoning)
   const allDone = activePowers.every(p => {
-    const ps = state.powers[p]!;
+    const ps = base.powers[p]!;
     return ps.powerPoints === 0 || ps.passedSummoning;
   });
 
   if (allDone) {
     return {
-      ...state,
+      ...base,
       phase: 'battle',
       pendingAction: null,
       summoningIndex: 0,
@@ -279,18 +282,18 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
   }
 
   // Advance to next power with power points remaining
-  let next = (state.summoningIndex + 1) % activePowers.length;
+  let next = (base.summoningIndex + 1) % activePowers.length;
   let iterations = 0;
   while (iterations < activePowers.length) {
     const candidate = activePowers[next]!;
-    const ps = state.powers[candidate]!;
+    const ps = base.powers[candidate]!;
     if (ps.powerPoints > 0 && !ps.passedSummoning) break;
     next = (next + 1) % activePowers.length;
     iterations++;
   }
 
   const nextPower = activePowers[next]!;
-  const nextPs = state.powers[nextPower]!;
+  const nextPs = base.powers[nextPower]!;
 
   // If the next player has queued forced discards, handle them
   if (nextPs.pendingForcedDiscards > 0) {
@@ -299,7 +302,7 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
     // If they have more cards than required, they must choose — show the panel
     if (nextPs.hand.length > required) {
       return {
-        ...state,
+        ...base,
         summoningIndex: next,
         pendingAction: {
           waitingFor: nextPower,
@@ -311,10 +314,10 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
 
     // Otherwise auto-discard all (0 or <= required cards — no meaningful choice)
     const toDiscard = nextPs.hand.slice(0, required);
-    const autoState = {
-      ...state,
+    return {
+      ...base,
       powers: {
-        ...state.powers,
+        ...base.powers,
         [nextPower]: {
           ...nextPs,
           hand: nextPs.hand.slice(required),
@@ -322,9 +325,6 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
           pendingForcedDiscards: 0,
         },
       },
-    };
-    return {
-      ...autoState,
       summoningIndex: next,
       pendingAction: {
         waitingFor: nextPower,
@@ -334,10 +334,8 @@ export function advanceSummoningTurn(state: GameState, _justActed: Power): GameS
     };
   }
 
-  const clearedState = state;
-
   return {
-    ...clearedState,
+    ...base,
     summoningIndex: next,
     pendingAction: {
       waitingFor: nextPower,
