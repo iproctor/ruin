@@ -4,7 +4,7 @@ import type { Power } from '@ruin/engine';
 export const POWER_COLORS: Record<Power, string> = {
   xarm:   '#ef4444',
   gormen: '#22c55e',
-  tenzen: '#38bdf8',
+  tenzen: '#2daade',
   lasha:  '#a855f7',
 };
 

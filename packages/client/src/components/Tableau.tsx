@@ -317,7 +317,16 @@ export default function Tableau({
   const color = POWER_COLORS[myPower];
   // Use displayState for live preview (PP spend, hand changes)
   const displayPs = displayState?.powers[myPower] ?? ps;
-  const hand = displayPs.hand.filter((c) => c !== '?');
+  const hand = [...displayPs.hand.filter((c) => c !== '?')].sort((a, b) => {
+    const ca = CARD_BY_ID[a];
+    const cb = CARD_BY_ID[b];
+    const costA = ca?.cost ?? 0;
+    const costB = cb?.cost ?? 0;
+    if (costA !== costB) return costA - costB;
+    const nameA = ca?.shortName ?? ca?.name ?? a;
+    const nameB = cb?.shortName ?? cb?.name ?? b;
+    return nameA.localeCompare(nameB);
+  });
   const isSummoningTurn = !!onEndTurn;
 
   // Which card is pending (played to board)
@@ -439,7 +448,7 @@ export default function Tableau({
                 style={{
                   fontSize: '0.75rem',
                   padding: '4px 14px',
-                  borderRadius: 4,
+                  borderRadius: '0 0 0 4px',
                   border: 'none',
                   background: color,
                   color: '#fff',
@@ -454,13 +463,6 @@ export default function Tableau({
           </div>
         )}
 
-        {/* Power name badge */}
-        <div
-          className="flex items-center justify-center rounded px-3 text-xs font-black uppercase tracking-widest"
-          style={{ color, borderLeft: `3px solid ${color}`, paddingLeft: 10 }}
-        >
-          {POWER_LABELS[myPower]}
-        </div>
       </div>
 
       {tooltip && (

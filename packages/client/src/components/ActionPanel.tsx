@@ -6,7 +6,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
-import { FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions } from '@ruin/engine';
+import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -348,24 +348,28 @@ function TenzenDiscardPanel({
   onAction: (action: Action) => void;
 }) {
   const visibleCards = hand.filter((c) => c !== '?');
+  const unique = [...new Set(visibleCards)];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
         Choose a card to discard, or keep all:
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-        {visibleCards.map((cardId, i) => (
-          <button
-            key={`${cardId}-${i}`}
-            className="primary"
-            onClick={() =>
-              onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })
-            }
-            style={{ fontSize: '0.8rem' }}
-          >
-            Discard {formatId(cardId)}
-          </button>
-        ))}
+        {unique.map((cardId) => {
+          const name = CARD_BY_ID[cardId]?.shortName ?? CARD_BY_ID[cardId]?.name ?? formatId(cardId.replace(/^[a-z]+_/, ''));
+          return (
+            <button
+              key={cardId}
+              className="primary"
+              onClick={() =>
+                onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })
+              }
+              style={{ fontSize: '0.8rem' }}
+            >
+              Discard {name}
+            </button>
+          );
+        })}
         <button
           className="secondary"
           onClick={() => onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId: null })}

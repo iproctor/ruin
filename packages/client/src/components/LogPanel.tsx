@@ -35,7 +35,7 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
                 :                       merged.filter((e) => e.kind === 'chat');
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView();
   }, [visible.length]);
 
   async function handleSend() {
@@ -51,20 +51,11 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0" style={{ background: '#13121f', border: '1px solid #2d2d5e', borderRadius: 8 }}>
+    <div className="flex flex-col h-full min-h-0" style={{ background: '#13121f', borderTop: '1px solid #2d2d5e', borderRadius: 0 }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #2d2d5e' }}>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-300 uppercase tracking-wide">Log</span>
-          {/* Connection dot */}
-          <div
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: connected ? '#22c55e' : '#ef4444' }}
-            title={connected ? 'Connected' : 'Disconnected'}
-          />
-        </div>
-        {/* Filter pills */}
-        <div className="flex gap-1">
+      <div className="flex items-center justify-end px-3 py-2 shrink-0">
+        {/* Filter tabs */}
+        <div className="flex gap-1" style={{ borderBottom: '1px solid #2d2d5e' }}>
           {(['all', 'events', 'chat'] as FilterMode[]).map((f) => (
             <button
               key={f}
@@ -72,7 +63,7 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
               style={{
                 fontSize: '0.65rem',
                 padding: '1px 7px',
-                borderRadius: 3,
+                borderRadius: 0,
                 fontWeight: 700,
                 cursor: 'pointer',
                 border: 'none',
@@ -128,7 +119,7 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
       </div>
 
       {/* Chat input */}
-      <div className="shrink-0 flex gap-1 p-2" style={{ borderTop: '1px solid #1e1e3a' }}>
+      <div className="shrink-0 flex gap-1 p-2">
         <input
           type="text"
           placeholder={myPower ? 'Chat…' : 'Spectating — chat disabled'}
@@ -141,7 +132,7 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
             fontSize: '0.75rem',
             background: '#1e1e3a',
             border: '1px solid #2d2d5e',
-            borderRadius: 4,
+            borderRadius: '4px 4px 0 0',
             color: '#e2e8f0',
             padding: '4px 8px',
             outline: 'none',
@@ -153,7 +144,7 @@ export default function LogPanel({ eventLog, chat, myPower, onSendChat, connecte
           style={{
             fontSize: '0.75rem',
             padding: '4px 10px',
-            borderRadius: 4,
+            borderRadius: '4px 0 0 0',
             border: 'none',
             background: '#312e81',
             color: '#c7d2fe',

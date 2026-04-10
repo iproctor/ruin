@@ -63,6 +63,57 @@ function DragGhost({ item }: { item: DragItem }) {
   );
 }
 
+// ── Collapsible log wrapper ──────────────────────────────────────────────────
+
+function CollapsibleLog(props: {
+  eventLog: string[];
+  chat: import('../hooks/useGameStream.js').ChatMessage[];
+  myPower: Power | null;
+  onSendChat: (message: string) => Promise<void>;
+  connected: boolean;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'row',
+      minHeight: 0,
+      flexShrink: 0,
+    }}>
+      {/* Toggle tab */}
+      <button
+        onClick={() => setCollapsed(c => !c)}
+        style={{
+          width: 20,
+          background: '#13121f',
+          border: '1px solid #2d2d5e',
+          borderRight: 'none',
+          borderRadius: '16px 0 0 16px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: '#64748b',
+          fontSize: '0.6rem',
+          flexShrink: 0,
+          padding: 0,
+        }}
+        title={collapsed ? 'Show log' : 'Hide log'}
+      >
+        {collapsed ? '◂' : '▸'}
+      </button>
+
+      {/* Log panel */}
+      {!collapsed && (
+        <div style={{ width: 260, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <LogPanel {...props} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── GameInner ─────────────────────────────────────────────────────────────────
 
 interface GameInnerProps {
@@ -325,7 +376,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
         <StatusBar state={statusState} myPower={myPower} players={players} />
 
         {/* Main area */}
-        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: 8 }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
 
           {/* Board */}
           <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
@@ -339,42 +390,44 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             />
           </div>
 
-          {/* Right: log + non-summoning panels */}
-          <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-            <LogPanel
-              eventLog={eventLog}
-              chat={chat}
-              myPower={myPower}
-              onSendChat={handleChatSend}
-              connected={connected}
-            />
+          {/* Middle: non-summoning action panels */}
+          {(needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
+            <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
+              {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
+                <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                  <CardOnPlayChoicePanel
+                    state={displayState}
+                    myPower={myPower}
+                    context={onPlayContext as Record<string, unknown>}
+                    onAction={handleOnPlayChoice}
+                    onUndo={handleUndo}
+                  />
+                </div>
+              )}
 
-            {/* On-play choice panel (client-buffered, shown over the summoning phase) */}
-            {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
-              <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
-                <CardOnPlayChoicePanel
-                  state={displayState}
-                  myPower={myPower}
-                  context={onPlayContext as Record<string, unknown>}
-                  onAction={handleOnPlayChoice}
-                  onUndo={handleUndo}
-                />
-              </div>
-            )}
+              {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
+                <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                  {submitError && <p style={{ color: '#f87171', fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
+                  <ActionPanel
+                    state={displayState}
+                    myPower={myPower}
+                    selectedCardId={selectedCardId}
+                    onAction={handleDirectAction}
+                    onClearCard={() => setSelectedCardId(null)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
-            {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
-              <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
-                {submitError && <p style={{ color: '#f87171', fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
-                <ActionPanel
-                  state={displayState}
-                  myPower={myPower}
-                  selectedCardId={selectedCardId}
-                  onAction={handleDirectAction}
-                  onClearCard={() => setSelectedCardId(null)}
-                />
-              </div>
-            )}
-          </div>
+          {/* Right: collapsible log */}
+          <CollapsibleLog
+            eventLog={eventLog}
+            chat={chat}
+            myPower={myPower}
+            onSendChat={handleChatSend}
+            connected={connected}
+          />
         </div>
 
         {/* Tableau */}
