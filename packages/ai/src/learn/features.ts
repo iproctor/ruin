@@ -247,9 +247,19 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       }
     }
 
-    // Token counts
+    // Token counts. Chaos stones get a +2 bump if Tenzen has the Fatespinner
+    // upgrade and Fatespinner is in this region — per the upgrade rules text
+    // ("counts as two Chaos Stone tokens for ruination and dial advancement
+    // purposes"). This way the model sees the *effective* chaos stone count
+    // directly instead of having to learn the conjunction.
     for (const t of TOKEN_TYPES) {
-      out[i++] = Math.min(region.tokens.filter(x => x === t).length / 3, 1);
+      let count = region.tokens.filter(x => x === t).length;
+      if (t === 'chaos_stone' &&
+          state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+          region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
+        count += 2;
+      }
+      out[i++] = Math.min(count / 3, 1);
     }
   }
 

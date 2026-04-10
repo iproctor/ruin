@@ -273,6 +273,54 @@ export function isZeroCostCardPlay(state: GameState, action: Action): boolean {
  *   tenzen — ≥2 own corruption tokens in a region with ≥2 magic symbols + chaos stones
  *   lasha  — ≥2 own corruption tokens in a region with a noble or hero token
  */
+/**
+ * Tighter than actionBuildsTowardDac: returns true only for plays that are
+ * one move away from arming the DAC trigger this turn, not vague "moving
+ * toward" plays. Used as an always-keep bias in pruneActions.
+ */
+export function isDacCompletion(state: GameState, action: Action): boolean {
+  if (action.kind === 'summoning_play_card') {
+    const region = state.regions[action.toRegion];
+    if (!region) return false;
+    // Tenzen: playing a magic-symbol card into a region that already has
+    // ≥1 chaos stone OR ≥1 magic symbol card (gets to the ≥2 threshold).
+    if (action.power === 'tenzen' && MAGIC_SYMBOL_CARDS.has(action.cardId)) {
+      const cs = region.tokens.filter(t => t === 'chaos_stone').length;
+      const ms = region.chaosCards.filter(
+        c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId),
+      ).length;
+      if (cs + ms >= 1) return true;
+    }
+    return false;
+  }
+
+  if (action.kind === 'summoning_summon_figure') {
+    if (!action.followerId.includes('_cultist_')) return false;
+    const region = state.regions[action.toRegion];
+    if (!region) return false;
+    const power = action.power;
+
+    // Tenzen only — gormen and lasha already learn their DAC paths.
+    // Tenzen: cultist into a region whose effective magic-symbol/chaos-stone
+    // count is already ≥2 (the dial-trigger threshold). Effective count
+    // includes Fatespinner upgrade if present.
+    if (power === 'tenzen') {
+      const cs = region.tokens.filter(t => t === 'chaos_stone').length;
+      const ms = region.chaosCards.filter(
+        c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId),
+      ).length;
+      const fatespinnerBonus =
+        state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+        region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)
+          ? 2
+          : 0;
+      return cs + ms + fatespinnerBonus >= 2;
+    }
+  }
+
+  return false;
+}
+
 export function actionBuildsTowardDac(state: GameState, action: Action): boolean {
   if (action.kind === 'summoning_summon_figure') {
     const isCultist = action.followerId.includes('_cultist_');

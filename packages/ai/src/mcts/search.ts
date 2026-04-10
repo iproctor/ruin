@@ -1,8 +1,12 @@
 import type { GameState, Action, Power } from '@ruin/engine';
 import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
+// Load Node fs lazily via dynamic require so the ai package (no @types/node)
+// still typechecks. Used only for the expand-throw debug log.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const _fs: any = (() => { try { return (eval('require') as (s: string) => unknown)('node:fs'); } catch { return null; } })();
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay } from './filter-actions.js';
+import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { policyForState } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
@@ -274,8 +278,30 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
   try {
     const result = applyAction(node.state, action);
     newState = result.state;
-  } catch {
-    // If the action throws (shouldn't happen with legal actions), return parent.
+  } catch (err) {
+    // If the action throws (shouldn't happen with legal actions), log and
+    // return parent. Logging here so we can find the root cause: an action
+    // that getLegalActions reports as legal but applyAction rejects.
+    const e = err as Error;
+    try {
+      if (_fs) {
+        // Full serialized state so a tiny repro script can do:
+        //   const r = JSON.parse(fs.readFileSync('record.json', 'utf-8'));
+        //   applyAction(r.state, r.action);
+        // …without needing to replay from a seed.
+        _fs.appendFileSync('/tmp/mcts-expand-throws.log', JSON.stringify({
+          ts: new Date().toISOString(),
+          round: node.state.round,
+          phase: node.state.phase,
+          actingPower,
+          action,
+          pendingAction: node.state.pendingAction,
+          message: e.message,
+          stack: e.stack,
+          state: node.state, // entire game state — enables direct repro
+        }) + '\n');
+      }
+    } catch { /* logging best-effort */ }
     return node;
   }
 
@@ -328,14 +354,13 @@ function rollout(state: GameState, forPower: Power, seed: number, minDepth: numb
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
-    const rawActions = getLegalActions(current, waitingFor);
-    if (rawActions.length === 0) break;
-
-    // Filter out card plays whose preconditions can't fire — same rule the
-    // root and tree expansion use. Keeps rollouts from wasting plies on
-    // dead actions and producing nonsense leaf states.
-    const actions = filterPointlessActions(current, rawActions);
+    const actions = getLegalActions(current, waitingFor);
     if (actions.length === 0) break;
+    // NOTE: filterPointlessActions deliberately skipped here. Profile showed it
+    // accounted for ~14% of total runtime, almost entirely inside rollouts.
+    // Rollouts are noisy biased-random simulations — pruning "dead" plays from
+    // them barely changes leaf-value estimates but adds significant overhead.
+    // The root and tree expansion still apply the filter (see runMcts).
 
     let action: (typeof actions)[number] | undefined;
 
@@ -465,7 +490,7 @@ function pruneActions(state: GameState, _power: Power, actions: Action[]): Actio
   const summonPool: Action[] = [];
   for (const a of actions) {
     if (a.kind === 'summoning_pass') passActions.push(a);
-    else if (isZeroCostCardPlay(state, a) || isXarmDelayPlay(state, a)) alwaysKeep.push(a);
+    else if (isZeroCostCardPlay(state, a) || isXarmDelayPlay(state, a) || isDacCompletion(state, a)) alwaysKeep.push(a);
     else if (a.kind === 'summoning_play_card') cardPool.push(a);
     else summonPool.push(a);
   }

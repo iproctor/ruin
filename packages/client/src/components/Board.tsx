@@ -343,8 +343,12 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           { label: `R${R}`, color: '#64748b' },
           { label: `V${V}`, color: '#64748b' },
         ];
-        if (dom.leader) parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
-        parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
+        if (isRuined) {
+          parts.push({ label: 'RUINED', color: '#f87171', bold: true });
+        } else {
+          if (dom.leader) parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
+          parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
+        }
         const step = (w / 2) / parts.length;
         return (
           <g>
@@ -399,8 +403,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} />
       )}
 
-      {/* Card slots */}
-      <g transform={`translate(${x + 4}, ${cardSlotY})`}>
+      {/* Card slots — hidden when region is ruined */}
+      {!isRuined && <g transform={`translate(${x + 4}, ${cardSlotY})`}>
         {[0, 1].map((si) => {
           const card = displayCards[si];
           const isPending = pendingCardSlot?.slotIndex === si;
@@ -415,7 +419,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             </g>
           );
         })}
-      </g>
+      </g>}
     </g>
   );
 }
@@ -511,24 +515,32 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
           <span style={{ color: '#94a3b8' }}> ({region.conquestValue} base + {tokenCounts.get('noble')} noble)</span>
         )}
       </div>
-      <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-        Domination
-      </div>
-      {domEntries.length === 0 && <div style={{ color: '#64748b' }}>—</div>}
-      {domEntries.map(({ p, d }) => (
-        <div key={p}>
-          <span style={{ color: POWER_COLORS[p], fontWeight: 600 }}>{POWER_LABELS[p]}</span>
-          : <span style={{ color: d > resistance ? '#fff' : '#64748b' }}>{d}</span>
+      {region.ruinationCardIndex !== null ? (
+        <div style={{ marginTop: 6, color: '#f87171', fontWeight: 700, fontSize: '0.85rem' }}>
+          RUINED
         </div>
-      ))}
-      <div style={{ marginTop: 6 }}>
-        Corruption: <span style={{ color: '#fff', fontWeight: 600 }}>{corruptionTotal}</span>
-        {cultCount > 0 && <span style={{ color: '#94a3b8' }}> (+{cultCount} incoming)</span>}
-      </div>
-      {willRuin && (
-        <div style={{ marginTop: 6, color: '#ef4444', fontWeight: 700 }}>
-          ⚠ This region may ruin this round
-        </div>
+      ) : (
+        <>
+          <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
+            Domination
+          </div>
+          {domEntries.length === 0 && <div style={{ color: '#64748b' }}>—</div>}
+          {domEntries.map(({ p, d }) => (
+            <div key={p}>
+              <span style={{ color: POWER_COLORS[p], fontWeight: 600 }}>{POWER_LABELS[p]}</span>
+              : <span style={{ color: d > resistance ? '#fff' : '#64748b' }}>{d}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 6 }}>
+            Corruption: <span style={{ color: '#fff', fontWeight: 600 }}>{corruptionTotal}</span>
+            {cultCount > 0 && <span style={{ color: '#94a3b8' }}> (+{cultCount} incoming)</span>}
+          </div>
+          {willRuin && (
+            <div style={{ marginTop: 6, color: '#ef4444', fontWeight: 700 }}>
+              ⚠ This region may ruin this round
+            </div>
+          )}
+        </>
       )}
     </div>,
     document.body,

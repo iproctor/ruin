@@ -60,7 +60,9 @@
       "Bash(ls -lt packages/ai/data/bench-*.json)",
       "Bash(ls -lT packages/ai/data/model_iter_026?.json)",
       "Bash(grep:*)",
-      "Bash(pnpm --filter engine test --run end.test)"
+      "Bash(pnpm --filter engine test --run end.test)",
+      "Bash(ls -t /Users/iainap/code/chaos/packages/ai/data/bench_iter_*.json)",
+      "Bash(wc -l /Users/iainap/code/chaos/packages/client/src/components/*.tsx)"
     ]
   }
 }

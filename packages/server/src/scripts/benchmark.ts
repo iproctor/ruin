@@ -20,8 +20,6 @@ import type { Power, Action } from '@ruin/engine';
 import { loadLearnedModelIfPresent } from './load-model.js';
 import * as fs from 'node:fs';
 
-loadLearnedModelIfPresent();
-
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
@@ -35,6 +33,11 @@ const playerCount = parseInt(getArg('--players', '4'), 10) as 2 | 3 | 4;
 const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const outPath = getArg('--out', '');
+// Optional explicit model path. If omitted, falls back to packages/ai/data/model.json.
+// Lets benches load any historical iter snapshot without touching model.json.
+const modelPath = getArg('--model', '');
+
+loadLearnedModelIfPresent(modelPath || undefined);
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 const activePowers = ALL_POWERS.slice(0, playerCount);
@@ -72,6 +75,7 @@ interface GameResult {
   // Round → Power → true if power earned ≥1 DAC that round (capped at 1)
   dacByRound: Record<number, Partial<Record<Power, boolean>>>;
   indicators: PlayIndicators;
+  finalVP: Record<Power, number>;
   error?: string;
 }
 
@@ -112,8 +116,8 @@ function captureErr(err: unknown): { message: string; stack: string | null } {
 
 // Matches log lines like "norrsund: gormen earns a dial advancement counter."
 const DAC_LOG_RE = /(xarm|gormen|tenzen|lasha) earns? a dial advancement counter/i;
-// Hidden Influence's Invisible Hand effect: "Invisible Hand: noble moved from X to Y"
-const NOBLE_MOVE_RE = /Invisible Hand:\s*noble moved/i;
+// Hidden Influence: "Hidden Influence: noble moved from X to Y"
+const NOBLE_MOVE_RE = /Hidden Influence:\s*noble moved/i;
 // Ruination scoring lines: "<region>: Ruination scoring — lasha scores N VP (..."
 //   (single winner) "Ruination scoring — lasha scores 10 VP (first)"
 //   (tied)          "Ruination scoring — gormen/lasha each score 5 VP (..."
@@ -192,11 +196,11 @@ function runGame(seed: number): GameResult {
 
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) {
-      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, indicators, error: `maxActions` };
+      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `maxActions` };
     }
     const pending = state.pendingAction;
     if (!pending) {
-      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, indicators, error: `no pendingAction` };
+      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `no pendingAction` };
     }
 
     let legal: Action[];
@@ -211,7 +215,7 @@ function runGame(seed: number): GameResult {
         context: pending.context,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `getLegalActions: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `getLegalActions: ${e.message}` };
     }
     if (legal.length === 0) {
       writeErrorLog({
@@ -220,7 +224,7 @@ function runGame(seed: number): GameResult {
         actionKind: pending.actionKind, power: pending.waitingFor,
         context: pending.context,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: 'no legal actions' };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: 'no legal actions' };
     }
 
     let action: Action;
@@ -257,7 +261,7 @@ function runGame(seed: number): GameResult {
         legalCount: legal.length,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `select: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `select: ${e.message}` };
     }
 
     // War Cry prevented: compute BEFORE applying — count enemy cultists
@@ -303,7 +307,7 @@ function runGame(seed: number): GameResult {
         action,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, error: `apply: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `apply: ${e.message}` };
     }
 
     actionCount++;
@@ -321,6 +325,12 @@ function runGame(seed: number): GameResult {
     rounds: state.round,
     dacByRound,
     indicators,
+    finalVP: {
+      xarm: state.powers.xarm!.victoryPoints,
+      gormen: state.powers.gormen!.victoryPoints,
+      tenzen: state.powers.tenzen!.victoryPoints,
+      lasha: state.powers.lasha!.victoryPoints,
+    },
   };
 }
 
@@ -337,6 +347,8 @@ const roundCounts: number[] = [];
 // Sum of "rounds where power earned ≥1 DAC" across all games:
 const dacRoundsByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 // Per-power play indicators aggregated across games (sums; averaged below)
+const vpSamples: Record<Power, number[]> = { xarm: [], gormen: [], tenzen: [], lasha: [] };
+const spreadSamples: number[] = []; // winner VP minus last-place VP, per game
 const aggIndicators = {
   lashaNobleMoves: 0,
   lashaRuinScores: 0,
@@ -370,6 +382,11 @@ for (let i = 0; i < gameCount; i++) {
   roundCounts.push(result.rounds);
   winConditions[result.winCondition] = (winConditions[result.winCondition] ?? 0) + 1;
   for (const w of result.winners) wins[w] += 1 / result.winners.length;
+
+  // VP samples per power, and per-game spread (max - min)
+  for (const p of activePowers) vpSamples[p].push(result.finalVP[p]);
+  const vpVals = activePowers.map(p => result.finalVP[p]);
+  spreadSamples.push(Math.max(...vpVals) - Math.min(...vpVals));
 
   // Tally play indicators
   aggIndicators.lashaNobleMoves        += result.indicators.lashaNobleMoves;
@@ -432,6 +449,24 @@ console.log(`  gormen   populous dominations:  ${perGame(aggIndicators.gormenPop
 console.log(`  tenzen   avg cultists alive:    ${perGame(aggIndicators.tenzenAvgCultistsSum)}  (per round)`);
 console.log(`  tenzen   cards played:          ${perGame(aggIndicators.tenzenCardsPlayed)}  (per game)`);
 
+function mean(xs: number[]): number { return xs.length ? xs.reduce((a,b)=>a+b,0)/xs.length : 0; }
+function stddev(xs: number[]): number {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((a,b)=>a+(b-m)*(b-m),0)/xs.length);
+}
+
+console.log(`\nVP STATS (final VP per power):`);
+for (const p of activePowers) {
+  const xs = vpSamples[p];
+  const m = mean(xs).toFixed(1);
+  const sd = stddev(xs).toFixed(1);
+  const lo = xs.length ? Math.min(...xs) : 0;
+  const hi = xs.length ? Math.max(...xs) : 0;
+  console.log(`  ${p.padEnd(8)} mean ${m.padStart(5)}  sd ${sd.padStart(4)}  min ${String(lo).padStart(3)}  max ${String(hi).padStart(3)}`);
+}
+console.log(`  spread (winner − last) avg ${mean(spreadSamples).toFixed(1)}`);
+
 console.log(`\nROUNDS: avg ${avgRounds.toFixed(1)}, min ${Math.min(...roundCounts) || 0}, max ${Math.max(...roundCounts) || 0}`);
 console.log(`\nWIN CONDITIONS:`);
 for (const [c, n] of Object.entries(winConditions).sort((a, b) => b[1] - a[1])) {
@@ -464,6 +499,13 @@ if (outPath) {
       tenzenAvgCultists: completed > 0 ? aggIndicators.tenzenAvgCultistsSum / completed : 0,
       tenzenCardsPlayedPerGame: completed > 0 ? aggIndicators.tenzenCardsPlayed / completed : 0,
     },
+    vpStats: Object.fromEntries(activePowers.map(p => [p, {
+      mean: mean(vpSamples[p]),
+      sd: stddev(vpSamples[p]),
+      min: vpSamples[p].length ? Math.min(...vpSamples[p]) : 0,
+      max: vpSamples[p].length ? Math.max(...vpSamples[p]) : 0,
+    }])),
+    avgVpSpread: mean(spreadSamples),
     avgRounds,
     winConditions,
     errors: errors.length,
