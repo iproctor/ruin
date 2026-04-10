@@ -161,6 +161,15 @@ while true; do
   # 3d. Move processed inbox files to archive (so we don't double-train)
   mv "$INBOX"/*.jsonl "$ARCHIVE"/
 
+  # 3d.1. Prune old archive files — keep only TRAIN_WINDOW worth (enough
+  # to fill the padding window). Everything older is dead weight.
+  ARCHIVE_COUNT=$(ls "$ARCHIVE"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$ARCHIVE_COUNT" -gt "$TRAIN_WINDOW" ]; then
+    PRUNE_COUNT=$((ARCHIVE_COUNT - TRAIN_WINDOW))
+    ls -t "$ARCHIVE"/*.jsonl | tail -"$PRUNE_COUNT" | xargs rm -f
+    echo "  · pruned ${PRUNE_COUNT} old archive files (kept ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
+  fi
+
   # 3e. Optional periodic benchmark
   TRAINS_SINCE_BENCH=$((TRAINS_SINCE_BENCH + 1))
   if [ "$TRAINS_SINCE_BENCH" -ge "$BENCH_EVERY" ]; then
