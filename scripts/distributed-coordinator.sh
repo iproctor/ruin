@@ -34,7 +34,13 @@ set -uo pipefail
 WORKER_ID=${WORKER_ID:-0}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-100}
 WORKERS=${WORKERS:-16}
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-6}
+# Train when this many NEW files (inbox) arrive. With 2 remote workers + coordinator,
+# each cycle produces 3 files (1 per machine). Train once all 3 are in.
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-3}
+# Total batches to include in training (new + old). Old batches are pulled from
+# archive/ most-recent-first to fill the window. This keeps training data size
+# stable even when workers produce small batches.
+TRAIN_WINDOW=${TRAIN_WINDOW:-6}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
@@ -116,11 +122,23 @@ while true; do
   echo "" | tee -a "$LOG_FILE"
   echo "── train iter ${ITER}  ($(date +%H:%M:%S)) ────────────────────" | tee -a "$LOG_FILE"
 
-  # 3a. Concatenate inbox into training_recent.jsonl
+  # 3a. Build training set: new inbox files + old archive files to fill the window.
   RECENT_FILE="$DATA_DIR/training_recent.jsonl"
+  # Start with all new data (inbox)
   cat "$INBOX"/*.jsonl > "$RECENT_FILE"
+  NEW_COUNT=$INBOX_COUNT
+  # Fill remaining window slots from most-recent archive files
+  FILL_COUNT=$((TRAIN_WINDOW - NEW_COUNT))
+  if [ "$FILL_COUNT" -gt 0 ]; then
+    OLD_FILES=$(ls -t "$ARCHIVE"/*.jsonl 2>/dev/null | head -"$FILL_COUNT")
+    if [ -n "$OLD_FILES" ]; then
+      echo "$OLD_FILES" | while read -r f; do cat "$f"; done >> "$RECENT_FILE"
+      OLD_USED=$(echo "$OLD_FILES" | wc -l | tr -d ' ')
+      echo "  · padded with ${OLD_USED} archive batches (window ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
+    fi
+  fi
   TOTAL=$(wc -l < "$RECENT_FILE")
-  echo "[iter $ITER] training on ${TOTAL} samples (${INBOX_COUNT} batches)" | tee -a "$LOG_FILE"
+  echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
   # 3b. Train
   T2=$(date +%s)
