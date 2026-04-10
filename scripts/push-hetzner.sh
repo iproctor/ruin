@@ -31,6 +31,11 @@ rsync -avz --delete \
   --exclude='packages/ai/data/training.jsonl' \
   --exclude='packages/ai/data/model_iter_*.json' \
   --exclude='packages/ai/data/bench_iter_*.json' \
+  --exclude='packages/ai/data/inbox' \
+  --exclude='packages/ai/data/archive' \
+  --exclude='packages/ai/data/training_loop.log' \
+  --exclude='packages/ai/data/training_W*' \
+  --exclude='packages/ai/data/training_smoke.jsonl' \
   --exclude='/tmp' \
   -e "ssh ${SSH_OPTS}" \
   "${LOCAL_ROOT}/" \

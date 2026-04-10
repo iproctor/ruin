@@ -32,15 +32,15 @@
 set -uo pipefail
 
 WORKER_ID=${WORKER_ID:-0}
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-100}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-16}
-# Train when this many NEW files (inbox) arrive. With 2 remote workers + coordinator,
-# each cycle produces 3 files (1 per machine). Train once all 3 are in.
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-3}
+# Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
+# ≈ 600 games ≈ ~60k samples per train cycle.
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
 # Total batches to include in training (new + old). Old batches are pulled from
 # archive/ most-recent-first to fill the window. This keeps training data size
 # stable even when workers produce small batches.
-TRAIN_WINDOW=${TRAIN_WINDOW:-6}
+TRAIN_WINDOW=${TRAIN_WINDOW:-18}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
@@ -109,12 +109,14 @@ while true; do
   T1=$(date +%s)
   echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")" | tee -a "$LOG_FILE"
 
-  # ── 2. Count inbox files ────────────────────────────────────────────────────
+  # ── 2. Count inbox files (coordinator's own batch + anything workers uploaded) ─
   INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
-  echo "  · inbox now has ${INBOX_COUNT} files (threshold ${TRAIN_THRESHOLD})" | tee -a "$LOG_FILE"
+  echo "  · inbox: ${INBOX_COUNT}/${TRAIN_THRESHOLD} batches" | tee -a "$LOG_FILE"
 
   # ── 3. Train when threshold reached ─────────────────────────────────────────
   if [ "$INBOX_COUNT" -lt "$TRAIN_THRESHOLD" ]; then
+    # Not enough yet — loop back and make another local batch.
+    # Workers may upload while we're collecting.
     continue
   fi
 

@@ -30,7 +30,7 @@ REMOTE_PATH=${COORD_PATH:-/home/iain/code/chaos}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 WORKER_ID=${WORKER_ID:?WORKER_ID env var required (unique small int per worker)}
 
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-100}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-7}
 IDLE_SECONDS=${IDLE_SECONDS:-30}
 
@@ -64,15 +64,8 @@ while true; do
     continue
   fi
 
-  # 2. Skip if the model hasn't changed since last batch.
-  CURRENT_MTIME=$(stat -f "%m" "${DATA_DIR}/model.json" 2>/dev/null \
-                  || stat -c "%Y" "${DATA_DIR}/model.json")
-  if [ "$CURRENT_MTIME" = "$LAST_MODEL_MTIME" ]; then
-    echo "  · model unchanged, sleeping ${IDLE_SECONDS}s"
-    sleep "$IDLE_SECONDS"
-    continue
-  fi
-  LAST_MODEL_MTIME="$CURRENT_MTIME"
+  # 2. Always collect — don't wait for model changes. Small batches + continuous
+  #    uploads maximize throughput. The coordinator trains when enough arrive.
 
   # 3. Run a collection batch with a unique seed range.
   BATCH_COUNTER=$((BATCH_COUNTER + 1))
