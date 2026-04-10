@@ -63,6 +63,9 @@ interface PlayIndicators {
   // should be playing many cards (its strategy is card-driven). Low values
   // indicate the model isn't using tenzen's deck.
   tenzenCardsPlayed: number;
+  // Per-power VP earned from domination and ruination, parsed from logs.
+  vpFromDomination: Record<Power, number>;
+  vpFromRuination: Record<Power, number>;
   // Internal: rolling sum + count for tenzen cultists
   _tenzenCultistSum: number;
   _tenzenCultistSamples: number;
@@ -87,6 +90,8 @@ function emptyIndicators(): PlayIndicators {
     gormenPopulousDominations: 0,
     tenzenAvgCultists: 0,
     tenzenCardsPlayed: 0,
+    vpFromDomination: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
+    vpFromRuination: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
     _tenzenCultistSum: 0,
     _tenzenCultistSamples: 0,
   };
@@ -122,8 +127,13 @@ const NOBLE_MOVE_RE = /Hidden Influence:\s*noble moved/i;
 //   (single winner) "Ruination scoring — lasha scores 10 VP (first)"
 //   (tied)          "Ruination scoring — gormen/lasha each score 5 VP (..."
 const RUIN_SCORE_LASHA_RE = /Ruination scoring.*lasha/i;
-// Domination by gormen: "<region>: gormen dominates (X vs resistance Y) — scores Z VP"
-const DOMINATION_RE = /^(\w+):\s*(xarm|gormen|tenzen|lasha)\s+dominates/i;
+// Domination: "<region>: gormen dominates (X vs resistance Y) — scores Z VP."
+const DOMINATION_RE = /^(\w+):\s*(xarm|gormen|tenzen|lasha)\s+dominates.*scores (\d+) VP/i;
+// Ruination instant VP: "<region>: RUINED (card N). Ruiners score M VP each."
+const RUIN_INSTANT_RE = /RUINED.*Ruiners score (\d+) VP/i;
+// Ruination end-phase scoring: "Ruination scoring — xarm scores 11 VP (first)."
+// or tied: "Ruination scoring — gormen/lasha each score 5 VP"
+const RUIN_SCORING_RE = /Ruination scoring.*?(xarm|gormen|tenzen|lasha)(?:\/(\w+))?\s+(?:each )?scores? (\d+) VP/i;
 
 function scanLogForDac(
   log: string[],
@@ -153,9 +163,33 @@ function scanLogForIndicators(log: string[], indicators: PlayIndicators): void {
     const dom = line.match(DOMINATION_RE);
     if (dom) {
       const region = dom[1]!.toLowerCase();
-      const power = dom[2]!.toLowerCase();
+      const power = dom[2]!.toLowerCase() as Power;
+      const vp = parseInt(dom[3]!, 10);
       if (power === 'gormen' && POPULOUS_REGIONS.has(region)) {
         indicators.gormenPopulousDominations++;
+      }
+      indicators.vpFromDomination[power] += vp;
+      continue;
+    }
+    // Ruination instant VP (awarded to all powers who placed corruption)
+    const ruinInst = line.match(RUIN_INSTANT_RE);
+    if (ruinInst) {
+      // "Ruiners score N VP each" — we don't know WHO from this line alone.
+      // The individual corruption-placement lines precede it, but tracking
+      // per-power from those is complex. Skip instant ruin VP for now;
+      // the end-phase scoring line (below) captures the main ruin VP.
+      continue;
+    }
+    // Ruination end-phase scoring
+    const ruinScore = line.match(RUIN_SCORING_RE);
+    if (ruinScore) {
+      const power1 = ruinScore[1]!.toLowerCase() as Power;
+      const vp = parseInt(ruinScore[3]!, 10);
+      indicators.vpFromRuination[power1] += vp;
+      // Handle tied format: "gormen/lasha each score 5 VP"
+      if (ruinScore[2]) {
+        const power2 = ruinScore[2].toLowerCase() as Power;
+        indicators.vpFromRuination[power2] += vp;
       }
       continue;
     }
@@ -356,6 +390,8 @@ const aggIndicators = {
   gormenPopulousDominations: 0,
   tenzenAvgCultistsSum: 0, // sum of per-game averages → divide by completed
   tenzenCardsPlayed: 0,
+  vpFromDomination: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<Power, number>,
+  vpFromRuination: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<Power, number>,
 };
 const errors: string[] = [];
 let completed = 0;
@@ -395,6 +431,10 @@ for (let i = 0; i < gameCount; i++) {
   aggIndicators.gormenPopulousDominations += result.indicators.gormenPopulousDominations;
   aggIndicators.tenzenAvgCultistsSum   += result.indicators.tenzenAvgCultists;
   aggIndicators.tenzenCardsPlayed      += result.indicators.tenzenCardsPlayed;
+  for (const p of activePowers) {
+    aggIndicators.vpFromDomination[p] += result.indicators.vpFromDomination[p];
+    aggIndicators.vpFromRuination[p]  += result.indicators.vpFromRuination[p];
+  }
 
   // Tally DAC-rounds
   for (const roundKey of Object.keys(result.dacByRound)) {
@@ -449,6 +489,14 @@ console.log(`  gormen   populous dominations:  ${perGame(aggIndicators.gormenPop
 console.log(`  tenzen   avg cultists alive:    ${perGame(aggIndicators.tenzenAvgCultistsSum)}  (per round)`);
 console.log(`  tenzen   cards played:          ${perGame(aggIndicators.tenzenCardsPlayed)}  (per game)`);
 
+console.log(`\nVP SOURCES (per game avg):`);
+console.log(`  power     domination  ruination`);
+for (const p of activePowers) {
+  const dom = perGame(aggIndicators.vpFromDomination[p]);
+  const ruin = perGame(aggIndicators.vpFromRuination[p]);
+  console.log(`  ${p.padEnd(8)}  ${dom.padStart(8)}  ${ruin.padStart(9)}`);
+}
+
 function mean(xs: number[]): number { return xs.length ? xs.reduce((a,b)=>a+b,0)/xs.length : 0; }
 function stddev(xs: number[]): number {
   if (xs.length < 2) return 0;
@@ -498,6 +546,8 @@ if (outPath) {
       gormenPopulousDominationsPerGame: completed > 0 ? aggIndicators.gormenPopulousDominations / completed : 0,
       tenzenAvgCultists: completed > 0 ? aggIndicators.tenzenAvgCultistsSum / completed : 0,
       tenzenCardsPlayedPerGame: completed > 0 ? aggIndicators.tenzenCardsPlayed / completed : 0,
+      vpFromDominationPerGame: Object.fromEntries(activePowers.map(p => [p, completed > 0 ? aggIndicators.vpFromDomination[p] / completed : 0])),
+      vpFromRuinationPerGame: Object.fromEntries(activePowers.map(p => [p, completed > 0 ? aggIndicators.vpFromRuination[p] / completed : 0])),
     },
     vpStats: Object.fromEntries(activePowers.map(p => [p, {
       mean: mean(vpSamples[p]),
