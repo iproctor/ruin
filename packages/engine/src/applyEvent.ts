@@ -120,7 +120,8 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'tenzen_discard':
       if (event.cardId !== null) {
         const t = state.powers['tenzen']!;
-        const idx = t.hand.indexOf(event.cardId);
+        let idx = t.hand.indexOf(event.cardId);
+        if (idx === -1) idx = t.hand.indexOf('?');
         if (idx === -1) return state;
         return patchPower(state, 'tenzen', {
           hand: [...t.hand.slice(0, idx), ...t.hand.slice(idx + 1)],
@@ -259,7 +260,10 @@ function playCard(
   toRegion: RegionId, slotIndex: 0 | 1, cost: number,
 ): GameState {
   const p = state.powers[power]!;
-  const idx = p.hand.indexOf(cardId);
+  // Try exact match first; fall back to removing a masked '?' entry
+  // (other players' hands are masked by maskStateForViewer)
+  let idx = p.hand.indexOf(cardId);
+  if (idx === -1) idx = p.hand.indexOf('?');
   if (idx === -1) return state;
 
   const newHand = [...p.hand.slice(0, idx), ...p.hand.slice(idx + 1)];
@@ -491,7 +495,8 @@ function applyWorldCardEffect(
   switch (event.subtype) {
     case 'normagne_heir_discard': {
       const p = state.powers[event.power]!;
-      const idx = p.hand.indexOf(event.cardId);
+      let idx = p.hand.indexOf(event.cardId);
+      if (idx === -1) idx = p.hand.indexOf('?');
       if (idx === -1) return state;
       return patchPower(state, event.power, {
         hand: [...p.hand.slice(0, idx), ...p.hand.slice(idx + 1)],

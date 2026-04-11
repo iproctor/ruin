@@ -38,6 +38,14 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
     return true;                                  // resources + things to do = wasteful pass
   }
 
+  // Summoning into a ruined region is almost always pointless — no corruption,
+  // no domination, no card slots. The only value is contesting ruination scoring
+  // (end-phase VP from corruption tokens), which is too niche to justify the cost.
+  if (action.kind === 'summoning_summon_figure') {
+    const region = state.regions[action.toRegion];
+    if (region && region.ruinationCardIndex !== null) return true;
+  }
+
   // Xarm's first figure on the board should never start at an edge region.
   // Edges are too far from the action — xarm wants central where piles form.
   if (action.kind === 'summoning_summon_figure' && action.power === 'xarm') {

@@ -25,8 +25,8 @@ function getEventDuration(event: GameEvent): number {
       case 'battle_roll':       return 800;
       case 'battle_kill':       return 500;
       case 'peasant_claimed':   return 300;
-      case 'domination_result': return event.conquered ? 600 : 200;
-      case 'domination_failed': return 200;
+      case 'domination_result': return event.conquered ? 600 : 0;
+      case 'domination_failed': return 0;
       case 'corruption_placement': return 300;
       case 'ruination':         return 1000;
       case 'ruination_scoring': return 600;
@@ -49,6 +49,10 @@ export interface GameStreamResult {
   connected: boolean;
   /** Call after submitting an action — syncs state and skips redundant SSE events. */
   syncAfterAction: (state: GameState, seq: number) => void;
+  /** True when the queue is paused at a phase transition (battle → corruption). */
+  paused: boolean;
+  /** Resume the queue after a pause. */
+  resume: () => void;
 }
 
 export function useGameStream(gameId: string): GameStreamResult {
@@ -64,12 +68,23 @@ export function useGameStream(gameId: string): GameStreamResult {
   const processing = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownSeq = useRef(0);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
 
   const processNext = useCallback(() => {
     if (queue.current.length === 0) {
       processing.current = false;
       return;
     }
+
+    // Pause before corruption phase — let user absorb battle results
+    const peek = queue.current[0];
+    if (peek && peek.type === 'phase_start' && peek.phase === 'corruption' && !pausedRef.current) {
+      pausedRef.current = true;
+      setPaused(true);
+      return;
+    }
+
 
     const event = queue.current.shift()!;
     const s = stateRef.current;
@@ -133,6 +148,12 @@ export function useGameStream(gameId: string): GameStreamResult {
     }
   }, [startProcessing]);
 
+  const resume = useCallback(() => {
+    pausedRef.current = false;
+    setPaused(false);
+    processNext();
+  }, [processNext]);
+
   /** Called by GamePage after a successful action POST.
    *  Syncs to the returned state and skips SSE events up to `seq`. */
   const syncAfterAction = useCallback((actionState: GameState, seq: number) => {
@@ -167,5 +188,5 @@ export function useGameStream(gameId: string): GameStreamResult {
     return cleanup;
   }, [gameId, handleEvent]);
 
-  return { state, events, lastEvent, chat, connected, syncAfterAction };
+  return { state, events, lastEvent, chat, connected, syncAfterAction, paused, resume };
 }

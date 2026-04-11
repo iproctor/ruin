@@ -147,18 +147,28 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
         const isMoving = summoningAnim?.movingFigures.has(fig.id) ?? false;
         const animStyle = (isAppearing || isMoving) ? 'summoning-appear' : undefined;
         return (
-          <g
-            key={fig.id}
-            className={animStyle}
-            style={{ cursor: 'default' }}
-            filter={isNew && !fig.protected ? 'url(#new-glow)' : undefined}
-            onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
-            onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
-            onMouseLeave={() => setHovered(null)}
-          >
-            {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
-            {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
-            {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
+          <g key={fig.id}>
+            {(isAppearing || isMoving) && (
+              <circle
+                cx={fx} cy={fy}
+                className="summoning-ring"
+                fill="none"
+                stroke={color}
+                strokeWidth={1.5}
+              />
+            )}
+            <g
+              className={animStyle}
+              style={{ cursor: 'default' }}
+              filter={isNew && !fig.protected ? 'url(#new-glow)' : undefined}
+              onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
+              onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
+              onMouseLeave={() => setHovered(null)}
+            >
+              {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
+              {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
+              {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
+            </g>
           </g>
         );
       })}
@@ -197,15 +207,25 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearin
   const hasMagic = isChaos ? (def as { hasMagicSymbol: boolean }).hasMagicSymbol : false;
 
   return (
-    <g
-      className={isAppearing ? 'summoning-card-appear' : undefined}
-      onMouseEnter={(e) => onHover(cardId, e.clientX, e.clientY)}
-      onMouseMove={(e)  => onHover(cardId, e.clientX, e.clientY)}
-      onMouseLeave={()  => onHover(null, 0, 0)}
-      style={{ cursor: 'default' }}
-    >
-      <rect width={width} height={height} rx={3}
-        fill={isPending ? '#1a2a1a' : '#1a1433'}
+    <g>
+      {isAppearing && (
+        <circle
+          cx={width / 2} cy={height / 2}
+          className="summoning-ring"
+          fill="none"
+          stroke={accentColor}
+          strokeWidth={1.5}
+        />
+      )}
+      <g
+        className={isAppearing ? 'summoning-card-appear' : undefined}
+        onMouseEnter={(e) => onHover(cardId, e.clientX, e.clientY)}
+        onMouseMove={(e)  => onHover(cardId, e.clientX, e.clientY)}
+        onMouseLeave={()  => onHover(null, 0, 0)}
+        style={{ cursor: 'default' }}
+      >
+        <rect width={width} height={height} rx={3}
+          fill={isPending ? '#1a2a1a' : '#1a1433'}
         stroke={isPending ? '#22c55e' : isPersistent ? accentColor : '#3a3a6e'}
         strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
         strokeDasharray={isPending ? '3 2' : undefined}
@@ -222,6 +242,7 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearin
         </g>
       )}
       {hasMagic && <text x={3} y={height - 3} fill="#a78bfa" fontSize="8">✦</text>}
+    </g>
     </g>
   );
 }

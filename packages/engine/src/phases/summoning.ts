@@ -111,7 +111,7 @@ export function applySummonFigure(
   }
 
   log.emit({ type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion: follower.regionId, cost });
-  return { state: advanceSummoningTurn(s, power), log };
+  return { state: advanceSummoningTurn(s, power, log), log };
 }
 
 // ─── Play a chaos card ────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ export function applyPlayCard(
     }
   }
 
-  return { state: advanceSummoningTurn(s, power), log };
+  return { state: advanceSummoningTurn(s, power, log), log };
 }
 
 /** Returns false if there are no valid targets (skip the choice, advance turn). */
@@ -230,7 +230,7 @@ export function applySummoningPass(
   let s = updatePower(state, power, { powerPoints: 0, passedSummoning: true });
   const log = new GameLog();
   log.emit({ type: 'summoning_pass', power });
-  return { state: advanceSummoningTurn(s, power), log };
+  return { state: advanceSummoningTurn(s, power, log), log };
 }
 
 // ─── Tenzen Apprentices: chaos stone carry choice ────────────────────────────
@@ -258,12 +258,12 @@ export function applyTenzenApprenticeChoice(
   }
   // Clear the pending action and resume the summoning turn order.
   s = { ...s, pendingAction: null };
-  return { state: advanceSummoningTurn(s, 'tenzen'), log };
+  return { state: advanceSummoningTurn(s, 'tenzen', log), log };
 }
 
 // ─── Turn advancement ─────────────────────────────────────────────────────────
 
-export function advanceSummoningTurn(state: GameState, justActed: Power): GameState {
+export function advanceSummoningTurn(state: GameState, justActed: Power, log?: GameLog): GameState {
   // Record when this power's turn ended, so next time it's their turn
   // the client can highlight everything placed since this point.
   let base = updatePower(state, justActed, { lastSummonTurnAt: state.actionCount });
@@ -304,6 +304,7 @@ export function advanceSummoningTurn(state: GameState, justActed: Power): GameSt
 
     // If they have more cards than required, they must choose — show the panel
     if (nextPs.hand.length > required) {
+      log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'forced_discard', context: { count: required }, description: `${nextPower} must discard ${required} card(s).` });
       return {
         ...base,
         summoningIndex: next,
@@ -317,6 +318,7 @@ export function advanceSummoningTurn(state: GameState, justActed: Power): GameSt
 
     // Otherwise auto-discard all (0 or <= required cards — no meaningful choice)
     const toDiscard = nextPs.hand.slice(0, required);
+    log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'summoning_action', context: {}, description: `${nextPower}'s turn to summon.` });
     return {
       ...base,
       powers: {
@@ -337,6 +339,7 @@ export function advanceSummoningTurn(state: GameState, justActed: Power): GameSt
     };
   }
 
+  log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'summoning_action', context: {}, description: `${nextPower}'s turn to summon.` });
   return {
     ...base,
     summoningIndex: next,

@@ -286,8 +286,6 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
   for (const follower of p.followers) {
     if (follower.regionId !== null) continue; // only reserve figures
     for (const regionId of legalRegions) {
-      const region = state.regions[regionId]!;
-      if (isRuined(region)) continue;
       // Cost depends on (class, region) — Stasis Web adds +2 in some regions,
       // gormen plaguecarrier upgrade may make it free, etc. Skip unaffordable.
       const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
@@ -331,8 +329,6 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
     }
     for (const regionId of legalRegionsForMove) {
       if (regionId === follower.regionId) continue; // skip same region
-      const region = state.regions[regionId]!;
-      if (isRuined(region)) continue;
       const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
       if (p.powerPoints < cost) continue;
       actions.push({

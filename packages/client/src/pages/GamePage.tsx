@@ -125,7 +125,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction } = useGameStream(gameId);
+  const { state: streamState, events, lastEvent, chat, connected, paused, resume } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -274,27 +274,18 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     // tick. We must NOT auto-pass that new tick.
     const hadStagedAction = !!pendingAction || !!pendingOnPlayChoice;
     try {
-      let latest = serverState!;
       if (pendingAction) {
-        const res = await submitAction(gameId, pendingAction);
-        latest = res.state;
-        syncAfterAction(res.state, res.seq);
-        setState(latest);
+        await submitAction(gameId, pendingAction);
         setPendingAction(null);
         setSelectedCardId(null);
       }
       if (pendingOnPlayChoice) {
-        const res = await submitAction(gameId, pendingOnPlayChoice);
-        latest = res.state;
-        syncAfterAction(res.state, res.seq);
-        setState(latest);
+        await submitAction(gameId, pendingOnPlayChoice);
         setPendingOnPlayChoice(null);
       }
-      // Only auto-pass if the player clicked End Turn without staging any action
-      if (!hadStagedAction && latest.pendingAction?.waitingFor === acting && latest.pendingAction?.actionKind === 'summoning_action') {
-        const res = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
-        syncAfterAction(res.state, res.seq);
-        setState(res.state);
+      // Pure pass: End Turn clicked without staging any action
+      if (!hadStagedAction) {
+        await submitAction(gameId, { kind: 'summoning_pass', power: acting });
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
@@ -317,16 +308,14 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     setSubmitError('');
     setSubmitting(true);
     try {
-      const res = await submitAction(gameId, action);
-      syncAfterAction(res.state, res.seq);
-      setState(res.state);
+      await submitAction(gameId, action);
       setSelectedCardId(null);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setSubmitting(false);
     }
-  }, [gameId, setState]);
+  }, [gameId]);
 
   const handleChatSend = useCallback(async (message: string) => {
     await sendChat(gameId, message);
@@ -414,7 +403,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           </div>
 
           {/* Middle: non-summoning action panels */}
-          {!anim.animationPhase && (needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
+          {(needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
             <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
               {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
                 <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
@@ -453,6 +442,25 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           />
         </div>
 
+        {paused && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: '#16213e', borderTop: '1px solid #3a3a6e' }}>
+            <button
+              onClick={resume}
+              style={{
+                fontSize: '0.85rem',
+                padding: '8px 32px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#7f1d1d',
+                color: '#fca5a5',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Continue to Corruption Phase
+            </button>
+          </div>
+        )}
         {!anim.animationPhase && myPower && (
           <Tableau
             state={serverState ?? displayState}

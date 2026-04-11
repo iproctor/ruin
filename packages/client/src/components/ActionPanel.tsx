@@ -81,6 +81,14 @@ export default function ActionPanel({
         />
       )}
 
+      {pending.actionKind === 'tenzen_apprentice_choice' && (
+        <TenzenApprenticePanel
+          context={pending.context}
+          onAction={onAction}
+          myPower={myPower}
+        />
+      )}
+
       {pending.actionKind === 'corruption_harvest_choice' && (
         <CorruptionHarvestPanel
           state={state}
@@ -523,6 +531,46 @@ function WorldChoicePanel({
       )}
       </>
       )}
+    </div>
+  );
+}
+
+// ── Tenzen Apprentice choice ──────────────────────────────────────────────────
+
+function TenzenApprenticePanel({
+  context,
+  onAction,
+  myPower,
+}: {
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+  myPower: Power;
+}) {
+  const followerId = context['followerId'] as string;
+  const fromRegion = context['fromRegion'] as RegionId;
+  const toRegion = context['toRegion'] as RegionId;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+        Carry the Chaos Stone from {REGION_LABELS[fromRegion]} to {REGION_LABELS[toRegion]}?
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button
+          className="primary"
+          onClick={() => onAction({ kind: 'tenzen_apprentice_choice', power: myPower, followerId, fromRegion, toRegion, carry: true })}
+          style={{ flex: 1, fontSize: '0.85rem', padding: '0.5rem' }}
+        >
+          Carry
+        </button>
+        <button
+          className="secondary"
+          onClick={() => onAction({ kind: 'tenzen_apprentice_choice', power: myPower, followerId, fromRegion, toRegion, carry: false })}
+          style={{ flex: 1, fontSize: '0.85rem', padding: '0.5rem' }}
+        >
+          Leave
+        </button>
+      </div>
     </div>
   );
 }
