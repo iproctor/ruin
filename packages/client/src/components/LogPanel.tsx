@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage } from '../hooks/useGameStream.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
-import type { Power } from '@ruin/engine';
+import type { Power, GameEvent } from '@ruin/engine';
+import { renderText } from '@ruin/engine';
 
 interface LogPanelProps {
+  events: GameEvent[];
   eventLog: string[];
   chat: ChatMessage[];
   myPower: Power | null;
@@ -13,18 +15,22 @@ interface LogPanelProps {
 
 type FilterMode = 'all' | 'events' | 'chat';
 
-export default function LogPanel({ eventLog, chat, myPower, onSendChat, connected }: LogPanelProps) {
+export default function LogPanel({ events, eventLog, chat, myPower, onSendChat, connected }: LogPanelProps) {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Build log entries: prefer structured events, fall back to text eventLog
+  const logEntries: Array<{ text: string; idx: number }> = events.length > 0
+    ? events.map((ev, idx) => ({ text: renderText(ev), idx }))
+    : eventLog.map((text, idx) => ({ text, idx }));
+
   // Merge events and chat into a single timeline
   type Entry = { kind: 'event'; text: string; idx: number } | { kind: 'chat'; msg: ChatMessage };
-  const events: Entry[] = eventLog.map((text, idx) => ({ kind: 'event', text, idx }));
+  const evEntries: Entry[] = logEntries.map((e) => ({ kind: 'event', text: e.text, idx: e.idx }));
   const chats: Entry[]  = chat.map((msg) => ({ kind: 'chat', msg }));
-  const merged = [...events, ...chats].sort((a, b) => {
-    // events are ordered by index, chat by createdAt — interleave roughly
+  const merged = [...evEntries, ...chats].sort((a, b) => {
     const aTime = a.kind === 'event' ? a.idx : new Date(a.msg.createdAt).getTime() / 1000;
     const bTime = b.kind === 'event' ? b.idx : new Date(b.msg.createdAt).getTime() / 1000;
     return aTime - bTime;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type { GameState, Power, RegionId, PhaseEvent } from '@ruin/engine';
+import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
 
 // ── Timing constants (ms) ────────────────────────────────────────────────────
 
@@ -36,9 +36,9 @@ export interface PhaseAnimationResult {
   /** Current animation phase, or null if idle. */
   animationPhase: AnimationPhase;
   /** The phase event currently being displayed. */
-  currentEvent: PhaseEvent | null;
+  currentEvent: GameEvent | null;
   /** All phase events processed so far (for building battle panes). */
-  processedEvents: PhaseEvent[];
+  processedEvents: GameEvent[];
   /** Region currently being animated. */
   activeRegion: RegionId | null;
   /** Figure IDs that have been killed in the current animation. */
@@ -63,7 +63,7 @@ export interface PhaseAnimationResult {
 
 export function usePhaseAnimation(
   serverState: GameState | null,
-  phaseEvents: PhaseEvent[],
+  phaseEvents: GameEvent[],
   myPowers: Power[],
 ): PhaseAnimationResult {
   // Snapshot: frozen display state from before battle started
@@ -72,8 +72,8 @@ export function usePhaseAnimation(
 
   // How far through the event buffer we've animated
   const [cursor, setCursor] = useState(0);
-  const [currentEvent, setCurrentEvent] = useState<PhaseEvent | null>(null);
-  const [processedEvents, setProcessedEvents] = useState<PhaseEvent[]>([]);
+  const [currentEvent, setCurrentEvent] = useState<GameEvent | null>(null);
+  const [processedEvents, setProcessedEvents] = useState<GameEvent[]>([]);
   const [activeRegion, setActiveRegion] = useState<RegionId | null>(null);
   const [killedIds, setKilledIds] = useState<Set<string>>(new Set());
   const [dominationLabels, setDominationLabels] = useState<Map<RegionId, DominationLabel>>(new Map());
@@ -90,7 +90,7 @@ export function usePhaseAnimation(
   }
 
   // Track the full event buffer
-  const eventBuffer = useRef<PhaseEvent[]>([]);
+  const eventBuffer = useRef<GameEvent[]>([]);
 
   // Whether we're paused waiting for a human decision
   const [waitingForDecision, setWaitingForDecision] = useState(false);
@@ -139,7 +139,7 @@ export function usePhaseAnimation(
     const evt = events[idx]!;
     const isCorruptionEvt = evt.type === 'domination_result' ||
                              evt.type === 'corruption_placement' ||
-                             evt.type === 'corruption_ruination';
+                             evt.type === 'ruination';
 
     // If we're in 'battle' and hit a corruption event, pause and show Continue button.
     // Do NOT advance cursor or process the event yet — that happens after user clicks.
@@ -173,9 +173,6 @@ export function usePhaseAnimation(
         }
         break;
       }
-      case 'battle_region_end':
-        // Region done
-        break;
       case 'domination_result':
         // Only highlight & label regions that actually had a dominator.
         // Tied / non-conquered regions are skipped visually.
@@ -214,7 +211,7 @@ export function usePhaseAnimation(
         }, CORRUPTION_FLY_MS);
         break;
       }
-      case 'corruption_ruination':
+      case 'ruination':
         setActiveRegion(evt.regionId);
         break;
     }
@@ -369,7 +366,7 @@ export function usePhaseAnimation(
 
 const FAST_DELAY = 100;
 
-function isOwnEvent(event: PhaseEvent, myPowers: Power[]): boolean {
+function isOwnEvent(event: GameEvent, myPowers: Power[]): boolean {
   if (event.type === 'battle_roll' || event.type === 'battle_hit_wait') {
     return myPowers.includes(event.power);
   }
@@ -383,7 +380,7 @@ function isOwnEvent(event: PhaseEvent, myPowers: Power[]): boolean {
  * How long to wait before showing `next`, given the previously-shown event.
  * The delay is the "gap" between two events in the animation sequence.
  */
-function getDelay(next: PhaseEvent, prev: PhaseEvent | null, myPowers: Power[]): number {
+function getDelay(next: GameEvent, prev: GameEvent | null, myPowers: Power[]): number {
   // Your own actions animate instantly — you already know what you did.
   if (isOwnEvent(next, myPowers)) return FAST_DELAY;
 
@@ -399,8 +396,6 @@ function getDelay(next: PhaseEvent, prev: PhaseEvent | null, myPowers: Power[]):
       return prev?.type === 'battle_roll' ? BEAT_ROLL : BEAT_KILL;
     case 'battle_hit_wait':
       return BEAT_HIT_WAIT;
-    case 'battle_region_end':
-      return 0;
     case 'domination_result':
       // Non-conquered domination (tied or no dominator) is a nothing-happened
       // beat — don't linger on it.
@@ -414,7 +409,7 @@ function getDelay(next: PhaseEvent, prev: PhaseEvent | null, myPowers: Power[]):
         return CORRUPTION_FLY_MS + 1000;
       }
       return 500;
-    case 'corruption_ruination':
+    case 'ruination':
       // If coming from placements in this region, wait for flies to land first.
       if (prev?.type === 'corruption_placement' && prev.regionId === next.regionId) {
         return CORRUPTION_FLY_MS + 500;

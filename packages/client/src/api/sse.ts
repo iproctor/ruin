@@ -1,4 +1,4 @@
-import type { GameState, PhaseEvent } from '@ruin/engine';
+import type { GameState, GameEvent } from '@ruin/engine';
 
 const TOKEN_KEY = 'ruin_token';
 
@@ -11,10 +11,12 @@ export interface ChatMessage {
 }
 
 export type StreamEvent =
-  | { type: 'history'; state: GameState; eventLog: string[]; chat: ChatMessage[] }
+  | { type: 'history'; state: GameState; eventLog: string[]; events: GameEvent[]; chat: ChatMessage[] }
   | { type: 'state';   state: GameState }
+  | { type: 'sync';    state: GameState }
   | { type: 'log';     entries: string[] }
-  | { type: 'phase_events'; events: PhaseEvent[] }
+  | { type: 'events';  events: GameEvent[] }
+  | { type: 'phase_events'; events: GameEvent[] }
   | { type: 'chat';    message: ChatMessage }
   | { type: 'error';   message: string };
 

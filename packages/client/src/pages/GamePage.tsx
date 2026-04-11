@@ -67,6 +67,7 @@ function DragGhost({ item }: { item: DragItem }) {
 // ── Collapsible log wrapper ──────────────────────────────────────────────────
 
 function CollapsibleLog(props: {
+  events: import('@ruin/engine').GameEvent[];
   eventLog: string[];
   chat: import('../hooks/useGameStream.js').ChatMessage[];
   myPower: Power | null;
@@ -125,7 +126,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, eventLog, phaseEvents, chat, connected } = useGameStream(gameId);
+  const { state: streamState, eventLog, events, chat, connected } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -166,7 +167,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   }, [serverState, pendingAction, pendingOnPlayChoice]);
 
   // Phase animation — buffers phase events and drives battle/corruption animation
-  const anim = usePhaseAnimation(serverState, phaseEvents, myPowers);
+  const anim = usePhaseAnimation(serverState, events, myPowers);
   // When animating, use the animation's display state; otherwise use the normal one
   const effectiveDisplay = anim.animationPhase ? anim.displayState : displayState;
 
@@ -451,6 +452,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
 
           {/* Right: collapsible log */}
           <CollapsibleLog
+            events={events}
             eventLog={eventLog}
             chat={chat}
             myPower={myPower}
