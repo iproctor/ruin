@@ -97,6 +97,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       };
       const log = new GameLog();
       log.emit({ type: 'forced_discard', power: action.power as Power, count: toDiscard.length });
+      log.emit({ type: 'awaiting_action', power: action.power as Power, actionKind: 'summoning_action', context: {}, description: `${action.power}'s turn to summon.` });
       result = { state: s, log };
       break;
     }

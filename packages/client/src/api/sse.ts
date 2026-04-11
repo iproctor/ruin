@@ -11,8 +11,7 @@ export interface ChatMessage {
 }
 
 export type StreamEvent =
-  | { type: 'history'; state: GameState; eventLog: string[]; events: GameEvent[]; chat: ChatMessage[] }
-  | { type: 'state';   state: GameState }
+  | { type: 'history'; state: GameState; events: GameEvent[]; chat: ChatMessage[] }
   | { type: 'sync';    state: GameState }
   | { type: 'events';  events: GameEvent[] }
   | { type: 'chat';    message: ChatMessage }

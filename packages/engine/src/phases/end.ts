@@ -76,6 +76,7 @@ function drainDialRewards(
         ...s,
         pendingAction: { waitingFor: next.power, actionKind: 'upgrade_choice', context: {} },
       };
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'upgrade_choice', context: {}, description: `${next.power} chooses an upgrade.` });
       break;
     case 'place_token':
       s = {
@@ -86,6 +87,7 @@ function drainDialRewards(
           context: { tokenType: next.tokenType, remaining: next.remaining },
         },
       };
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_place_token', context: { tokenType: next.tokenType, remaining: next.remaining }, description: `${next.power} places a ${next.tokenType} token.` });
       break;
     case 'remove_corruption': {
       // Skip if there's no corruption anywhere to remove
@@ -93,7 +95,6 @@ function drainDialRewards(
         Object.values(s.regions[r]!.corruptionTokens).some(v => v > 0)
       );
       if (!hasAnyCorruption) {
-        // Pop this reward and drain the next one
         s = { ...s, pendingDialRewards: queue.slice(1) };
         return drainDialRewards(s, log);
       }
@@ -105,6 +106,7 @@ function drainDialRewards(
           context: { remaining: next.remaining },
         },
       };
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_corruption', context: { remaining: next.remaining }, description: `${next.power} removes a corruption token.` });
       break;
     }
     case 'remove_world_tokens':
@@ -116,6 +118,7 @@ function drainDialRewards(
           context: { remaining: next.remaining },
         },
       };
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_world_token', context: { remaining: next.remaining }, description: `${next.power} removes a world token.` });
       break;
   }
 

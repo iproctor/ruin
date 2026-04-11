@@ -1,12 +1,12 @@
 import { Worker } from 'node:worker_threads';
 import { eq, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, GameLog } from '@ruin/engine';
-import type { GameState, Power, Action, PlayerType } from '@ruin/engine';
+import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, GameLog, maskEvents } from '@ruin/engine';
+import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
 import { games, gamePlayers, chatMessages } from '../db/schema.js';
-import { broadcast } from './sse.js';
+import { broadcast, broadcastEvents } from './sse.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -121,9 +121,13 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
     const prevRound = current.round;
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
     await saveGame(gameId, next, log.entries);
-    broadcast(gameId, { type: 'state', state: next });
-    if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
-    if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
+    if (log.events.length > 0) broadcastEvents(gameId, log.events);
+    // Sync full state at round boundaries and when a human's summoning turn starts
+    const roundChanged = next.round !== prevRound;
+    const waitingPower = next.pendingAction?.waitingFor;
+    const humanSummoningTurn = next.pendingAction?.actionKind === 'summoning_action'
+      && waitingPower != null && next.powers[waitingPower]?.playerType !== 'ai';
+    if (roundChanged || humanSummoningTurn) broadcast(gameId, { type: 'sync', state: next });
     current = next;
   }
 
@@ -207,9 +211,13 @@ export async function applyPlayerAction(
   const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
   await saveGame(gameId, afterAction, log.entries);
-  broadcast(gameId, { type: 'state', state: afterAction });
-  if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
-  if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
+  if (log.events.length > 0) broadcastEvents(gameId, log.events);
+  // Sync on round boundary or when it's a human's summoning turn
+  const roundChanged = afterAction.round !== prevRound;
+  const wp = afterAction.pendingAction?.waitingFor;
+  const humanSummoning = afterAction.pendingAction?.actionKind === 'summoning_action'
+    && wp != null && afterAction.powers[wp]?.playerType !== 'ai';
+  if (roundChanged || humanSummoning) broadcast(gameId, { type: 'sync', state: afterAction });
 
   return maybeRunAiTurns(gameId, afterAction);
 }

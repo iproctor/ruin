@@ -202,7 +202,7 @@ export type GameEvent =
   | { type: 'phase_start'; phase: Phase; round: number }
   | { type: 'round_start'; round: number }
   | { type: 'game_over'; winners: Power[]; condition: WinCondition }
-  | { type: 'awaiting_action'; power: Power; actionKind: ActionKind; description: string }
+  | { type: 'awaiting_action'; power: Power; actionKind: ActionKind; context: Record<string, unknown>; description: string }
 
   // ── World ────────────────────────────────────────────────────────────────────
   | { type: 'world_card_drawn'; cardId: string; cardName: string }
@@ -235,7 +235,6 @@ export type GameEvent =
   // ── Battle ───────────────────────────────────────────────────────────────────
   | { type: 'battle_region_start'; regionId: RegionId }
   | { type: 'battle_roll'; regionId: RegionId; power: Power; dice: number[]; hits: number; kind: 'normal' | 'war_frenzy' | 'undying_fury' }
-  | { type: 'battle_hit_wait'; regionId: RegionId; power: Power; hits: number }
   | { type: 'battle_kill'; regionId: RegionId; attacker: Power; targetPower: Power; targetClass: FollowerClass; targetId: string }
   | { type: 'peasant_claimed'; regionId: RegionId; power: Power; total: number }
   | { type: 'rapture_control'; regionId: RegionId; targetPower: Power; targetClass: FollowerClass; targetId: string }
@@ -275,7 +274,6 @@ export type GameEvent =
   | { type: 'dial_vp'; power: Power; vp: number }
   | { type: 'dial_victory'; power: Power }
   | { type: 'card_drawn'; power: Power; cardId: string; source: string }
-  | { type: 'ritual_death_draw'; power: Power; cardId: string }
 
   // ── Reducers (interactive action results) ────────────────────────────────────
   | { type: 'forced_discard'; power: Power; count: number }

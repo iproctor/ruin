@@ -69,8 +69,6 @@ export function renderText(event: GameEvent): string {
           : event.power;
       return `${event.regionId}: ${label} rolls ${event.dice.join(',')} → ${event.hits} hit(s).`;
     }
-    case 'battle_hit_wait':
-      return `${event.regionId}: ${event.power} must assign ${event.hits} hit(s). Waiting for choice.`;
     case 'battle_kill':
       return `${event.regionId}: ${event.attacker} kills ${event.targetPower} ${event.targetClass} (${event.targetId}).`;
     case 'peasant_claimed':
@@ -140,8 +138,6 @@ export function renderText(event: GameEvent): string {
       return `${event.power} reaches the victory position on their threat dial!`;
     case 'card_drawn':
       return `${event.power} draws a card (${event.source}).`;
-    case 'ritual_death_draw':
-      return `${event.power} draws ${event.cardId} (${CARD_BY_ID['xarm_ritual_death']!.name}).`;
 
     // ── Reducers ──────────────────────────────────────────────────────────
     case 'forced_discard':

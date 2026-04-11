@@ -23,7 +23,7 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: GameL
           context: { drawTarget },
         },
       };
-      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', description: 'Draw phase: waiting for Tenzen discard choice.' });
+      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', context: {}, description: 'Draw phase: waiting for Tenzen discard choice.' });
       return { state: s, log };
     }
   }
@@ -71,11 +71,12 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
     s = updatePower(s, power, { powerPoints: pp, basePowerPoints: pp, passedSummoning: false });
   }
 
+  const firstSummoner = s.summoningOrder[0]!;
   s = {
     ...s,
     phase: 'summoning',
     pendingAction: {
-      waitingFor: s.summoningOrder[0]!,
+      waitingFor: firstSummoner,
       actionKind: 'summoning_action',
       context: {},
     },
@@ -91,6 +92,7 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   // autoAdvance immediately breaks on pendingAction before reaching its
   // banner-emit branch.
   log.emit({ type: 'summoning_banner', round: s.round });
+  log.emit({ type: 'awaiting_action', power: firstSummoner, actionKind: 'summoning_action', context: {}, description: `${firstSummoner}'s turn to summon.` });
 
   return { state: s, log };
 }

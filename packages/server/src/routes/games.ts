@@ -212,18 +212,23 @@ router.get('/:id/stream', optionalAuth, (req, res) => {
   res.flushHeaders();
   res.write(': connected\n\n');
 
-  addListener(id, res);
+  // Send current state + full history immediately on connect.
+  // Also resolve the viewer's power for event masking.
+  const viewerUserId = req.userId ?? null;
 
-  // Send current state + full history immediately on connect
   Promise.all([
-    getGameState(id, req.userId ?? null),
+    getGameState(id, viewerUserId),
     getGameHistory(id),
+    db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id)),
   ])
-    .then(([state, history]) => {
+    .then(([state, history, playerRows]) => {
+      const viewerRow = viewerUserId ? playerRows.find(r => r.userId === viewerUserId) : null;
+      const viewerPower = (viewerRow?.power as import('@ruin/engine').Power) ?? null;
+      addListener(id, res, viewerPower);
+
       res.write(`data: ${JSON.stringify({
         type: 'history',
         state,
-        eventLog: history.eventLog,
         events: history.events,
         chat: history.chat,
       })}\n\n`);

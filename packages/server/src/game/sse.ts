@@ -1,34 +1,63 @@
 import type { Response } from 'express';
+import type { Power, GameEvent } from '@ruin/engine';
+import { maskEvents } from '@ruin/engine';
 
-// Map of gameId → Set of active SSE response objects
-const listeners = new Map<string, Set<Response>>();
+interface Listener {
+  res: Response;
+  power: Power | null;  // which power this viewer controls (null = spectator)
+}
 
-export function addListener(gameId: string, res: Response): void {
+// Map of gameId → Set of active SSE listeners
+const listeners = new Map<string, Set<Listener>>();
+
+export function addListener(gameId: string, res: Response, power: Power | null = null): void {
   if (!listeners.has(gameId)) {
     listeners.set(gameId, new Set());
   }
-  listeners.get(gameId)!.add(res);
+  listeners.get(gameId)!.add({ res, power });
 }
 
 export function removeListener(gameId: string, res: Response): void {
   const gameListeners = listeners.get(gameId);
   if (!gameListeners) return;
-  gameListeners.delete(res);
+  for (const l of gameListeners) {
+    if (l.res === res) {
+      gameListeners.delete(l);
+      break;
+    }
+  }
   if (gameListeners.size === 0) {
     listeners.delete(gameId);
   }
 }
 
+/** Broadcast the same payload to all listeners (no masking). */
 export function broadcast(gameId: string, data: unknown): void {
   const gameListeners = listeners.get(gameId);
   if (!gameListeners || gameListeners.size === 0) return;
 
   const payload = `data: ${JSON.stringify(data)}\n\n`;
-  for (const res of gameListeners) {
+  for (const l of gameListeners) {
     try {
-      res.write(payload);
+      l.res.write(payload);
     } catch {
-      // Client disconnected — will be cleaned up by the close handler
+      // Client disconnected — cleaned up by close handler
+    }
+  }
+}
+
+/** Broadcast events with per-viewer masking of hidden info. */
+export function broadcastEvents(gameId: string, events: GameEvent[]): void {
+  const gameListeners = listeners.get(gameId);
+  if (!gameListeners || gameListeners.size === 0) return;
+
+  for (const l of gameListeners) {
+    const masked = maskEvents(events, l.power);
+    const payload = `data: ${JSON.stringify({ type: 'events', events: masked })}\n\n`;
+    try {
+      l.res.write(payload);
+    } catch {
+      // Client disconnected
     }
   }
 }

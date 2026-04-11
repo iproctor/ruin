@@ -9,7 +9,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import type { Power, Action, RegionId, FollowerClass } from '@ruin/engine';
+import type { Power, Action, RegionId, FollowerClass, GameState } from '@ruin/engine';
 import type { DragItem } from '../types/drag.js';
 import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
@@ -68,7 +68,6 @@ function DragGhost({ item }: { item: DragItem }) {
 
 function CollapsibleLog(props: {
   events: import('@ruin/engine').GameEvent[];
-  eventLog: string[];
   chat: import('../hooks/useGameStream.js').ChatMessage[];
   myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
@@ -126,7 +125,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, eventLog, events, chat, connected } = useGameStream(gameId);
+  const { state: streamState, events, chat, connected } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -453,7 +452,6 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           {/* Right: collapsible log */}
           <CollapsibleLog
             events={events}
-            eventLog={eventLog}
             chat={chat}
             myPower={myPower}
             onSendChat={handleChatSend}

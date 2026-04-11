@@ -516,7 +516,7 @@ function runPostUndying(
             context: { regionId, maxKills: gormenCorr },
           },
         };
-        log.emit({ type: 'awaiting_action', power: 'gormen', actionKind: 'corruption_harvest_choice', description: `${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.` });
+        log.emit({ type: 'awaiting_action', power: 'gormen', actionKind: 'corruption_harvest_choice', context: { regionId, maxKills: gormenCorr }, description: `${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.` });
         return { state: s, log };
       }
     }
@@ -550,7 +550,7 @@ function pauseForHitChoice(
       context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable, ...extraContext },
     },
   };
-  log.emit({ type: 'battle_hit_wait', regionId, power: attacker, hits: hitsRemaining });
+  log.emit({ type: 'awaiting_action', power: attacker, actionKind: 'battle_hit_assignment', context: { regionId, hitsRemaining }, description: `${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.` });
   return { state: s, log };
 }
 
@@ -782,7 +782,7 @@ function drawCardForPower(state: GameState, power: Power, log: GameLog): GameSta
   }
 
   const drawn = deckIds[0]!;
-  log.emit({ type: 'ritual_death_draw', power, cardId: drawn });
+  log.emit({ type: 'card_drawn', power, cardId: drawn, source: CARD_BY_ID['xarm_ritual_death']!.name });
   return updatePower(state, power, {
     hand: [...hand, drawn],
     deckIds: deckIds.slice(1),

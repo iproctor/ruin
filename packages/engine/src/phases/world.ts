@@ -98,14 +98,16 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
     }
 
     // Set pendingAction and wait — caller must submit a WorldChoiceAction
+    const choicePower = lowestThreatPower(s);
     s = {
       ...s,
       pendingAction: {
-        waitingFor: lowestThreatPower(s),
+        waitingFor: choicePower,
         actionKind: 'world_choice',
         context: { cardId },
       },
     };
+    log.emit({ type: 'awaiting_action', power: choicePower, actionKind: 'world_choice', context: { cardId }, description: `${choicePower} must make a world card choice.` });
     return { state: s, log };
   }
 

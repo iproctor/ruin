@@ -163,13 +163,14 @@ export function usePhaseAnimation(
       case 'battle_kill':
         setKilledIds(prev => new Set([...prev, evt.targetId]));
         break;
-      case 'battle_hit_wait': {
-        // Check if this is for a human player
-        const isHuman = myPowers.includes(evt.power);
-        if (isHuman) {
-          setWaitingForDecision(true);
-          setCursor(idx + 1);
-          return; // Don't schedule next — wait for decision
+      case 'awaiting_action': {
+        if (evt.actionKind === 'battle_hit_assignment') {
+          const isHuman = myPowers.includes(evt.power);
+          if (isHuman) {
+            setWaitingForDecision(true);
+            setCursor(idx + 1);
+            return; // Don't schedule next — wait for decision
+          }
         }
         break;
       }
@@ -367,7 +368,10 @@ export function usePhaseAnimation(
 const FAST_DELAY = 100;
 
 function isOwnEvent(event: GameEvent, myPowers: Power[]): boolean {
-  if (event.type === 'battle_roll' || event.type === 'battle_hit_wait') {
+  if (event.type === 'battle_roll') {
+    return myPowers.includes(event.power);
+  }
+  if (event.type === 'awaiting_action' && event.actionKind === 'battle_hit_assignment') {
     return myPowers.includes(event.power);
   }
   if (event.type === 'battle_kill') {
@@ -394,8 +398,8 @@ function getDelay(next: GameEvent, prev: GameEvent | null, myPowers: Power[]): n
     case 'battle_kill':
       // Longer pause after the roll before the first kill; shorter between kills.
       return prev?.type === 'battle_roll' ? BEAT_ROLL : BEAT_KILL;
-    case 'battle_hit_wait':
-      return BEAT_HIT_WAIT;
+    case 'awaiting_action':
+      return next.actionKind === 'battle_hit_assignment' ? BEAT_HIT_WAIT : 0;
     case 'domination_result':
       // Non-conquered domination (tied or no dominator) is a nothing-happened
       // beat — don't linger on it.

@@ -6,7 +6,6 @@ import { renderText } from '@ruin/engine';
 
 interface LogPanelProps {
   events: GameEvent[];
-  eventLog: string[];
   chat: ChatMessage[];
   myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
@@ -15,16 +14,14 @@ interface LogPanelProps {
 
 type FilterMode = 'all' | 'events' | 'chat';
 
-export default function LogPanel({ events, eventLog, chat, myPower, onSendChat, connected }: LogPanelProps) {
+export default function LogPanel({ events, chat, myPower, onSendChat, connected }: LogPanelProps) {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Build log entries: prefer structured events, fall back to text eventLog
-  const logEntries: Array<{ text: string; idx: number }> = events.length > 0
-    ? events.map((ev, idx) => ({ text: renderText(ev), idx }))
-    : eventLog.map((text, idx) => ({ text, idx }));
+  // Render structured events to text for display
+  const logEntries = events.map((ev, idx) => ({ text: renderText(ev), idx }));
 
   // Merge events and chat into a single timeline
   type Entry = { kind: 'event'; text: string; idx: number } | { kind: 'chat'; msg: ChatMessage };

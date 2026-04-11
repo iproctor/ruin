@@ -25,7 +25,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
         pendingAction: {
           waitingFor: event.power,
           actionKind: event.actionKind,
-          context: {},
+          context: event.context,
         },
       };
 
@@ -100,8 +100,6 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return { ...state, winners: [event.power], winCondition: 'threat_dial', phase: 'completed' };
     case 'card_drawn':
       return drawCard(state, event.power, event.cardId);
-    case 'ritual_death_draw':
-      return drawCard(state, event.power, event.cardId);
 
     // ── Reducers ──────────────────────────────────────────────────────────
     case 'forced_discard':
@@ -143,7 +141,6 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'token_supply_exhausted':
     case 'battle_region_start':
     case 'battle_roll':
-    case 'battle_hit_wait':
     case 'war_frenzy_partial':
       return state;
   }

@@ -19,9 +19,6 @@ export function maskEvent(event: GameEvent, viewerPower: Power | null): GameEven
     case 'card_drawn':
       if (!isOwn(event.power)) return { ...event, cardId: '?' };
       return event;
-    case 'ritual_death_draw':
-      if (!isOwn(event.power)) return { ...event, cardId: '?' };
-      return event;
 
     // Tenzen discard: mask which card was discarded for non-tenzen
     case 'tenzen_discard':

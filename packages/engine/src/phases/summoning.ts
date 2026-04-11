@@ -105,6 +105,7 @@ export function applySummonFigure(
           },
         },
       };
+      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion: from, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${from}?` });
       return { state: s, log };
     }
   }
@@ -184,6 +185,7 @@ export function applyPlayCard(
           context: { cardId, regionId: toRegion },
         },
       };
+      log.emit({ type: 'awaiting_action', power, actionKind: 'card_on_play_choice', context: { cardId, regionId: toRegion }, description: `${power} must choose for ${cardDef.name}.` });
       return { state: s, log };
     }
   }
