@@ -184,3 +184,35 @@ h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
   transform-origin: center;
   transform-box: fill-box;
 }
+
+@keyframes summoning-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+.summoning-card-appear {
+  animation: summoning-fade-in 1s ease-out forwards;
+}
+
+/* ── Phase banner overlay ── */
+@keyframes phase-banner-anim {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.1); }
+}
+
+.phase-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100;
+  font-size: 3rem;
+  font-weight: 900;
+  letter-spacing: 0.3em;
+  color: #e2e8f0;
+  text-shadow: 0 0 40px rgba(99, 102, 241, 0.8), 0 0 80px rgba(99, 102, 241, 0.4), 0 4px 12px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  animation: phase-banner-anim 1.5s ease-in-out forwards;
+}

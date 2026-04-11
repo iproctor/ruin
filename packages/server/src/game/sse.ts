@@ -47,13 +47,13 @@ export function broadcast(gameId: string, data: unknown): void {
 }
 
 /** Broadcast events with per-viewer masking of hidden info. */
-export function broadcastEvents(gameId: string, events: GameEvent[]): void {
+export function broadcastEvents(gameId: string, events: GameEvent[], seq?: number): void {
   const gameListeners = listeners.get(gameId);
   if (!gameListeners || gameListeners.size === 0) return;
 
   for (const l of gameListeners) {
     const masked = maskEvents(events, l.power);
-    const payload = `data: ${JSON.stringify({ type: 'events', events: masked })}\n\n`;
+    const payload = `data: ${JSON.stringify({ type: 'events', events: masked, seq })}\n\n`;
     try {
       l.res.write(payload);
     } catch {

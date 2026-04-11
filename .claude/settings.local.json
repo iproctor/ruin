@@ -68,7 +68,8 @@
       "Bash(npx vitest:*)",
       "Bash(npx --no-install vitest run packages/engine)",
       "Bash(node_modules/.bin/vitest run:*)",
-      "Bash(npx --no-install vitest run)"
+      "Bash(npx --no-install vitest run)",
+      "Bash(ls /Users/iainap/code/chaos/packages/client/src/*.css)"
     ]
   }
 }

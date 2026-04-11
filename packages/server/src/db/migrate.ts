@@ -65,6 +65,16 @@ export async function ensureSchema(): Promise<void> {
       );
 
       CREATE INDEX IF NOT EXISTS idx_chat_messages_game_id ON chat_messages(game_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS game_events (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        game_id    UUID NOT NULL REFERENCES games(id),
+        seq        INTEGER NOT NULL,
+        event      JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_game_events_game_id_seq ON game_events(game_id, seq);
     `);
 
     console.log('Database schema verified/created.');

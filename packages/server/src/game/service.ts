@@ -5,7 +5,7 @@ import { createInitialState, applyAction, applyActionForPreview, autoAdvance, ge
 import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
-import { games, gamePlayers, chatMessages } from '../db/schema.js';
+import { games, gamePlayers, chatMessages, gameEvents } from '../db/schema.js';
 import { broadcast, broadcastEvents } from './sse.js';
 
 // ---------------------------------------------------------------------------
@@ -55,15 +55,28 @@ async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
   return map;
 }
 
-async function saveGame(gameId: string, state: GameState, extraLog: string[]): Promise<void> {
-  // Append new log entries to the persisted event_log
-  const [row] = await db.select({ eventLog: games.eventLog }).from(games).where(eq(games.id, gameId)).limit(1);
-  const existing = (row?.eventLog as string[] | null) ?? [];
+// Track next event seq per game in memory (avoids a query per save)
+const eventSeqs = new Map<string, number>();
+
+async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]): Promise<void> {
+  // Insert new events
+  if (newEvents.length > 0) {
+    let seq = eventSeqs.get(gameId) ?? 0;
+    await db.insert(gameEvents).values(
+      newEvents.map((event) => ({
+        gameId,
+        seq: seq++,
+        event: event as unknown as Record<string, unknown>,
+      })),
+    );
+    eventSeqs.set(gameId, seq);
+  }
+
+  // Update game state
   await db
     .update(games)
     .set({
       state: state as unknown as Record<string, unknown>,
-      eventLog: [...existing, ...extraLog] as unknown as Record<string, unknown>,
       round: state.round,
       phase: state.phase,
       isComplete: state.winners !== null,
@@ -120,14 +133,11 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
 
     const prevRound = current.round;
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
-    await saveGame(gameId, next, log.entries);
-    if (log.events.length > 0) broadcastEvents(gameId, log.events);
-    // Sync full state at round boundaries and when a human's summoning turn starts
-    const roundChanged = next.round !== prevRound;
-    const waitingPower = next.pendingAction?.waitingFor;
-    const humanSummoningTurn = next.pendingAction?.actionKind === 'summoning_action'
-      && waitingPower != null && next.powers[waitingPower]?.playerType !== 'ai';
-    if (roundChanged || humanSummoningTurn) broadcast(gameId, { type: 'sync', state: next });
+    await saveGame(gameId, next, log.events);
+    const aiSeq = eventSeqs.get(gameId) ?? 0;
+    if (log.events.length > 0) broadcastEvents(gameId, log.events, aiSeq);
+    // Sync full state at round boundaries only
+    if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
     current = next;
   }
 
@@ -171,12 +181,24 @@ export async function createGame(
   await db.insert(games).values({
     id: gameId,
     state: state as unknown as Record<string, unknown>,
-    eventLog: log.entries as unknown as Record<string, unknown>,
     round: state.round,
     phase: state.phase,
     createdBy,
     isComplete: state.winners !== null,
   });
+
+  // Persist initial events
+  if (log.events.length > 0) {
+    let seq = 0;
+    await db.insert(gameEvents).values(
+      log.events.map((event) => ({
+        gameId,
+        seq: seq++,
+        event: event as unknown as Record<string, unknown>,
+      })),
+    );
+    eventSeqs.set(gameId, seq);
+  }
 
   for (const power of powers) {
     await db.insert(gamePlayers).values({
@@ -201,7 +223,7 @@ export async function applyPlayerAction(
   gameId: string,
   power: Power,
   action: Action,
-): Promise<GameState> {
+): Promise<{ state: GameState; seq: number }> {
   const row = await loadGameRow(gameId);
   const state = row.state as unknown as GameState;
 
@@ -210,16 +232,18 @@ export async function applyPlayerAction(
   const prevRound = state.round;
   const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
-  await saveGame(gameId, afterAction, log.entries);
-  if (log.events.length > 0) broadcastEvents(gameId, log.events);
-  // Sync on round boundary or when it's a human's summoning turn
-  const roundChanged = afterAction.round !== prevRound;
-  const wp = afterAction.pendingAction?.waitingFor;
-  const humanSummoning = afterAction.pendingAction?.actionKind === 'summoning_action'
-    && wp != null && afterAction.powers[wp]?.playerType !== 'ai';
-  if (roundChanged || humanSummoning) broadcast(gameId, { type: 'sync', state: afterAction });
+  await saveGame(gameId, afterAction, log.events);
+  const seq = eventSeqs.get(gameId) ?? 0;
+  if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
+  // Sync full state at round boundaries only
+  if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
 
-  return maybeRunAiTurns(gameId, afterAction);
+  // Fire AI turns in the background — don't block the response
+  maybeRunAiTurns(gameId, afterAction).catch(err =>
+    console.error(`[ai] background AI turns failed for ${gameId}:`, err),
+  );
+
+  return { state: afterAction, seq };
 }
 
 export async function getGameState(
@@ -232,26 +256,27 @@ export async function getGameState(
 }
 
 export async function getGameHistory(gameId: string): Promise<{
-  eventLog: string[];
-  events: unknown[];
+  events: GameEvent[];
   chat: ChatMessage[];
 }> {
-  const [row, chat] = await Promise.all([
-    loadGameRow(gameId),
-    db
-      .select()
+  const [eventRows, chat] = await Promise.all([
+    db.select({ event: gameEvents.event, seq: gameEvents.seq })
+      .from(gameEvents)
+      .where(eq(gameEvents.gameId, gameId))
+      .orderBy(asc(gameEvents.seq)),
+    db.select()
       .from(chatMessages)
       .where(eq(chatMessages.gameId, gameId))
       .orderBy(asc(chatMessages.createdAt)),
   ]);
 
-  // eventLog is currently string[] in the DB. Once migrated to GameEvent[],
-  // `events` will carry the structured form directly.
-  const rawLog = (row.eventLog as unknown[] | null) ?? [];
+  // Track seq for future saves
+  if (eventRows.length > 0) {
+    eventSeqs.set(gameId, Math.max(...eventRows.map(r => r.seq)) + 1);
+  }
 
   return {
-    eventLog: rawLog.map((e) => (typeof e === 'string' ? e : String(e))),
-    events: rawLog,
+    events: eventRows.map(r => r.event as unknown as GameEvent),
     chat: chat.map((m) => ({
       id: m.id,
       power: m.power,

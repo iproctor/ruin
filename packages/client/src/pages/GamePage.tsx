@@ -15,7 +15,7 @@ import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from 
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
-import { useSummoningAnimation } from '../hooks/useSummoningAnimation.js';
+import { useEventAnimation } from '../hooks/useEventAnimation.js';
 import { getGame, submitAction, sendChat } from '../api/client.js';
 import Board from '../components/Board.js';
 import StatusBar from '../components/StatusBar.js';
@@ -23,7 +23,6 @@ import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
 import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
-import { usePhaseAnimation } from '../hooks/usePhaseAnimation.js';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
 
@@ -126,7 +125,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, events, chat, connected } = useGameStream(gameId);
+  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -167,8 +166,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   }, [serverState, pendingAction, pendingOnPlayChoice]);
 
   // Phase animation — buffers phase events and drives battle/corruption animation
-  const anim = usePhaseAnimation(serverState, events, myPowers);
-  const summoningAnim = useSummoningAnimation(events, myPowers);
+  const anim = useEventAnimation(serverState, lastEvent, myPowers);
   // When animating, use the animation's display state; otherwise use the normal one
   const effectiveDisplay = anim.animationPhase ? anim.displayState : displayState;
 
@@ -278,22 +276,25 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     try {
       let latest = serverState!;
       if (pendingAction) {
-        latest = await submitAction(gameId, pendingAction);
+        const res = await submitAction(gameId, pendingAction);
+        latest = res.state;
+        syncAfterAction(res.state, res.seq);
         setState(latest);
         setPendingAction(null);
         setSelectedCardId(null);
       }
       if (pendingOnPlayChoice) {
-        latest = await submitAction(gameId, pendingOnPlayChoice);
+        const res = await submitAction(gameId, pendingOnPlayChoice);
+        latest = res.state;
+        syncAfterAction(res.state, res.seq);
         setState(latest);
         setPendingOnPlayChoice(null);
       }
       // Only auto-pass if the player clicked End Turn without staging any action
-      // (i.e. pure "pass" intent). After AI turns run it could be our turn again
-      // (new summoning rotation) — do NOT pass that new tick.
       if (!hadStagedAction && latest.pendingAction?.waitingFor === acting && latest.pendingAction?.actionKind === 'summoning_action') {
-        const sPass = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
-        setState(sPass);
+        const res = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
+        syncAfterAction(res.state, res.seq);
+        setState(res.state);
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
@@ -316,8 +317,9 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     setSubmitError('');
     setSubmitting(true);
     try {
-      const newState = await submitAction(gameId, action);
-      setState(newState);
+      const res = await submitAction(gameId, action);
+      syncAfterAction(res.state, res.seq);
+      setState(res.state);
       setSelectedCardId(null);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
@@ -387,7 +389,12 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
 
           {/* Board */}
-          <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+            {anim.phaseBanner && (
+              <div className="phase-banner" key={anim.phaseBanner}>
+                {anim.phaseBanner}
+              </div>
+            )}
             <Board
               state={(anim.animationPhase ? anim.displayState : displayState) ?? displayState}
               highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}
@@ -398,11 +405,11 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
               animationRegion={anim.animationPhase === 'battle' || anim.animationPhase === 'corruption' ? anim.activeRegion : null}
               animationKilledIds={anim.animationPhase ? anim.killedIds : undefined}
               hideKilled={anim.hideKilled}
-              battlePaneEvents={(anim.animationPhase === 'battle' || anim.animationPhase === 'battle_continue') ? anim.processedEvents : undefined}
+              battlePaneEvents={(anim.animationPhase === 'battle' || anim.animationPhase === 'corruption') ? anim.processedBattleEvents : undefined}
               dominationLabels={anim.animationPhase === 'corruption' ? anim.dominationLabels : undefined}
               corruptionOverrides={anim.animationPhase === 'corruption' ? anim.corruptionOverrides : undefined}
               corruptionFlies={anim.animationPhase === 'corruption' ? anim.corruptionFlies : undefined}
-              summoningAnim={summoningAnim}
+              summoningAnim={{ appearingFigures: anim.appearingFigures, movingFigures: anim.movingFigures, appearingCards: anim.appearingCards }}
             />
           </div>
 
@@ -436,22 +443,6 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             </div>
           )}
 
-          {/* During battle decisions, show action panel with server state */}
-          {anim.needsDecision && anim.decisionState && myPower && (
-            <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
-              <div style={{ background: '#16213e', border: '2px solid #7f1d1d', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
-                <ActionPanel
-                  state={anim.decisionState}
-                  myPower={myPower}
-                  selectedCardId={null}
-                  onAction={handleDirectAction}
-                  onClearCard={() => {}}
-                />
-              </div>
-            </div>
-          )}
-
-
           {/* Right: collapsible log */}
           <CollapsibleLog
             events={events}
@@ -462,26 +453,6 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           />
         </div>
 
-        {/* Tableau — hidden during animation, Continue button during battle_continue */}
-        {anim.animationPhase === 'battle_continue' && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: '#16213e', borderTop: '1px solid #3a3a6e' }}>
-            <button
-              onClick={anim.onContinue}
-              style={{
-                fontSize: '0.85rem',
-                padding: '8px 32px',
-                borderRadius: 6,
-                border: 'none',
-                background: '#7f1d1d',
-                color: '#fca5a5',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Continue to Corruption Phase
-            </button>
-          </div>
-        )}
         {!anim.animationPhase && myPower && (
           <Tableau
             state={serverState ?? displayState}

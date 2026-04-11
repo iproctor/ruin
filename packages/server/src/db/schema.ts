@@ -19,7 +19,6 @@ export const users = pgTable('users', {
 export const games = pgTable('games', {
   id: uuid('id').primaryKey().defaultRandom(),
   state: jsonb('state').notNull(),
-  eventLog: jsonb('event_log').notNull().default([]),
   round: integer('round').notNull().default(0),
   phase: text('phase').notNull().default('world'),
   createdBy: uuid('created_by')
@@ -58,6 +57,14 @@ export const invitations = pgTable('invitations', {
   power: text('power').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   accepted: boolean('accepted').notNull().default(false),
+});
+
+export const gameEvents = pgTable('game_events', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id').notNull().references(() => games.id),
+  seq: integer('seq').notNull(),         // monotonically increasing per game
+  event: jsonb('event').notNull(),       // GameEvent JSON
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const chatMessages = pgTable('chat_messages', {

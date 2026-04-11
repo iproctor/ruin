@@ -168,8 +168,13 @@ router.post('/:id/action', requireAuth, async (req, res) => {
     return;
   }
 
-  const newState = await applyPlayerAction(id, actionPower as Power, action);
-  res.json({ state: newState });
+  try {
+    const { state: newState, seq } = await applyPlayerAction(id, actionPower as Power, action);
+    res.json({ state: newState, seq });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(400).json({ error: msg });
+  }
 });
 
 // ---------------------------------------------------------------------------

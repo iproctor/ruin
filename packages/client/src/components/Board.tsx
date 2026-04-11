@@ -121,7 +121,7 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
   y: number;
   powers: GameState['powers'];
   myPower?: Power | null;
-  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
+  summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
   highlightSince: number | null;
   animationKilledIds?: Set<string>;
   hideKilled?: boolean;
@@ -198,7 +198,7 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearin
 
   return (
     <g
-      className={isAppearing ? 'summoning-appear' : undefined}
+      className={isAppearing ? 'summoning-card-appear' : undefined}
       onMouseEnter={(e) => onHover(cardId, e.clientX, e.clientY)}
       onMouseMove={(e)  => onHover(cardId, e.clientX, e.clientY)}
       onMouseLeave={()  => onHover(null, 0, 0)}
@@ -325,7 +325,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   hideKilled?: boolean;
   corruptionOverride?: Partial<Record<Power, number>>;
   myPower?: Power | null;
-  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
+  summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -645,7 +645,7 @@ interface BoardProps {
   dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
   corruptionOverrides?: Map<RegionId, Partial<Record<Power, number>>>;
   corruptionFlies?: Array<{ id: number; regionId: RegionId; power: Power; tokens: number; startedAt: number }>;
-  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
+  summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
 }
 
 export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim }: BoardProps) {

@@ -31,11 +31,11 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
 
     // ── Summoning ─────────────────────────────────────────────────────────
     case 'summon_figure':
-      return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost);
+      return advanceSummoning(moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost), event.power);
     case 'play_card':
-      return playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
+      return advanceSummoning(playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost), event.power);
     case 'summoning_pass':
-      return patchPower(state, event.power, { passedSummoning: true });
+      return advanceSummoning(patchPower(state, event.power, { passedSummoning: true }), event.power);
     case 'apprentice_choice':
       return applyApprenticeChoice(state, event);
 
@@ -546,4 +546,45 @@ function applyWorldCardEffect(
     case 'forward_scouts_empty':
       return state;
   }
+}
+
+/**
+ * After a summoning action (summon, play card, pass), advance to the next
+ * power's turn. Mirrors the logic in summoning.ts:advanceSummoningTurn.
+ */
+function advanceSummoning(state: GameState, justActed: Power): GameState {
+  if (state.phase !== 'summoning') return state;
+  const order = state.summoningOrder;
+  if (order.length === 0) return state;
+
+  // Check if all powers are done (PP=0 or passed)
+  const allDone = order.every(p => {
+    const ps = state.powers[p]!;
+    return ps.powerPoints <= 0 || ps.passedSummoning;
+  });
+  if (allDone) {
+    return { ...state, phase: 'battle', pendingAction: null, summoningIndex: 0 };
+  }
+
+  // Advance to next power with PP remaining
+  let next = (state.summoningIndex + 1) % order.length;
+  let iterations = 0;
+  while (iterations < order.length) {
+    const candidate = order[next]!;
+    const ps = state.powers[candidate]!;
+    if (ps.powerPoints > 0 && !ps.passedSummoning) break;
+    next = (next + 1) % order.length;
+    iterations++;
+  }
+
+  const nextPower = order[next]!;
+  return {
+    ...state,
+    summoningIndex: next,
+    pendingAction: {
+      waitingFor: nextPower,
+      actionKind: 'summoning_action',
+      context: {},
+    },
+  };
 }

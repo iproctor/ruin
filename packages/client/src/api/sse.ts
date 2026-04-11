@@ -13,7 +13,7 @@ export interface ChatMessage {
 export type StreamEvent =
   | { type: 'history'; state: GameState; events: GameEvent[]; chat: ChatMessage[] }
   | { type: 'sync';    state: GameState }
-  | { type: 'events';  events: GameEvent[] }
+  | { type: 'events';  events: GameEvent[]; seq?: number }
   | { type: 'chat';    message: ChatMessage }
   | { type: 'error';   message: string };
 
