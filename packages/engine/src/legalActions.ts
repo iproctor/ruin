@@ -425,12 +425,22 @@ function isCardPlayableInRegion(
 
 // ─── Tenzen discard actions ───────────────────────────────────────────────────
 
+// Cards tenzen should never discard — their defensive/utility value is too
+// high and too hard for the value head to assess at discard time.
+const TENZEN_KEEP_CARDS = new Set([
+  'tenzen_stasis_web',        // +2 cost for opponents in region
+  'tenzen_teleport',          // move enemy attacker out
+  'tenzen_changer_of_fate',   // nullify War Cry / War Frenzy
+  'tenzen_fate_shield',       // protect a figure from death
+]);
+
 function getTenzenDiscardActions(state: GameState): TenzenDiscardAction[] {
   const hand = state.powers['tenzen']!.hand;
   const actions: TenzenDiscardAction[] = [
     { kind: 'tenzen_discard', power: 'tenzen', cardId: null }, // keep hand
   ];
   for (const cardId of hand) {
+    if (TENZEN_KEEP_CARDS.has(cardId)) continue; // never discard these
     actions.push({ kind: 'tenzen_discard', power: 'tenzen', cardId });
   }
   return actions;

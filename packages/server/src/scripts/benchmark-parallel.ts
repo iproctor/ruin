@@ -56,6 +56,8 @@ interface WorkerMetrics {
     gormenPopulousDominationsPerGame: number;
     tenzenAvgCultists: number;
     tenzenCardsPlayedPerGame: number;
+    vpFromDominationPerGame?: Record<string, number>;
+    vpFromRuinationPerGame?: Record<string, number>;
   };
   vpStats?: Record<string, { mean: number; sd: number; min: number; max: number }>;
   avgVpSpread?: number;
@@ -122,6 +124,8 @@ const aggInd = {
   gormenPopulousDominations: 0,
   tenzenAvgCultists: 0,
   tenzenCardsPlayed: 0,
+  vpFromDom: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<string, number>,
+  vpFromRuin: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<string, number>,
 };
 
 // VP aggregation (weighted means, pooled variance, overall min/max).
@@ -165,6 +169,12 @@ for (const r of results) {
     aggInd.gormenPopulousDominations += r.playIndicators.gormenPopulousDominationsPerGame * r.completed;
     aggInd.tenzenAvgCultists += r.playIndicators.tenzenAvgCultists * r.completed;
     aggInd.tenzenCardsPlayed += r.playIndicators.tenzenCardsPlayedPerGame * r.completed;
+    if (r.playIndicators.vpFromDominationPerGame) {
+      for (const p of POWERS) aggInd.vpFromDom[p]! += (r.playIndicators.vpFromDominationPerGame[p] ?? 0) * r.completed;
+    }
+    if (r.playIndicators.vpFromRuinationPerGame) {
+      for (const p of POWERS) aggInd.vpFromRuin[p]! += (r.playIndicators.vpFromRuinationPerGame[p] ?? 0) * r.completed;
+    }
   }
 }
 
@@ -202,6 +212,12 @@ console.log(`  gormen   populous dominations:  ${perGame(aggInd.gormenPopulousDo
 console.log(`  tenzen   avg cultists alive:    ${perGame(aggInd.tenzenAvgCultists)}  (per round)`);
 console.log(`  tenzen   cards played:          ${perGame(aggInd.tenzenCardsPlayed)}  (per game)`);
 
+console.log(`\nVP SOURCES (per game avg):`);
+console.log(`  power     domination  ruination`);
+for (const p of POWERS) {
+  console.log(`  ${p.padEnd(8)}  ${perGame(aggInd.vpFromDom[p]!).padStart(8)}  ${perGame(aggInd.vpFromRuin[p]!).padStart(9)}`);
+}
+
 console.log(`\nVP STATS (final VP per power):`);
 for (const p of POWERS) {
   const a = vpAgg[p]!;
@@ -234,6 +250,8 @@ if (finalOut) {
       gormenPopulousDominationsPerGame: totalCompleted > 0 ? aggInd.gormenPopulousDominations / totalCompleted : 0,
       tenzenAvgCultists: totalCompleted > 0 ? aggInd.tenzenAvgCultists / totalCompleted : 0,
       tenzenCardsPlayedPerGame: totalCompleted > 0 ? aggInd.tenzenCardsPlayed / totalCompleted : 0,
+      vpFromDominationPerGame: Object.fromEntries(POWERS.map(p => [p, totalCompleted > 0 ? aggInd.vpFromDom[p]! / totalCompleted : 0])),
+      vpFromRuinationPerGame: Object.fromEntries(POWERS.map(p => [p, totalCompleted > 0 ? aggInd.vpFromRuin[p]! / totalCompleted : 0])),
     },
     vpStats: Object.fromEntries(POWERS.map(p => {
       const a = vpAgg[p]!;
