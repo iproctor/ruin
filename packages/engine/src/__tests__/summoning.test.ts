@@ -452,6 +452,48 @@ describe('Tenzen Apprentices upgrade (carry Chaos Stone)', () => {
     expect(state.regions.norrsund!.tokens.includes('chaos_stone')).toBe(false);
     expect(state.regions.talvimaa!.tokens.includes('chaos_stone')).toBe(true);
   });
+
+  test('teleporting apprentice from region with Chaos Stone carries the stone', () => {
+    let s = withUpgrade(makeState(), 'tenzen', 'tenzen_apprentices_up');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'chaos_stone');
+    s = placeCard(s, 'tenzen_teleport', 'tenzen', 'norrsund');
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'tenzen',
+        actionKind: 'card_on_play_choice',
+        context: { cardId: 'tenzen_teleport', regionId: 'norrsund' },
+      },
+    };
+    const { state } = applyCardOnPlayChoice(s, {
+      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_teleport',
+      regionId: 'norrsund', choices: { followerId: 'tenzen_cultist_1', toRegion: 'talvimaa', carry: true },
+    });
+    expect(state.regions.norrsund!.tokens.includes('chaos_stone')).toBe(false);
+    expect(state.regions.talvimaa!.tokens.includes('chaos_stone')).toBe(true);
+  });
+
+  test('teleporting apprentice without carry leaves the stone', () => {
+    let s = withUpgrade(makeState(), 'tenzen', 'tenzen_apprentices_up');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'chaos_stone');
+    s = placeCard(s, 'tenzen_teleport', 'tenzen', 'norrsund');
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'tenzen',
+        actionKind: 'card_on_play_choice',
+        context: { cardId: 'tenzen_teleport', regionId: 'norrsund' },
+      },
+    };
+    const { state } = applyCardOnPlayChoice(s, {
+      kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_teleport',
+      regionId: 'norrsund', choices: { followerId: 'tenzen_cultist_1', toRegion: 'talvimaa', carry: false },
+    });
+    expect(state.regions.norrsund!.tokens.includes('chaos_stone')).toBe(true);
+    expect(state.regions.talvimaa!.tokens.includes('chaos_stone')).toBe(false);
+  });
 });
 
 // ─── Tenzen Fractals upgrade: free Fractal on magic symbol card ───────────────

@@ -51,6 +51,7 @@ export function applyCardOnPlayChoice(
     case 'tenzen_teleport': {
       const followerId = choices['followerId'] as string;
       const toRegion = choices['toRegion'] as RegionId;
+      const carry = choices['carry'] as boolean | undefined;
       const figure = s.regions[regionId]!.placements.find(f => f.id === followerId);
       if (figure && (figure.class === 'cultist' || figure.class === 'warrior') && toRegion !== regionId) {
         s = updateRegion(s, regionId, {
@@ -64,6 +65,24 @@ export function applyCardOnPlayChoice(
           followers: s.powers[figure.power as Power]!.followers.map(f => f.id === followerId ? moved : f),
         });
         log.emit({ type: 'card_effect', subtype: 'teleport', power: figure.power as Power, followerClass: figure.class, fromRegion: regionId, toRegion });
+
+        // Tenzen Apprentice upgrade: carry chaos stone when teleporting a cultist
+        if (carry !== undefined && figure.power === 'tenzen' && figure.class === 'cultist' &&
+            s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
+            s.regions[regionId]!.tokens.includes('chaos_stone')) {
+          if (carry) {
+            const tokens = [...s.regions[regionId]!.tokens];
+            const stoneIdx = tokens.indexOf('chaos_stone');
+            if (stoneIdx !== -1) {
+              tokens.splice(stoneIdx, 1);
+              s = updateRegion(s, regionId, { tokens });
+              s = updateRegion(s, toRegion, { tokens: [...s.regions[toRegion]!.tokens, 'chaos_stone'] });
+              log.emit({ type: 'apprentice_choice', followerId, fromRegion: regionId, toRegion, carry: true });
+            }
+          } else {
+            log.emit({ type: 'apprentice_choice', followerId, fromRegion: regionId, toRegion, carry: false });
+          }
+        }
       }
       break;
     }

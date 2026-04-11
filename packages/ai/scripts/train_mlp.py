@@ -56,8 +56,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--lr", type=float, default=5e-3)
     ap.add_argument("--l2", type=float, default=1e-5)
     ap.add_argument("--val", type=float, default=0.1)
-    ap.add_argument("--hidden1", type=int, default=256)
-    ap.add_argument("--hidden2", type=int, default=64)
+    ap.add_argument("--hidden1", type=int, default=512)
+    ap.add_argument("--hidden2", type=int, default=128)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--policy-alpha", type=float, default=1.0,
                     help="Weight on policy loss (relative to value loss).")
@@ -318,7 +318,7 @@ def main() -> int:
     inv_freq = 1.0 / (4.0 * class_freq)
     # Extra boost for tenzen (index 2) — its indirect strategy needs more
     # gradient signal to learn. 3× on top of the inverse-frequency weight.
-    TENZEN_BOOST = 3.0
+    TENZEN_BOOST = 5.0
     inv_freq[2] *= TENZEN_BOOST
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)

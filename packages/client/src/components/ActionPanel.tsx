@@ -963,11 +963,19 @@ function PhaseShiftPanel({
 }) {
   const [chosenFig, setChosenFig] = useState<string | null>(null);
   const [chosenRegion, setChosenRegion] = useState<RegionId | null>(null);
+  const [carry, setCarry] = useState(false);
 
   const moveable = (state.regions[regionId]?.placements ?? []).filter(
     f => f.class === 'cultist' || f.class === 'warrior'
   );
   const validDests = ALL_REGIONS.filter(r => r !== regionId);
+
+  // Show carry option when teleporting a tenzen cultist from a chaos-stone region with apprentices
+  const selectedFig = chosenFig ? moveable.find(f => f.id === chosenFig) : null;
+  const canCarry = selectedFig !== null && selectedFig !== undefined &&
+    selectedFig.power === 'tenzen' && selectedFig.class === 'cultist' &&
+    state.powers['tenzen']?.upgradesInPlay.includes('tenzen_apprentices_up') &&
+    state.regions[regionId]!.tokens.includes('chaos_stone');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -976,7 +984,7 @@ function PhaseShiftPanel({
         {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible figures.</span>}
         {moveable.map(f => (
           <button key={f.id} className={chosenFig === f.id ? 'primary' : 'secondary'}
-            onClick={() => { setChosenFig(f.id); setChosenRegion(null); }}
+            onClick={() => { setChosenFig(f.id); setChosenRegion(null); setCarry(false); }}
             style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
           >
             {POWER_LABELS_LOCAL[f.power] ?? f.power} {formatId(f.class)}
@@ -994,9 +1002,15 @@ function PhaseShiftPanel({
               >{REGION_LABELS[r]}</button>
             ))}
           </div>
+          {canCarry && (
+            <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={carry} onChange={e => setCarry(e.target.checked)} />
+              Carry Chaos Stone
+            </label>
+          )}
           {chosenRegion && (
             <button className="primary"
-              onClick={() => onSubmit({ followerId: chosenFig, toRegion: chosenRegion })}
+              onClick={() => onSubmit({ followerId: chosenFig, toRegion: chosenRegion, ...(canCarry ? { carry } : {}) })}
               style={{ fontSize: '0.8rem' }}
             >
               Move → {REGION_LABELS[chosenRegion]}
