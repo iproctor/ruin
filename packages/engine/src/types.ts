@@ -217,7 +217,7 @@ export type GameEvent =
 
   // ── Summoning ────────────────────────────────────────────────────────────────
   | { type: 'summon_figure'; power: Power; followerId: string; followerClass: FollowerClass; toRegion: RegionId; fromRegion: RegionId | null; cost: number }
-  | { type: 'play_card'; power: Power; cardId: string; cardName: string; toRegion: RegionId; cost: number }
+  | { type: 'play_card'; power: Power; cardId: string; cardName: string; toRegion: RegionId; slotIndex: 0 | 1; cost: number }
   | { type: 'summoning_pass'; power: Power }
   | { type: 'apprentice_choice'; followerId: string; fromRegion: RegionId; toRegion: RegionId; carry: boolean }
   | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }

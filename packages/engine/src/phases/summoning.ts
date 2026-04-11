@@ -170,7 +170,7 @@ export function applyPlayCard(
     }
   }
 
-  log.emit({ type: 'play_card', power, cardId, cardName: cardDef.name, toRegion, cost });
+  log.emit({ type: 'play_card', power, cardId, cardName: cardDef.name, toRegion, slotIndex, cost });
 
   // Cards that require a follow-up choice pause summoning turn advancement
   if (needsOnPlayChoice(cardId)) {

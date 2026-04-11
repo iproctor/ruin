@@ -19,6 +19,8 @@ export type { GameConfig } from './setup.js';
 
 export { applyAction, applyActionForPreview, autoAdvance } from './reducers.js';
 export type { ApplyResult } from './reducers.js';
+export { applyEvent } from './applyEvent.js';
+export { maskEvent, maskEvents } from './maskEvent.js';
 export { GameLog, renderText } from './gameLog.js';
 
 export { getLegalActions } from './legalActions.js';
