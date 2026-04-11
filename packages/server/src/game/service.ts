@@ -118,11 +118,15 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
       action = fallback;
     }
 
+    const prevRound = current.round;
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
     await saveGame(gameId, next, log.entries);
     broadcast(gameId, { type: 'state', state: next });
     if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
     if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
+    // New structured event broadcasts
+    if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
+    if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
     current = next;
   }
 
@@ -202,12 +206,16 @@ export async function applyPlayerAction(
 
   if (state.winners !== null) throw new Error('Game is already complete');
 
+  const prevRound = state.round;
   const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
   await saveGame(gameId, afterAction, log.entries);
   broadcast(gameId, { type: 'state', state: afterAction });
   if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
   if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
+  // New structured event broadcasts
+  if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
+  if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
 
   return maybeRunAiTurns(gameId, afterAction);
 }
@@ -223,6 +231,7 @@ export async function getGameState(
 
 export async function getGameHistory(gameId: string): Promise<{
   eventLog: string[];
+  events: unknown[];
   chat: ChatMessage[];
 }> {
   const [row, chat] = await Promise.all([
@@ -234,8 +243,13 @@ export async function getGameHistory(gameId: string): Promise<{
       .orderBy(asc(chatMessages.createdAt)),
   ]);
 
+  // eventLog is currently string[] in the DB. Once migrated to GameEvent[],
+  // `events` will carry the structured form directly.
+  const rawLog = (row.eventLog as unknown[] | null) ?? [];
+
   return {
-    eventLog: (row.eventLog as string[] | null) ?? [],
+    eventLog: rawLog.map((e) => (typeof e === 'string' ? e : String(e))),
+    events: rawLog,
     chat: chat.map((m) => ({
       id: m.id,
       power: m.power,

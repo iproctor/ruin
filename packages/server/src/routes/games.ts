@@ -224,6 +224,7 @@ router.get('/:id/stream', optionalAuth, (req, res) => {
         type: 'history',
         state,
         eventLog: history.eventLog,
+        events: history.events,
         chat: history.chat,
       })}\n\n`);
     })

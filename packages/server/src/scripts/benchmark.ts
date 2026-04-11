@@ -16,7 +16,7 @@ import {
   createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
-import type { Power, Action } from '@ruin/engine';
+import type { Power, Action, GameEvent } from '@ruin/engine';
 import { loadLearnedModelIfPresent } from './load-model.js';
 import * as fs from 'node:fs';
 
@@ -119,77 +119,45 @@ function captureErr(err: unknown): { message: string; stack: string | null } {
   return { message: String(err), stack: null };
 }
 
-// Matches log lines like "norrsund: gormen earns a dial advancement counter."
-const DAC_LOG_RE = /(xarm|gormen|tenzen|lasha) earns? a dial advancement counter/i;
-// Hidden Influence: "Hidden Influence: noble moved from X to Y"
-const NOBLE_MOVE_RE = /Hidden Influence:\s*noble moved/i;
-// Ruination scoring lines: "<region>: Ruination scoring — lasha scores N VP (..."
-//   (single winner) "Ruination scoring — lasha scores 10 VP (first)"
-//   (tied)          "Ruination scoring — gormen/lasha each score 5 VP (..."
-const RUIN_SCORE_LASHA_RE = /Ruination scoring.*lasha/i;
-// Domination: "<region>: gormen dominates (X vs resistance Y) — scores Z VP."
-const DOMINATION_RE = /^(\w+):\s*(xarm|gormen|tenzen|lasha)\s+dominates.*scores (\d+) VP/i;
-// Ruination instant VP: "<region>: RUINED (card N). Ruiners score M VP each."
-const RUIN_INSTANT_RE = /RUINED.*Ruiners score (\d+) VP/i;
-// Ruination end-phase scoring: "Ruination scoring — xarm scores 11 VP (first)."
-// or tied: "Ruination scoring — gormen/lasha each score 5 VP"
-const RUIN_SCORING_RE = /Ruination scoring.*?(xarm|gormen|tenzen|lasha)(?:\/(\w+))?\s+(?:each )?scores? (\d+) VP/i;
-
 function scanLogForDac(
-  log: string[],
+  events: GameEvent[],
   round: number,
   dacByRound: Record<number, Partial<Record<Power, boolean>>>,
 ): void {
-  for (const line of log) {
-    const m = line.match(DAC_LOG_RE);
-    if (m) {
-      const p = m[1]!.toLowerCase() as Power;
+  for (const event of events) {
+    if (event.type === 'dial_counter') {
       if (!dacByRound[round]) dacByRound[round] = {};
-      dacByRound[round]![p] = true;
+      dacByRound[round]![event.power] = true;
     }
   }
 }
 
-function scanLogForIndicators(log: string[], indicators: PlayIndicators): void {
-  for (const line of log) {
-    if (NOBLE_MOVE_RE.test(line)) {
+function scanLogForIndicators(events: GameEvent[], indicators: PlayIndicators): void {
+  for (const event of events) {
+    // Noble moves via Hidden Influence
+    if (event.type === 'card_effect' && event.subtype === 'hidden_influence' && event.tokenType === 'noble') {
       indicators.lashaNobleMoves++;
       continue;
     }
-    if (RUIN_SCORE_LASHA_RE.test(line)) {
+    // Ruination scoring — lasha involvement
+    if (event.type === 'ruination_scoring' && (event.first.includes('lasha') || event.second.includes('lasha'))) {
       indicators.lashaRuinScores++;
-      continue;
     }
-    const dom = line.match(DOMINATION_RE);
-    if (dom) {
-      const region = dom[1]!.toLowerCase();
-      const power = dom[2]!.toLowerCase() as Power;
-      const vp = parseInt(dom[3]!, 10);
-      if (power === 'gormen' && POPULOUS_REGIONS.has(region)) {
+    // Domination results
+    if (event.type === 'domination_result' && event.conquered && event.power !== null) {
+      indicators.vpFromDomination[event.power] += event.vp;
+      if (event.power === 'gormen' && POPULOUS_REGIONS.has(event.regionId)) {
         indicators.gormenPopulousDominations++;
       }
-      indicators.vpFromDomination[power] += vp;
       continue;
     }
-    // Ruination instant VP (awarded to all powers who placed corruption)
-    const ruinInst = line.match(RUIN_INSTANT_RE);
-    if (ruinInst) {
-      // "Ruiners score N VP each" — we don't know WHO from this line alone.
-      // The individual corruption-placement lines precede it, but tracking
-      // per-power from those is complex. Skip instant ruin VP for now;
-      // the end-phase scoring line (below) captures the main ruin VP.
-      continue;
-    }
-    // Ruination end-phase scoring
-    const ruinScore = line.match(RUIN_SCORING_RE);
-    if (ruinScore) {
-      const power1 = ruinScore[1]!.toLowerCase() as Power;
-      const vp = parseInt(ruinScore[3]!, 10);
-      indicators.vpFromRuination[power1] += vp;
-      // Handle tied format: "gormen/lasha each score 5 VP"
-      if (ruinScore[2]) {
-        const power2 = ruinScore[2].toLowerCase() as Power;
-        indicators.vpFromRuination[power2] += vp;
+    // Ruination end-phase scoring — VP attribution
+    if (event.type === 'ruination_scoring') {
+      for (const p of event.first) {
+        indicators.vpFromRuination[p] += event.firstVP;
+      }
+      for (const p of event.second) {
+        indicators.vpFromRuination[p] += event.secondVP;
       }
       continue;
     }
@@ -211,8 +179,8 @@ function runGame(seed: number): GameResult {
   });
 
   // Scan initial setup log too
-  scanLogForDac(initialLog.entries, state.round, dacByRound);
-  scanLogForIndicators(initialLog.entries, indicators);
+  scanLogForDac(initialLog.events, state.round, dacByRound);
+  scanLogForIndicators(initialLog.events, indicators);
 
   // Sample tenzen cultist count at game start
   const sampleTenzen = (): void => {
@@ -327,8 +295,8 @@ function runGame(seed: number): GameResult {
     try {
       const result = applyAction(state, action);
       const prevRound = state.round;
-      scanLogForDac(result.log.entries, state.round, dacByRound);
-      scanLogForIndicators(result.log.entries, indicators);
+      scanLogForDac(result.log.events, state.round, dacByRound);
+      scanLogForIndicators(result.log.events, indicators);
       state = result.state;
       // Sample tenzen cultists on every round transition (post-end-phase
       // snapshot of the durable cultist count).
