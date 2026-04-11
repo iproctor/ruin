@@ -82,6 +82,15 @@ export function applySummonFigure(
     log.emit({ type: 'card_effect', subtype: 'plaguefather_corruption', power, regionId: toRegion, tokens: 2 });
   }
 
+  // Reject carry: true if conditions aren't met
+  if (action.carry === true) {
+    const canCarry = power === 'tenzen' && follower.class === 'cultist' &&
+      s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
+      follower.regionId !== null &&
+      s.regions[follower.regionId]!.tokens.includes('chaos_stone');
+    if (!canCarry) throw new Error('Cannot carry: no chaos stone in source region or conditions not met');
+  }
+
   // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board.
   // If `carry` is provided in the action, apply it inline. If not (legacy/AI
   // without the field), fall back to pausing with a pending action.
