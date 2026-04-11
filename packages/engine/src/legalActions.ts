@@ -461,11 +461,9 @@ function getCorruptionHarvestActions(
     return ctrl !== 'gormen' && (f.class === 'cultist' || f.class === 'warrior');
   });
 
-  // Generate all subsets of size up to maxKills — simplified: return max kill action only
-  // Full enumeration of subsets is expensive; for AI the full list is needed
-  // For UI, the client will present choices; here we just return the max option
-  const chosen = targets.slice(0, maxKills).map(f => f.id);
-  if (chosen.length === 0) {
+  // Must kill exactly min(maxKills, targets). Only choice is WHICH targets.
+  const killCount = Math.min(maxKills, targets.length);
+  if (killCount === 0) {
     return [{
       kind: 'corruption_harvest_choice',
       power: 'gormen',
@@ -474,12 +472,35 @@ function getCorruptionHarvestActions(
     }];
   }
 
-  return [{
-    kind: 'corruption_harvest_choice',
-    power: 'gormen',
-    regionId,
-    followerIds: chosen,
-  }];
+  // If killCount === targets.length, no choice — must kill all
+  if (killCount >= targets.length) {
+    return [{
+      kind: 'corruption_harvest_choice',
+      power: 'gormen',
+      regionId,
+      followerIds: targets.map(f => f.id),
+    }];
+  }
+
+  // Generate all C(targets, killCount) combinations
+  const actions: import('./types.js').CorruptionHarvestChoiceAction[] = [];
+  function combo(start: number, chosen: string[]) {
+    if (chosen.length === killCount) {
+      actions.push({
+        kind: 'corruption_harvest_choice',
+        power: 'gormen',
+        regionId,
+        followerIds: [...chosen],
+      });
+      return;
+    }
+    for (let i = start; i < targets.length; i++) {
+      combo(i + 1, [...chosen, targets[i]!.id]);
+    }
+  }
+  combo(0, []);
+
+  return actions;
 }
 
 // ─── Card on-play choice actions ──────────────────────────────────────────────

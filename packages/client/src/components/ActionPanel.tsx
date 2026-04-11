@@ -541,14 +541,18 @@ function CorruptionHarvestPanel({
   onAction: (action: Action) => void;
 }) {
   const regionId = (context['regionId'] as RegionId | undefined);
-  const required = (context['count'] as number | undefined) ?? 1;
+  const maxKills = (context['maxKills'] as number | undefined) ?? 1;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   if (!regionId) return <p style={{ color: '#f87171' }}>Missing region in context.</p>;
   const safeRegionId: RegionId = regionId;
 
   const region = state.regions[safeRegionId];
-  const enemyFigures = (region?.placements ?? []).filter((f) => f.power !== myPower);
+  const enemyFigures = (region?.placements ?? []).filter(
+    (f) => (f.controlledBy ?? f.power) !== myPower && (f.class === 'cultist' || f.class === 'warrior') && !f.tipped,
+  );
+  // Must kill exactly this many
+  const required = Math.min(maxKills, enemyFigures.length);
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -1354,7 +1358,7 @@ function DialRemoveCorruptionPanel({
         {candidates.map(({ regionId, targetPower, count }) => (
           <button
             key={`${regionId}-${targetPower}`}
-            className={targetPower === myPower ? 'secondary' : 'danger'}
+            className="secondary"
             onClick={() => onAction({ kind: 'dial_remove_corruption', power: myPower, regionId, targetPower })}
             style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
           >

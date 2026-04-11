@@ -6,12 +6,15 @@ import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionRe
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
+import BattlePane from './BattlePane.js';
 import type { DragItem } from '../types/drag.js';
 
 // ── Region layout ─────────────────────────────────────────────────────────────
 
 // SVG viewBox: 800 × 615
-const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: number; label: string }> = {
+export const BOARD_VIEWBOX_W = 800;
+export const BOARD_VIEWBOX_H = 615;
+export const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: number; label: string }> = {
   norrsund:    { x: 20,  y: 20,  w: 170, h: 120, label: 'Norrsund' },
   talvimaa:    { x: 230, y: 20,  w: 170, h: 120, label: 'Talvimaa' },
   volensk:     { x: 440, y: 20,  w: 170, h: 120, label: 'Volensk' },
@@ -61,41 +64,83 @@ function CultistShape({ cx, cy, fill, opacity, stroke, strokeWidth }: {
   return <rect x={cx - 3} y={cy - 7} width={6} height={14} fill={fill} opacity={opacity ?? 1} stroke={stroke ?? 'none'} strokeWidth={strokeWidth ?? 0} rx={1} />;
 }
 
+// ── Figure layout (shared by FigureCluster and corruption fly animations) ────
+
+const FIGURE_POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
+const FIGURE_RANK_ORDER: Record<string, number> = { incarnation: 0, warrior: 1, cultist: 2 };
+export const FIGURE_COLS = 10;
+export const FIGURE_STEP = 15;
+export const FIGURE_MAX = 20;
+/** Offset from the figure cluster's base (x, y) to the center of the first shape. */
+export const FIGURE_CENTER_OFFSET = 8;
+
+export interface FigurePosition {
+  figure: FollowerInstance;
+  index: number;
+  cx: number;
+  cy: number;
+}
+
+/**
+ * Sort figures (power order, then class rank) and compute on-screen positions
+ * within a cluster whose top-left corner is at (baseX, baseY). Only the first
+ * FIGURE_MAX figures get positions — the rest overflow.
+ */
+export function layoutFigureCluster(
+  figures: FollowerInstance[],
+  baseX: number,
+  baseY: number,
+): FigurePosition[] {
+  const sorted = [...figures].sort((a, b) => {
+    const pa = FIGURE_POWER_ORDER[a.power] ?? 99;
+    const pb = FIGURE_POWER_ORDER[b.power] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return (FIGURE_RANK_ORDER[a.class] ?? 0) - (FIGURE_RANK_ORDER[b.class] ?? 0);
+  });
+  const positions: FigurePosition[] = [];
+  const limit = Math.min(sorted.length, FIGURE_MAX);
+  for (let i = 0; i < limit; i++) {
+    const figure = sorted[i]!;
+    const col = i % FIGURE_COLS;
+    const row = Math.floor(i / FIGURE_COLS);
+    positions.push({
+      figure,
+      index: i,
+      cx: baseX + col * FIGURE_STEP + FIGURE_CENTER_OFFSET,
+      cy: baseY + row * FIGURE_STEP + FIGURE_CENTER_OFFSET,
+    });
+  }
+  return positions;
+}
+
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
-function FigureCluster({ figures, x, y, powers, highlightSince }: {
+function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledIds, hideKilled, myPower }: {
   figures: FollowerInstance[];
   x: number;
   y: number;
   powers: GameState['powers'];
+  myPower?: Power | null;
   highlightSince: number | null;
+  animationKilledIds?: Set<string>;
+  hideKilled?: boolean;
 }) {
   const [hovered, setHovered] = useState<{ fig: FollowerInstance; mx: number; my: number } | null>(null);
-  const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
-  const RANK_ORDER = { incarnation: 0, warrior: 1, cultist: 2 };
-  const sorted = [...figures].sort((a, b) => {
-    const pa = POWER_ORDER[a.power] ?? 99;
-    const pb = POWER_ORDER[b.power] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return RANK_ORDER[a.class] - RANK_ORDER[b.class];
-  });
-  const COLS = 10;
-  const STEP = 15;
-  const MAX = 20;
-  const visible = sorted.slice(0, MAX);
-  const overflow = sorted.length - MAX;
+  const filteredFigures = hideKilled && animationKilledIds
+    ? figures.filter(f => !animationKilledIds.has(f.id))
+    : figures;
+  const positions = layoutFigureCluster(filteredFigures, x, y);
+  const overflow = filteredFigures.length - positions.length;
 
   return (
     <g>
-      {visible.map((fig, i) => {
-        const col = i % COLS;
-        const row = Math.floor(i / COLS);
-        const fx = x + col * STEP + 8;
-        const fy = y + row * STEP + 8;
+      {positions.map(({ figure: fig, cx: fx, cy: fy }) => {
         const color = POWER_COLORS[fig.controlledBy ?? fig.power];
-        const op = fig.tipped ? 0.35 : 0.9;
-        const isNew = highlightSince !== null && fig.placedAt > highlightSince;
-        const glowStroke = fig.protected ? '#facc15' : undefined;
+        const isAnimKilled = animationKilledIds?.has(fig.id) ?? false;
+        const op = (fig.tipped || isAnimKilled) ? 0.3 : 0.9;
+        const isNew = highlightSince !== null && fig.placedAt > highlightSince
+          && (fig.controlledBy ?? fig.power) !== myPower;
+        const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : undefined;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
         return (
           <g
@@ -113,7 +158,7 @@ function FigureCluster({ figures, x, y, powers, highlightSince }: {
         );
       })}
       {overflow > 0 && (
-        <text x={x + COLS * STEP + 2} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
+        <text x={x + FIGURE_COLS * FIGURE_STEP + 2} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
       )}
       {hovered && (
         <FollowerTooltip
@@ -258,7 +303,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -268,6 +313,11 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   onCardHover: (id: string | null, x: number, y: number) => void;
   onTokenHover: (token: TokenType | null, x: number, y: number) => void;
   highlightSince: number | null;
+  isAnimationTarget: boolean;
+  animationKilledIds?: Set<string>;
+  hideKilled?: boolean;
+  corruptionOverride?: Partial<Record<Power, number>>;
+  myPower?: Power | null;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -283,7 +333,18 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   const tokenCounts = new Map<TokenType, number>();
   for (const t of region.tokens) tokenCounts.set(t, (tokenCounts.get(t) ?? 0) + 1);
 
-  const corruptionEntries = (Object.entries(region.corruptionTokens) as [Power, number][]).filter(([, n]) => n > 0);
+  // Corruption display: if an override is provided (during animation), use
+  // it to compute displayed counts relative to the snapshot's base tokens.
+  const baseCorruption = region.corruptionTokens;
+  const displayCorruption = corruptionOverride
+    ? {
+        xarm:   baseCorruption.xarm   + (corruptionOverride.xarm   ?? 0),
+        gormen: baseCorruption.gormen + (corruptionOverride.gormen ?? 0),
+        tenzen: baseCorruption.tenzen + (corruptionOverride.tenzen ?? 0),
+        lasha:  baseCorruption.lasha  + (corruptionOverride.lasha  ?? 0),
+      }
+    : baseCorruption;
+  const corruptionEntries = (Object.entries(displayCorruption) as [Power, number][]).filter(([, n]) => n > 0);
 
   const { x, y, w, h } = pos;
   const cardSlotH = 26;
@@ -311,8 +372,13 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       {/* Background */}
       <rect x={x} y={y} width={w} height={h} rx={6}
         fill={isRuined ? '#1a0808' : '#1e1e3a'}
-        stroke={isHighlighted ? '#facc15' : isRuined ? '#7f1d1d' : '#3a3a6e'}
-        strokeWidth={isHighlighted ? 2.5 : 1}
+        stroke={
+          isAnimationTarget ? '#ef4444' :
+          isHighlighted ? '#facc15' :
+          isRuined ? '#7f1d1d' : '#3a3a6e'
+        }
+        strokeWidth={isAnimationTarget ? 3 : isHighlighted ? 2.5 : 1}
+        style={isAnimationTarget ? { filter: 'drop-shadow(0 0 8px #ef4444)' } : undefined}
       />
 
       {/* Name */}
@@ -406,7 +472,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} />
+        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} />
       )}
 
       {/* Card slots — hidden when region is ruined */}
@@ -418,7 +484,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
               {card ? (
                 <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending}
-                  isNew={highlightSince !== null && card.placedAt > highlightSince} />
+                  isNew={highlightSince !== null && card.placedAt > highlightSince && card.playedBy !== myPower} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
                   fill="none" stroke="#2a2a4e" strokeWidth={0.75} strokeDasharray="3 2" />
@@ -563,12 +629,39 @@ interface BoardProps {
   pendingAction?: Action | null;
   onRegionClick?: (regionId: RegionId) => void;
   myPower?: Power | null;
+  animationRegion?: RegionId | null;
+  animationKilledIds?: Set<string>;
+  hideKilled?: boolean;
+  battlePaneEvents?: import('@ruin/engine').PhaseEvent[];
+  dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
+  corruptionOverrides?: Map<RegionId, Partial<Record<Power, number>>>;
+  corruptionFlies?: Array<{ id: number; regionId: RegionId; power: Power; tokens: number; startedAt: number }>;
 }
 
-export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower }: BoardProps) {
+export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [regionTooltip, setRegionTooltip] = useState<{ regionId: RegionId; x: number; y: number } | null>(null);
   const [tokenTooltip, setTokenTooltip] = useState<{ token: TokenType; x: number; y: number } | null>(null);
+  const [hoveredBattleRegion, setHoveredBattleRegion] = useState<RegionId | null>(null);
+
+  // Build the set of regions that had battles (from battlePaneEvents)
+  const regionsWithBattles = new Set<RegionId>();
+  if (battlePaneEvents) {
+    for (const ev of battlePaneEvents) {
+      if (ev.type === 'battle_region_start') {
+        regionsWithBattles.add(ev.regionId);
+      }
+    }
+  }
+
+  // Decide which region's battle pane to show:
+  // - Other tooltips (card, region info, token) take priority — hide pane
+  // - Otherwise: active animation region, or hovered region (if it had a battle)
+  const hasOtherTooltip = tooltip !== null || regionTooltip !== null || tokenTooltip !== null;
+  const displayedBattleRegion: RegionId | null = hasOtherTooltip
+    ? null
+    : animationRegion ??
+      (hoveredBattleRegion && regionsWithBattles.has(hoveredBattleRegion) ? hoveredBattleRegion : null);
   const handleTokenHover = useCallback((token: TokenType | null, x: number, y: number) => {
     setTokenTooltip(token ? { token, x, y } : null);
   }, []);
@@ -587,7 +680,8 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
     };
   }
 
-  // During summoning phase, highlight figures/cards placed since the acting power's last turn
+  // During summoning phase, highlight figures/cards placed since the acting power's last turn.
+  // The human player's own power is excluded from the glow so their own placements don't flash.
   const actingPower = state.pendingAction?.waitingFor ?? null;
   const highlightSince = (state.phase === 'summoning' && actingPower)
     ? state.powers[actingPower]?.lastSummonTurnAt ?? null
@@ -645,6 +739,11 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               onCardHover={handleCardHover}
               onTokenHover={handleTokenHover}
               highlightSince={highlightSince}
+              isAnimationTarget={animationRegion === regionId}
+              animationKilledIds={animationKilledIds}
+              hideKilled={hideKilled}
+              corruptionOverride={corruptionOverrides?.get(regionId)}
+              myPower={myPower}
             />
           ),
         )}
@@ -703,26 +802,43 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         </div>
       )}
 
-      {/* Region info hover triggers (top ~30px of each region: title + stats) */}
+      {/* Region info hover triggers (top ~30px for info tooltip, full region for battle pane) */}
       {!isDragging && (
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).map(
             ([regionId, pos]) => (
-              <div
-                key={regionId}
-                onMouseEnter={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
-                onMouseMove={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
-                onMouseLeave={() => setRegionTooltip(null)}
-                style={{
-                  position: 'absolute',
-                  left:   `${(pos.x / 800) * 100}%`,
-                  top:    `${(pos.y / 615) * 100}%`,
-                  width:  `${(pos.w / 800) * 100}%`,
-                  height: `${(30 / 615) * 100}%`,
-                  pointerEvents: 'auto',
-                  cursor: 'help',
-                }}
-              />
+              <div key={regionId}>
+                {/* Info tooltip trigger — top strip only */}
+                <div
+                  onMouseEnter={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
+                  onMouseMove={(e) => setRegionTooltip({ regionId, x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setRegionTooltip(null)}
+                  style={{
+                    position: 'absolute',
+                    left:   `${(pos.x / 800) * 100}%`,
+                    top:    `${(pos.y / 615) * 100}%`,
+                    width:  `${(pos.w / 800) * 100}%`,
+                    height: `${(30 / 615) * 100}%`,
+                    pointerEvents: 'auto',
+                    cursor: 'help',
+                  }}
+                />
+                {/* Battle pane trigger — full region, only when there are battle events */}
+                {battlePaneEvents && regionsWithBattles.has(regionId) && (
+                  <div
+                    onMouseEnter={() => setHoveredBattleRegion(regionId)}
+                    onMouseLeave={() => setHoveredBattleRegion(null)}
+                    style={{
+                      position: 'absolute',
+                      left:   `${(pos.x / 800) * 100}%`,
+                      top:    `${(pos.y / 615) * 100}%`,
+                      width:  `${(pos.w / 800) * 100}%`,
+                      height: `${(pos.h / 615) * 100}%`,
+                      pointerEvents: 'auto',
+                    }}
+                  />
+                )}
+              </div>
             ),
           )}
         </div>
@@ -735,6 +851,123 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
       {tokenTooltip && (
         <TokenTooltip token={tokenTooltip.token} x={tokenTooltip.x} y={tokenTooltip.y} />
       )}
+
+      {/* Battle pane overlay — positioned next to the active or hovered region */}
+      {displayedBattleRegion && battlePaneEvents && (() => {
+        const pos = REGION_POSITIONS[displayedBattleRegion];
+        if (!pos) return null;
+        // Center of the region in SVG coords
+        const cx = pos.x + pos.w / 2;
+        const cy = pos.y + pos.h / 2;
+        // Convert to container percentage
+        const leftPct = (cx / BOARD_VIEWBOX_W) * 100;
+        const topPct = (cy / BOARD_VIEWBOX_H) * 100;
+        // Place pane to the right of region center if region is left half, else to the left
+        const placeRight = cx < BOARD_VIEWBOX_W / 2;
+        return (
+          <div style={{
+            position: 'absolute',
+            left: placeRight ? `${leftPct + (pos.w / BOARD_VIEWBOX_W) * 50}%` : 'auto',
+            right: placeRight ? 'auto' : `${100 - leftPct + (pos.w / BOARD_VIEWBOX_W) * 50}%`,
+            top: `${topPct}%`,
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            zIndex: 50,
+          }}>
+            <BattlePane regionId={displayedBattleRegion} events={battlePaneEvents} />
+          </div>
+        );
+      })()}
+
+      {/* Domination labels — absolute-positioned above each dominated region */}
+      {dominationLabels && [...dominationLabels.entries()].map(([regionId, label]) => {
+        const pos = REGION_POSITIONS[regionId];
+        if (!pos) return null;
+        const leftPct = ((pos.x + pos.w / 2) / BOARD_VIEWBOX_W) * 100;
+        const topPct = (pos.y / BOARD_VIEWBOX_H) * 100;
+        return (
+          <div key={`dom-${regionId}`} style={{
+            position: 'absolute',
+            left: `${leftPct}%`,
+            top: `${topPct}%`,
+            transform: 'translate(-50%, -100%)',
+            pointerEvents: 'none',
+            zIndex: 60,
+            whiteSpace: 'nowrap',
+            padding: '3px 8px',
+            borderRadius: 4,
+            background: '#0d0d1fee',
+            border: `1.5px solid ${POWER_COLORS[label.power]}`,
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            color: '#e5e7eb',
+            boxShadow: `0 0 8px ${POWER_COLORS[label.power]}66`,
+          }}>
+            Domination: <span style={{ color: POWER_COLORS[label.power] }}>{label.power[0]!.toUpperCase() + label.power.slice(1)}</span> <span style={{ color: '#fbbf24' }}>+{label.vp} VP</span>
+          </div>
+        );
+      })}
+
+      {/* Corruption token fly animations — originate from each cultist of the
+          placing power in the region. All circles for one event fire at once. */}
+      {corruptionFlies && corruptionFlies.flatMap(fly => {
+        const region = state.regions[fly.regionId];
+        const pos = REGION_POSITIONS[fly.regionId];
+        if (!region || !pos) return [];
+
+        const positions = layoutFigureCluster(region.placements, pos.x + 4, pos.y + 46);
+        const cultistPositions = positions
+          .filter(({ figure: f }) => (f.controlledBy ?? f.power) === fly.power && f.class === 'cultist')
+          .map(({ cx, cy }) => ({ x: cx, y: cy }));
+
+        // End point: center of corruption counter circles (right side of region)
+        const endSvgX = pos.x + pos.w - 12;
+        const endSvgY = pos.y + 36;
+        const endLeft = (endSvgX / BOARD_VIEWBOX_W) * 100;
+        const endTop  = (endSvgY / BOARD_VIEWBOX_H) * 100;
+
+        // One circle per token, sourcing from cultists (repeat if more tokens than cultists)
+        const circles = [];
+        const source = cultistPositions.length > 0
+          ? cultistPositions
+          : [{ x: pos.x + 20, y: pos.y + 60 }]; // fallback if no cultists
+
+        for (let i = 0; i < fly.tokens; i++) {
+          const start = source[i % source.length]!;
+          const startLeft = (start.x / BOARD_VIEWBOX_W) * 100;
+          const startTop  = (start.y / BOARD_VIEWBOX_H) * 100;
+          const key = `fly-${fly.id}-${i}`;
+          const animName = `corr-fly-${fly.id}-${i}`;
+          circles.push(
+            <div
+              key={key}
+              style={{
+                position: 'absolute',
+                left: `${startLeft}%`,
+                top: `${startTop}%`,
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: POWER_COLORS[fly.power],
+                boxShadow: `0 0 8px ${POWER_COLORS[fly.power]}`,
+                transform: 'translate(-50%, -50%)',
+                pointerEvents: 'none',
+                zIndex: 70,
+                animation: `${animName} 2750ms ease-in forwards`,
+              }}
+            >
+              <style>{`
+                @keyframes ${animName} {
+                  0%   { left: ${startLeft}%; top: ${startTop}%; opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                  85%  { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+                  100% { left: ${endLeft}%; top: ${endTop}%; opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+                }
+              `}</style>
+            </div>
+          );
+        }
+        return circles;
+      })}
     </div>
   );
 }

@@ -94,16 +94,16 @@ export function regionsWithFigures(state: GameState, power: Power): RegionId[] {
 export function legalPlacementRegions(state: GameState, power: Power, figureBeingMoved?: string): RegionId[] {
   const allRegions = Object.keys(state.regions) as RegionId[];
 
-  // Find all regions currently occupied by this power (excluding the figure being moved if any)
+  // Find all regions currently occupied by this power
   const occupied = new Set<RegionId>();
   for (const f of state.powers[power]!.followers) {
-    if (f.regionId !== null && f.id !== figureBeingMoved) {
+    if (f.regionId !== null) {
       occupied.add(f.regionId);
     }
   }
 
   if (occupied.size === 0) {
-    // No figures on board: can place anywhere
+    // No figures on board: can place anywhere (from reserve)
     return allRegions;
   }
 

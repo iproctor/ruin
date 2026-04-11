@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { eq, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { createInitialState, applyAction, autoAdvance, getLegalActions, GameLog } from '@ruin/engine';
+import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, GameLog } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
@@ -118,7 +118,7 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
       action = fallback;
     }
 
-    const { state: next, log } = applyAction(current, action);
+    const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
     await saveGame(gameId, next, log.entries);
     broadcast(gameId, { type: 'state', state: next });
     if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
@@ -127,6 +127,24 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
   }
 
   return current;
+}
+
+/**
+ * Apply an action, broadcasting the intermediate state at the start of
+ * the battle phase so clients can snapshot it before battle resolution.
+ */
+function applyActionWithBattleBroadcast(
+  gameId: string,
+  state: GameState,
+  action: Action,
+): { state: GameState; log: GameLog } {
+  const preResult = applyActionForPreview(state, action);
+  // If this action transitioned us from summoning into battle, broadcast
+  // the clean post-summoning state so clients can snapshot it for animation.
+  if (state.phase === 'summoning' && preResult.state.phase === 'battle') {
+    broadcast(gameId, { type: 'state', state: preResult.state });
+  }
+  return autoAdvance(preResult);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,7 +202,7 @@ export async function applyPlayerAction(
 
   if (state.winners !== null) throw new Error('Game is already complete');
 
-  const { state: afterAction, log } = applyAction(state, action);
+  const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
   await saveGame(gameId, afterAction, log.entries);
   broadcast(gameId, { type: 'state', state: afterAction });

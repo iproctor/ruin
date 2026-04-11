@@ -652,11 +652,12 @@ function killFollower(
   state: GameState,
   regionId: RegionId,
   followerId: string,
-  _killedBy: Power,
+  killedBy: Power,
   log: GameLog,
 ): { state: GameState; log: GameLog } {
   const figure = state.regions[regionId]!.placements.find(f => f.id === followerId);
   if (!figure) return { state, log };
+  log.event({ type: 'battle_kill', regionId, attacker: killedBy, targetPower: figure.power as Power, targetClass: figure.class, targetId: followerId });
   log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} kills ${figure.power} ${figure.class} (${followerId}).`);
   return removeFigureFromBoard(state, regionId, followerId, log);
 }

@@ -22,6 +22,7 @@ import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
 import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { usePhaseAnimation } from '../hooks/usePhaseAnimation.js';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, eventLog, chat, connected } = useGameStream(gameId);
+  const { state: streamState, eventLog, phaseEvents, chat, connected } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -163,6 +164,11 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     }
     return s;
   }, [serverState, pendingAction, pendingOnPlayChoice]);
+
+  // Phase animation — buffers phase events and drives battle/corruption animation
+  const anim = usePhaseAnimation(serverState, phaseEvents, myPowers);
+  // When animating, use the animation's display state; otherwise use the normal one
+  const effectiveDisplay = anim.animationPhase ? anim.displayState : displayState;
 
   // myPower: hoisted before validDropRegions (a memo) so both run in the hooks section.
   // If a buffered action exists, lock to that power; otherwise use server's acting player.
@@ -381,17 +387,24 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           {/* Board */}
           <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
             <Board
-              state={displayState}
+              state={(anim.animationPhase ? anim.displayState : displayState) ?? displayState}
               highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}
               dimmedRegions={activeDrag ? dimmedRegions : undefined}
-              pendingAction={pendingAction}
+              pendingAction={anim.animationPhase ? null : pendingAction}
               onRegionClick={needsOnPlayChoice && !pendingOnPlayChoice ? handleOnPlayRegionClick : undefined}
-              myPower={isSummoningTurn && !pendingAction ? myPower : null}
+              myPower={isSummoningTurn && !pendingAction && !anim.animationPhase ? myPower : null}
+              animationRegion={anim.animationPhase === 'battle' || anim.animationPhase === 'corruption' ? anim.activeRegion : null}
+              animationKilledIds={anim.animationPhase ? anim.killedIds : undefined}
+              hideKilled={anim.hideKilled}
+              battlePaneEvents={(anim.animationPhase === 'battle' || anim.animationPhase === 'battle_continue') ? anim.processedEvents : undefined}
+              dominationLabels={anim.animationPhase === 'corruption' ? anim.dominationLabels : undefined}
+              corruptionOverrides={anim.animationPhase === 'corruption' ? anim.corruptionOverrides : undefined}
+              corruptionFlies={anim.animationPhase === 'corruption' ? anim.corruptionFlies : undefined}
             />
           </div>
 
           {/* Middle: non-summoning action panels */}
-          {(needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
+          {!anim.animationPhase && (needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
             <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
               {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
                 <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
@@ -420,6 +433,22 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             </div>
           )}
 
+          {/* During battle decisions, show action panel with server state */}
+          {anim.needsDecision && anim.decisionState && myPower && (
+            <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
+              <div style={{ background: '#16213e', border: '2px solid #7f1d1d', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <ActionPanel
+                  state={anim.decisionState}
+                  myPower={myPower}
+                  selectedCardId={null}
+                  onAction={handleDirectAction}
+                  onClearCard={() => {}}
+                />
+              </div>
+            </div>
+          )}
+
+
           {/* Right: collapsible log */}
           <CollapsibleLog
             eventLog={eventLog}
@@ -430,8 +459,27 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           />
         </div>
 
-        {/* Tableau */}
-        {myPower && (
+        {/* Tableau — hidden during animation, Continue button during battle_continue */}
+        {anim.animationPhase === 'battle_continue' && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: '#16213e', borderTop: '1px solid #3a3a6e' }}>
+            <button
+              onClick={anim.onContinue}
+              style={{
+                fontSize: '0.85rem',
+                padding: '8px 32px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#7f1d1d',
+                color: '#fca5a5',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              Continue to Corruption Phase
+            </button>
+          </div>
+        )}
+        {!anim.animationPhase && myPower && (
           <Tableau
             state={serverState ?? displayState}
             displayState={displayState}

@@ -75,6 +75,29 @@ describe('summoning_action', () => {
     expect(actions.some(a => a.kind === 'summoning_play_card' && (a as any).cardId === 'xarm_call_to_war')).toBe(false);
   });
 
+  test('moving sole figure only allows adjacent regions, not the whole map', () => {
+    // Place xarm incarnation in normagne — it's xarm's only figure on the board.
+    // normagne is adjacent to: mittelreich, almerida, toscavar.
+    // talvimaa is NOT adjacent → must not appear as a legal move destination.
+    let s = placeFollower(makeState(), 'xarm', 'incarnation', 'normagne');
+    s = setPP(s, 'xarm', 10); // enough PP
+    const actions = getLegalActions(s, 'xarm');
+    const moveToTalvimaa = actions.filter(
+      a => a.kind === 'summoning_summon_figure' &&
+        (a as any).toRegion === 'talvimaa' &&
+        s.powers.xarm!.followers.find(f => f.id === (a as any).followerId)?.regionId === 'normagne',
+    );
+    expect(moveToTalvimaa).toHaveLength(0);
+
+    // But moving to adjacent regions should be allowed
+    const moveToMittelreich = actions.filter(
+      a => a.kind === 'summoning_summon_figure' &&
+        (a as any).toRegion === 'mittelreich' &&
+        s.powers.xarm!.followers.find(f => f.id === (a as any).followerId)?.regionId === 'normagne',
+    );
+    expect(moveToMittelreich.length).toBeGreaterThan(0);
+  });
+
   test('Killing Ground filters out non-Xarm move actions', () => {
     let s = placeCard(makeState(), 'xarm_carnage_trap', 'xarm', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
