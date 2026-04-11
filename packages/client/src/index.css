@@ -171,3 +171,16 @@ label {
 h1 { font-size: 1.8rem; margin-bottom: 1rem; }
 h2 { font-size: 1.3rem; margin-bottom: 0.75rem; }
 h3 { font-size: 1.1rem; margin-bottom: 0.5rem; }
+
+/* ── Summoning phase animations ── */
+@keyframes summoning-scale-in {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.summoning-appear {
+  animation: summoning-scale-in 1s ease-out forwards;
+  transform-origin: center;
+  transform-box: fill-box;
+}

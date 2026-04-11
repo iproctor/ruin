@@ -115,12 +115,13 @@ export function layoutFigureCluster(
 
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
-function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledIds, hideKilled, myPower }: {
+function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledIds, hideKilled, myPower, summoningAnim }: {
   figures: FollowerInstance[];
   x: number;
   y: number;
   powers: GameState['powers'];
   myPower?: Power | null;
+  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
   highlightSince: number | null;
   animationKilledIds?: Set<string>;
   hideKilled?: boolean;
@@ -142,9 +143,13 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
           && (fig.controlledBy ?? fig.power) !== myPower;
         const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : undefined;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
+        const isAppearing = summoningAnim?.appearingFigures.has(fig.id) ?? false;
+        const isMoving = summoningAnim?.movingFigures.has(fig.id) ?? false;
+        const animStyle = (isAppearing || isMoving) ? 'summoning-appear' : undefined;
         return (
           <g
             key={fig.id}
+            className={animStyle}
             style={{ cursor: 'default' }}
             filter={isNew && !fig.protected ? 'url(#new-glow)' : undefined}
             onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
@@ -175,11 +180,12 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
 
 // ── Mini card ─────────────────────────────────────────────────────────────────
 
-function MiniCard({ cardId, width, height, onHover, isPending, isNew }: {
+function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearing }: {
   cardId: string; width: number; height: number;
   onHover: (id: string | null, x: number, y: number) => void;
   isPending?: boolean;
   isNew?: boolean;
+  isAppearing?: boolean;
 }) {
   const def = CARD_BY_ID[cardId] ?? WORLD_CARD_BY_ID[cardId];
   if (!def) return null;
@@ -192,6 +198,7 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew }: {
 
   return (
     <g
+      className={isAppearing ? 'summoning-appear' : undefined}
       onMouseEnter={(e) => onHover(cardId, e.clientX, e.clientY)}
       onMouseMove={(e)  => onHover(cardId, e.clientX, e.clientY)}
       onMouseLeave={()  => onHover(null, 0, 0)}
@@ -303,7 +310,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -318,6 +325,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   hideKilled?: boolean;
   corruptionOverride?: Partial<Record<Power, number>>;
   myPower?: Power | null;
+  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -472,7 +480,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} />
+        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
       )}
 
       {/* Card slots — hidden when region is ruined */}
@@ -484,7 +492,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
               {card ? (
                 <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending}
-                  isNew={highlightSince !== null && card.placedAt > highlightSince && card.playedBy !== myPower} />
+                  isNew={highlightSince !== null && card.placedAt > highlightSince && card.playedBy !== myPower}
+                  isAppearing={summoningAnim?.appearingCards.has(`${regionId}-${si}`) ?? false} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
                   fill="none" stroke="#2a2a4e" strokeWidth={0.75} strokeDasharray="3 2" />
@@ -636,9 +645,10 @@ interface BoardProps {
   dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
   corruptionOverrides?: Map<RegionId, Partial<Record<Power, number>>>;
   corruptionFlies?: Array<{ id: number; regionId: RegionId; power: Power; tokens: number; startedAt: number }>;
+  summoningAnim?: import('../hooks/useSummoningAnimation.js').SummoningAnimation;
 }
 
-export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies }: BoardProps) {
+export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [regionTooltip, setRegionTooltip] = useState<{ regionId: RegionId; x: number; y: number } | null>(null);
   const [tokenTooltip, setTokenTooltip] = useState<{ token: TokenType; x: number; y: number } | null>(null);
@@ -744,6 +754,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               hideKilled={hideKilled}
               corruptionOverride={corruptionOverrides?.get(regionId)}
               myPower={myPower}
+              summoningAnim={summoningAnim}
             />
           ),
         )}

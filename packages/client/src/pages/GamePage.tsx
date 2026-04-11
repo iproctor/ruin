@@ -15,6 +15,7 @@ import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from 
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
+import { useSummoningAnimation } from '../hooks/useSummoningAnimation.js';
 import { getGame, submitAction, sendChat } from '../api/client.js';
 import Board from '../components/Board.js';
 import StatusBar from '../components/StatusBar.js';
@@ -167,6 +168,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
 
   // Phase animation — buffers phase events and drives battle/corruption animation
   const anim = usePhaseAnimation(serverState, events, myPowers);
+  const summoningAnim = useSummoningAnimation(events, myPowers);
   // When animating, use the animation's display state; otherwise use the normal one
   const effectiveDisplay = anim.animationPhase ? anim.displayState : displayState;
 
@@ -400,6 +402,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
               dominationLabels={anim.animationPhase === 'corruption' ? anim.dominationLabels : undefined}
               corruptionOverrides={anim.animationPhase === 'corruption' ? anim.corruptionOverrides : undefined}
               corruptionFlies={anim.animationPhase === 'corruption' ? anim.corruptionFlies : undefined}
+              summoningAnim={summoningAnim}
             />
           </div>
 
