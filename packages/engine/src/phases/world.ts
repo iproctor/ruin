@@ -1,4 +1,4 @@
-import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
+import type { GameEvent, GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
 import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
@@ -61,7 +61,7 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
 
   const [cardId, ...remaining] = s.worldDeck;
   s = { ...s, worldDeck: remaining };
-  log.push(`World card drawn: ${WORLD_CARD_BY_ID[cardId!]?.name ?? cardId}`);
+  log.emit({ type: 'world_card_drawn', cardId: cardId!, cardName: WORLD_CARD_BY_ID[cardId!]?.name ?? cardId! });
 
   const cardDef = WORLD_CARD_BY_ID[cardId!];
   if (!cardDef) return { state: s, log };
@@ -78,7 +78,7 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
       removed.push(slot2);
       s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
     }
-    if (removed.length) log.push(`Removed comet cards from track: ${removed.join(', ')}`);
+    if (removed.length) log.emit({ type: 'comet_removed', cardIds: removed });
   }
 
   // Apply immediate effects (non-choice ones first)
@@ -199,7 +199,7 @@ function applyWorldCardImmediate(
 
     case 'accelerating_doom': {
       // Draw another card immediately — caller handles this by re-running resolveWorldPhase
-      log.push(`${WORLD_CARD_BY_ID['accelerating_doom']!.name}: drawing another World card.`);
+      log.emit({ type: 'world_card_effect', subtype: 'accelerating_doom' });
       s = { ...s, phase: 'world' };
       return { state: s, needsChoice: false };
     }
@@ -223,7 +223,7 @@ function applyWorldCardImmediate(
         let vp = claimed;
         if (claimed === maxClaimed && maxClaimed > 0) vp += 3;
         s = scoreVP(s, p, vp);
-        if (vp > 0) log.push(`${p} scores ${vp} VP from ${WORLD_CARD_BY_ID['peasant_harvest']!.name} (${claimed} claimed Peasants).`);
+        if (vp > 0) log.emit({ type: 'world_card_effect', subtype: 'peasant_harvest', power: p, vp, claimed });
       }
       return { state: s, needsChoice: false };
     }
@@ -295,7 +295,7 @@ function applyWorldCardImmediate(
         (ADJACENCY[r] ?? []).some(adj => s.regions[adj]!.tokens.includes('chaos_stone'))
       );
       if (eligible.length === 0) {
-        log.push(`${WORLD_CARD_BY_ID['forward_scouts']!.name}: no Chaos Stone tokens on board. No effect.`);
+        log.emit({ type: 'world_card_effect', subtype: 'forward_scouts_empty' });
         return { state: s, needsChoice: false };
       }
       return { state: s, needsChoice: true };
@@ -332,7 +332,7 @@ function applyWorldCardChoice(
   const cardName = WORLD_CARD_BY_ID[cardId]?.name ?? cardId;
   const rname = (r: RegionId) => REGIONS[r]?.name ?? r;
   const rlist = (rs: (RegionId | undefined)[]) => rs.filter(Boolean).map(r => rname(r as RegionId)).join(', ');
-  const logChoice = (desc: string) => log.push(`${cardName} choice: ${desc}`);
+  const logChoice = (desc: string) => log.emit({ type: 'world_card_choice', cardId, cardName, description: desc });
 
   switch (cardId) {
     case 'purchased_title': {
@@ -440,7 +440,7 @@ function applyWorldCardChoice(
 
 function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
   if (state.tokenSupply[token] <= 0) {
-    log.push(`Token supply exhausted: ${token}`);
+    log.emit({ type: 'token_supply_exhausted', tokenType: token });
     return state;
   }
   const s = addTokenToRegion(state, regionId, token);

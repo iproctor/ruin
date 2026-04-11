@@ -124,8 +124,7 @@ function resolveDomination(
     const leaders = s.activePowers.filter(p => domValues.get(p) === maxDom);
     if (leaders.length > 1) {
       const resistance = calcResistance(s, regionId, nullWeave);
-      log.push(`${regionId}: Tied domination (${maxDom}) — no conquest.`);
-      log.event({ type: 'domination_result', regionId, power: null, value: maxDom, resistance, conquered: false, vp: 0 });
+      log.emit({ type: 'domination_result', regionId, power: null, value: maxDom, resistance, conquered: false, vp: 0 });
       continue;
     }
 
@@ -135,9 +134,8 @@ function resolveDomination(
     if (maxDom > resistance) {
       const conquestValue = calcConquestValue(s, regionId);
       s = scoreVP(s, winner, conquestValue);
-      s = { ...s, events: [...s.events, { type: 'domination' as const, round: s.round, regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue }] };
-      log.push(`${regionId}: ${winner} dominates (${maxDom} vs resistance ${resistance}) — scores ${conquestValue} VP.`);
-      log.event({ type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
+      s = { ...s, events: [...s.events, { type: 'domination_result' as const, regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue }] };
+      log.emit({ type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
 
       // Gormen Death's Perfume: place 2 corruption tokens on domination
       if (!nullWeave && winner === 'gormen' &&
@@ -150,10 +148,10 @@ function resolveDomination(
             },
           });
         }
-        log.push(`${regionId}: Gormen ${CARD_BY_ID['gormen_deaths_perfume']!.name} — 2 corruption tokens placed.`);
+        log.emit({ type: 'deaths_perfume', regionId, tokens: 2 });
       }
     } else {
-      log.push(`${regionId}: ${winner} has highest domination (${maxDom}) but does not exceed resistance (${resistance}).`);
+      log.emit({ type: 'domination_failed', regionId, power: winner, value: maxDom, resistance });
     }
   }
 
@@ -291,7 +289,7 @@ function resolveCorruption(
     // Ruined or scorched regions skip corruption placement
     if (isRuined(region)) continue;
     if (regionCardActive(s, regionId, 'xarm_war_cry')) {
-      log.push(`${regionId}: ${CARD_BY_ID['xarm_war_cry']!.name} — no corruption tokens placed.`);
+      log.emit({ type: 'war_cry_block', regionId });
       continue;
     }
 
@@ -307,8 +305,7 @@ function resolveCorruption(
           [power]: s.regions[regionId]!.corruptionTokens[power] + tokensToPlace,
         },
       });
-      log.push(`${regionId}: ${power} places ${tokensToPlace} corruption token(s).`);
-      log.event({ type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
+      log.emit({ type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
 
       // Dial advancement counters
       s = checkDialAdvancement(s, regionId, power, tokensToPlace, nullWeave, log);
@@ -332,7 +329,7 @@ function resolveCorruption(
             gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
           ),
         });
-        log.push(`${regionId}: ${CARD_BY_ID['gormen_vile_consumption']!.name} — ${gormenFigures.length} Gormen figures removed, ${tokensToPlace} corruption token(s) placed.`);
+        log.emit({ type: 'vile_consumption', regionId, figuresRemoved: gormenFigures.length, tokensPlaced: tokensToPlace });
       }
     }
 
@@ -430,7 +427,7 @@ function checkDialAdvancement(
 
   if (earnedCounter) {
     s = updatePower(s, power, { dialCounters: s.powers[power]!.dialCounters + 1 });
-    log.push(`${regionId}: ${power} earns a dial advancement counter.`);
+    log.emit({ type: 'dial_counter', regionId, power });
   }
 
   return s;
@@ -448,7 +445,7 @@ function applyRuination(
   const nextCardIndex = s.ruinationCardsUsed + 1;
 
   if (nextCardIndex > MAX_RUINATION_CARDS) {
-    log.push(`${regionId}: Would be ruined but no ruination cards remain.`);
+    log.emit({ type: 'ruination_blocked', regionId });
     return s;
   }
 
@@ -460,15 +457,14 @@ function applyRuination(
   for (const power of placedBy) {
     s = scoreVP(s, power, card.ruinersScore);
   }
-  s = { ...s, events: [...s.events, { type: 'ruination' as const, round: s.round, regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore }] };
-  log.push(`${regionId}: RUINED (card ${nextCardIndex}). Ruiners score ${card.ruinersScore} VP each.`);
-  log.event({ type: 'corruption_ruination', regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore });
+  s = { ...s, events: [...s.events, { type: 'ruination' as const, regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore }] };
+  log.emit({ type: 'ruination', regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore });
 
   // Gormen Provender of Ruin upgrade: +3 VP on any ruination
   for (const power of s.activePowers) {
     if (s.powers[power]!.upgradesInPlay.includes('gormen_provender_of_rot')) {
       s = scoreVP(s, power, 3);
-      log.push(`Gormen ${UPGRADE_BY_ID['gormen_provender_of_rot']!.name}: ${power} scores 3 VP.`);
+      log.emit({ type: 'provender_score', power, vp: 3 });
     }
   }
 

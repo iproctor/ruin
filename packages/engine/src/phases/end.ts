@@ -43,7 +43,7 @@ export function resolveEndPhase(
     const victory = checkVictory(s);
     if (victory) {
       s = { ...s, phase: 'completed', winners: victory.winners, winCondition: victory.condition };
-      log.push(`Game over! Winners: ${victory.winners.join(', ')} (${victory.condition}).`);
+      log.emit({ type: 'game_over', winners: victory.winners, condition: victory.condition });
       return { state: s, log };
     }
   }
@@ -137,7 +137,7 @@ function finalizeEndPhase(
       winners: victory.winners,
       winCondition: victory.condition,
     };
-    log.push(`Game over! Winners: ${victory.winners.join(', ')} (${victory.condition}).`);
+    log.emit({ type: 'game_over', winners: victory.winners, condition: victory.condition });
     return { state: s, log };
   }
 
@@ -148,7 +148,7 @@ function finalizeEndPhase(
     phase: 'world',
     pendingAction: null,
   };
-  log.push(`Round ${s.round} begins.`);
+  log.emit({ type: 'round_start', round: s.round });
   return { state: s, log };
 }
 
@@ -191,7 +191,7 @@ function removeChaosCards(
               f.id === controlled.id ? { ...f, controlledBy: null } : f
             ),
           });
-          log.push(`${CARD_BY_ID['lasha_narcotic_musk']!.name} discarded: ${controlled.power} ${controlled.id} released.`);
+          log.emit({ type: 'narcotic_release', power: controlled.power as Power, followerId: controlled.id });
         }
       }
 
@@ -253,7 +253,7 @@ function resolveHeroTokens(
           f.id === toRemove.id ? { ...f, regionId: null, controlledBy: null } : f
         ),
       });
-      log.push(`${regionId}: Hero token — ${target} removes ${toRemove.class} (${toRemove.id}).`);
+      log.emit({ type: 'hero_removal', regionId, power: target, followerClass: toRemove.class, followerId: toRemove.id });
     }
   }
 
@@ -300,7 +300,7 @@ function applyWorldCardPersistentEffect(
             hand: s.powers[power]!.hand.slice(0, -1),
             discardIds: [...s.powers[power]!.discardIds, card],
           });
-          log.push(`${WORLD_CARD_BY_ID['normagne_heir']!.name}: ${power} discards ${card}.`);
+          log.emit({ type: 'world_card_effect', subtype: 'normagne_heir_discard', power, cardId: card });
         }
       }
       break;
@@ -317,7 +317,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, target, {
           tokens: [...s.regions[target]!.tokens, 'noble'],
         });
-        log.push(`${WORLD_CARD_BY_ID['northern_heir']!.name}: ${lowest} places a Noble on ${target}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'northern_heir', power: lowest, regionId: target });
       }
       break;
     }
@@ -332,7 +332,7 @@ function applyWorldCardPersistentEffect(
         const tokens = [...s.regions[target]!.tokens];
         tokens.splice(tokens.indexOf('noble'), 1);
         s = updateRegion(s, target, { tokens });
-        log.push(`${WORLD_CARD_BY_ID['diplomatic_envoy']!.name}: ${lowest} removes a Noble from ${target}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'diplomatic_envoy', power: lowest, regionId: target });
       }
       break;
     }
@@ -347,7 +347,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, target, {
           tokens: [...s.regions[target]!.tokens, 'hero'],
         });
-        log.push(`${WORLD_CARD_BY_ID['chaos_countermeasures']!.name}: ${lowest} places a Hero on ${target}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'chaos_countermeasures', power: lowest, regionId: target });
       }
       break;
     }
@@ -371,7 +371,7 @@ function applyWorldCardPersistentEffect(
           });
         }
         if (figures.length > 0) {
-          log.push(`${WORLD_CARD_BY_ID['great_exorcism']!.name}: removed all figures from ${regionId}.`);
+          log.emit({ type: 'world_card_effect', subtype: 'great_exorcism_figures', regionId });
         }
       }
 
@@ -395,7 +395,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, mostCorrupt, {
           tokens: [...existing, ...Array(totalEvents).fill('event')],
         });
-        log.push(`${WORLD_CARD_BY_ID['great_exorcism']!.name}: moved ${totalEvents} Event token(s) to ${mostCorrupt}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'great_exorcism_events', regionId: mostCorrupt, eventsMoved: totalEvents });
       }
       break;
     }
@@ -408,7 +408,7 @@ function applyWorldCardPersistentEffect(
         const tokens = [...region.tokens];
         tokens.splice(tokens.indexOf('peasant'), 1);
         s = updateRegion(s, regionId, { tokens });
-        log.push(`${WORLD_CARD_BY_ID['central_overpopulation']!.name}: Peasant removed from ${regionId}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'central_overpopulation', regionId });
       }
       break;
     }
@@ -420,7 +420,7 @@ function applyWorldCardPersistentEffect(
         s = updateRegion(s, regionId, {
           corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
         });
-        log.push(`${WORLD_CARD_BY_ID['cleansing_wave']!.name}: all corruption tokens removed from ${regionId}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'cleansing_wave', regionId });
       }
       break;
     }
@@ -440,7 +440,7 @@ function applyWorldCardPersistentEffect(
             [richest]: s.regions[regionId]!.corruptionTokens[richest] - 1,
           },
         });
-        log.push(`${WORLD_CARD_BY_ID['noble_scrutiny']!.name}: ${richest} removes 1 corruption token from ${regionId}.`);
+        log.emit({ type: 'world_card_effect', subtype: 'noble_scrutiny', power: richest, regionId });
       }
       break;
     }
@@ -505,8 +505,7 @@ function scoreRuinedRegions(
       for (const p of firstPlayers) {
         s = scoreVP(s, p, shared);
       }
-      s = { ...s, events: [...s.events, { type: 'ruination_scoring' as const, round: s.round, regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: shared, second: [], secondVP: 0 }] };
-      log.push(`${regionId}: Ruination scoring — ${firstPlayers.join('/')} each score ${shared} VP (tied first).`);
+      log.emit({ type: 'ruination_scoring', regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: shared, second: [], secondVP: 0 });
     } else {
       s = scoreVP(s, firstPlayers[0]!, regionVP.first);
 
@@ -519,10 +518,8 @@ function scoreRuinedRegions(
         for (const p of secondPlayers) {
           s = scoreVP(s, p, secondShared);
         }
-        log.push(`${regionId}: Ruination scoring — ${secondPlayers.join('/')} each score ${secondShared} VP (second).`);
       }
-      s = { ...s, events: [...s.events, { type: 'ruination_scoring' as const, round: s.round, regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: regionVP.first, second: secondPlayers, secondVP: secondShared }] };
-      log.push(`${regionId}: Ruination scoring — ${firstPlayers[0]} scores ${regionVP.first} VP (first).`);
+      log.emit({ type: 'ruination_scoring', regionId, cardIndex: region.ruinationCardIndex!, first: firstPlayers, firstVP: regionVP.first, second: secondPlayers, secondVP: secondShared });
     }
 
     // Cosmetic: clear corruption tokens from the ruined region now that
@@ -607,13 +604,13 @@ function advanceDial(
     threatValue: typeof newThreat === 'number' ? newThreat : p.threatValue,
   });
 
-  log.push(`${power} advances threat dial to position ${nextPos} (threat: ${entry.threat}).`);
+  log.emit({ type: 'dial_advance', power, position: nextPos, threat: entry.threat });
 
   // Apply dial instruction — automatic rewards run now; interactive ones get queued.
   switch (entry.instruction.type) {
     case 'score_vp':
       s = scoreVP(s, power, entry.instruction.amount);
-      log.push(`${power} scores ${entry.instruction.amount} VP from dial.`);
+      log.emit({ type: 'dial_vp', power, vp: entry.instruction.amount });
       break;
 
     case 'upgrade_card': {
@@ -667,7 +664,7 @@ function advanceDial(
         winners: [power],
         winCondition: 'threat_dial',
       };
-      log.push(`${power} reaches the victory position on their threat dial!`);
+      log.emit({ type: 'dial_victory', power });
       break;
 
     case 'start':
@@ -697,7 +694,7 @@ function drawOneCard(
   }
 
   const drawn = deckIds[0]!;
-  log.push(`${power} draws a card (${source}).`);
+  log.emit({ type: 'card_drawn', power, cardId: drawn, source });
   return updatePower(state, power, {
     hand: [...hand, drawn],
     deckIds: deckIds.slice(1),

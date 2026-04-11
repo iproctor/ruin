@@ -1,5 +1,5 @@
 import type {
-  GameState, Power, RegionId, FollowerInstance, PhaseEvent,
+  GameState, Power, RegionId, FollowerInstance,
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
 } from '../types.js';
 import {
@@ -79,7 +79,7 @@ export function applyBattleHitAssignment(
           ),
         });
       }
-      log.push(`${regionId}: ${CARD_BY_ID['xarm_war_frenzy']!.name} — ${hits} hit(s) applied to ${followerId} (not killed).`);
+      log.emit({ type: 'war_frenzy_partial', regionId, followerId, hits });
     }
   }
 
@@ -107,8 +107,7 @@ export function applyBattleHitAssignment(
         f.id === fId ? { ...f, tipped: true } : f
       ),
     });
-    log.event({ type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
-    log.push(`${regionId}: ${attacker} kills ${figure.power} ${figure.class} (${fId}).`);
+    log.emit({ type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
 
     // Xarm Heart Offering: draw a chaos card per kill
     if (!nullWeaveActive && regionCardActive(s, regionId, 'xarm_ritual_death') && attacker === 'xarm') {
@@ -125,7 +124,7 @@ export function applyBattleHitAssignment(
           xarm: s.regions[regionId]!.corruptionTokens.xarm + 1,
         },
       });
-      log.push(`${regionId}: Xarm ${FOLLOWERS.xarm.warrior.name} place 1 corruption token.`);
+      log.emit({ type: 'heartrippers_corruption', regionId, tokens: 1 });
     }
 
     // Tenzen Recursive Pattern: mark for persistence if Tenzen killed a figure
@@ -258,7 +257,7 @@ function resolveRegion(
   if (!battleOccurs) return { state: s, log };
 
   // Emit region start event
-  log.event({ type: 'battle_region_start', regionId });
+  log.emit({ type: 'battle_region_start', regionId });
 
   // Detect card effects (Null Weave cancels all other card text)
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
@@ -286,7 +285,7 @@ function resolveRegion(
             f.id === target.id ? { ...f, controlledBy: 'lasha' } : f
           ),
         });
-        log.push(`${regionId}: ${UPGRADE_BY_ID['lasha_rapture_up']!.name} — Lasha controls ${target.power} ${target.class} (${target.id}).`);
+        log.emit({ type: 'rapture_control', regionId, targetPower: target.power as Power, targetClass: target.class, targetId: target.id });
       }
     }
   }
@@ -299,8 +298,7 @@ function resolveRegion(
     const rolls = rollWithExplosions(2, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
-    log.event({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
-    log.push(`${regionId}: ${CARD_BY_ID['xarm_war_frenzy']!.name} — Xarm rolls ${rolls.join(',')} → ${hits} hit(s).`);
+    log.emit({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
     if (hits > 0) {
       const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
       const enemiesWF = getEnemyFigures(s, regionId, 'xarm', nullWeaveActive);
@@ -369,8 +367,7 @@ function runNormalBattle(
     const rolls = rollWithExplosions(diceCap, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
-    log.event({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'normal' });
-    log.push(`${regionId}: ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
+    log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'normal' });
 
     if (hits > 0) {
       const peasantsAvailable = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
@@ -418,7 +415,7 @@ function runPostNormal(
   // Xarm dial advancement
   if (enemiesKilledByXarm) {
     s = updatePower(s, 'xarm', { dialCounters: s.powers['xarm']!.dialCounters + 1 });
-    log.push(`${regionId}: Xarm earns a dial advancement counter.`);
+    log.emit({ type: 'dial_counter', regionId, power: 'xarm' as Power });
   }
 
   // ── Undying Fury ─────────────────────────────────────────────────────────
@@ -451,8 +448,7 @@ function runUndyingFury(
     const rolls = rollWithExplosions(diceCap, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
-    log.event({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'undying_fury' });
-    log.push(`${regionId}: ${CARD_BY_ID['xarm_bloody_rebirth']!.name} extra battle — ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
+    log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'undying_fury' });
 
     if (hits > 0) {
       const peasantsAvailableUF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
@@ -520,7 +516,7 @@ function runPostUndying(
             context: { regionId, maxKills: gormenCorr },
           },
         };
-        log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.`);
+        log.emit({ type: 'awaiting_action', power: 'gormen', actionKind: 'corruption_harvest_choice', description: `${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} — Gormen may kill up to ${gormenCorr} enemy figure(s). Waiting for choice.` });
         return { state: s, log };
       }
     }
@@ -554,8 +550,7 @@ function pauseForHitChoice(
       context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable, ...extraContext },
     },
   };
-  log.event({ type: 'battle_hit_wait', regionId, power: attacker, hits: hitsRemaining });
-  log.push(`${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.`);
+  log.emit({ type: 'battle_hit_wait', regionId, power: attacker, hits: hitsRemaining });
   return { state: s, log };
 }
 
@@ -615,7 +610,7 @@ function claimPeasant(
   s = updatePower(s, claimedBy, {
     claimedPeasants: s.powers[claimedBy]!.claimedPeasants + 1,
   });
-  log.push(`${regionId}: ${claimedBy} claims a Peasant token (${s.powers[claimedBy]!.claimedPeasants} total).`);
+  log.emit({ type: 'peasant_claimed', regionId, power: claimedBy, total: s.powers[claimedBy]!.claimedPeasants });
   return s;
 }
 
@@ -657,8 +652,7 @@ function killFollower(
 ): { state: GameState; log: GameLog } {
   const figure = state.regions[regionId]!.placements.find(f => f.id === followerId);
   if (!figure) return { state, log };
-  log.event({ type: 'battle_kill', regionId, attacker: killedBy, targetPower: figure.power as Power, targetClass: figure.class, targetId: followerId });
-  log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} kills ${figure.power} ${figure.class} (${followerId}).`);
+  log.emit({ type: 'harvest_kill', regionId, killedBy, targetPower: figure.power as Power, targetClass: figure.class, followerId });
   return removeFigureFromBoard(state, regionId, followerId, log);
 }
 
@@ -685,7 +679,7 @@ function finalizeBattle(
         )[0]!;
         const r = removeFigureFromBoard(s, regionId, target.id, log);
         s = r.state;
-        log.push(`${regionId}: ${WORLD_CARD_BY_ID['eastern_armistice']!.name} — ${power} removes ${target.class} (${target.id}).`);
+        log.emit({ type: 'world_card_effect', subtype: 'eastern_armistice', regionId, power, followerClass: target.class, followerId: target.id });
       }
     }
   }
@@ -788,7 +782,7 @@ function drawCardForPower(state: GameState, power: Power, log: GameLog): GameSta
   }
 
   const drawn = deckIds[0]!;
-  log.push(`${power} draws ${drawn} (${CARD_BY_ID['xarm_ritual_death']!.name}).`);
+  log.emit({ type: 'ritual_death_draw', power, cardId: drawn });
   return updatePower(state, power, {
     hand: [...hand, drawn],
     deckIds: deckIds.slice(1),

@@ -198,25 +198,98 @@ export interface GameState {
 }
 
 export type GameEvent =
-  | { type: 'domination'; round: number; regionId: RegionId; power: Power; value: number; resistance: number; conquered: boolean; vp: number }
-  | { type: 'ruination'; round: number; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number }
-  | { type: 'ruination_scoring'; round: number; regionId: RegionId; cardIndex: number; first: Power[]; firstVP: number; second: Power[]; secondVP: number };
+  // ── Lifecycle ────────────────────────────────────────────────────────────────
+  | { type: 'phase_start'; phase: Phase; round: number }
+  | { type: 'round_start'; round: number }
+  | { type: 'game_over'; winners: Power[]; condition: WinCondition }
+  | { type: 'awaiting_action'; power: Power; actionKind: ActionKind; description: string }
 
-// ─── Phase events (ephemeral, broadcast but not persisted) ──────────────────
+  // ── World ────────────────────────────────────────────────────────────────────
+  | { type: 'world_card_drawn'; cardId: string; cardName: string }
+  | { type: 'comet_removed'; cardIds: string[] }
+  | { type: 'world_card_choice'; cardId: string; cardName: string; description: string }
+  | { type: 'token_supply_exhausted'; tokenType: TokenType }
 
-export type PhaseEvent =
-  // Battle
+  // ── Draw ─────────────────────────────────────────────────────────────────────
+  | { type: 'tenzen_discard'; cardId: string | null }
+  | { type: 'power_draw'; power: Power; drawn: number; handSize: number }
+  | { type: 'summoning_banner'; round: number }
+
+  // ── Summoning ────────────────────────────────────────────────────────────────
+  | { type: 'summon_figure'; power: Power; followerId: string; followerClass: FollowerClass; toRegion: RegionId; fromRegion: RegionId | null; cost: number }
+  | { type: 'play_card'; power: Power; cardId: string; cardName: string; toRegion: RegionId; cost: number }
+  | { type: 'summoning_pass'; power: Power }
+  | { type: 'apprentice_choice'; followerId: string; fromRegion: RegionId; toRegion: RegionId; carry: boolean }
+  | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }
+  | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerName: string }
+  | { type: 'card_effect'; subtype: 'call_to_war'; power: Power; followerId: string; fromRegion: RegionId; toRegion: RegionId }
+  | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
+  | { type: 'card_effect'; subtype: 'meddling_of_rats'; targetPower: Power }
+  | { type: 'card_effect'; subtype: 'fate_shield'; followerId: string }
+  | { type: 'card_effect'; subtype: 'hidden_influence'; tokenType: TokenType; fromRegion: RegionId; toRegion: RegionId }
+  | { type: 'card_effect'; subtype: 'narcotic_musk'; power: Power; followerId: string }
+  | { type: 'card_effect'; subtype: 'decay'; power: Power; regionId: RegionId }
+  | { type: 'card_effect'; subtype: 'siphon_power'; power: Power }
+  | { type: 'card_effect'; subtype: 'depraved_infiltration'; regionId: RegionId }
+
+  // ── Battle ───────────────────────────────────────────────────────────────────
   | { type: 'battle_region_start'; regionId: RegionId }
   | { type: 'battle_roll'; regionId: RegionId; power: Power; dice: number[]; hits: number; kind: 'normal' | 'war_frenzy' | 'undying_fury' }
   | { type: 'battle_hit_wait'; regionId: RegionId; power: Power; hits: number }
   | { type: 'battle_kill'; regionId: RegionId; attacker: Power; targetPower: Power; targetClass: FollowerClass; targetId: string }
-  | { type: 'battle_region_end'; regionId: RegionId }
-  // Corruption
+  | { type: 'peasant_claimed'; regionId: RegionId; power: Power; total: number }
+  | { type: 'rapture_control'; regionId: RegionId; targetPower: Power; targetClass: FollowerClass; targetId: string }
+  | { type: 'heartrippers_corruption'; regionId: RegionId; tokens: number }
+  | { type: 'war_frenzy_partial'; regionId: RegionId; followerId: string; hits: number }
+
+  // ── Corruption ───────────────────────────────────────────────────────────────
   | { type: 'domination_result'; regionId: RegionId; power: Power | null; value: number; resistance: number; conquered: boolean; vp: number }
+  | { type: 'domination_failed'; regionId: RegionId; power: Power; value: number; resistance: number }
   | { type: 'corruption_placement'; regionId: RegionId; power: Power; tokens: number }
-  | { type: 'corruption_ruination'; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number };
+  | { type: 'war_cry_block'; regionId: RegionId }
+  | { type: 'deaths_perfume'; regionId: RegionId; tokens: number }
+  | { type: 'vile_consumption'; regionId: RegionId; figuresRemoved: number; tokensPlaced: number }
+  | { type: 'ruination'; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number }
+  | { type: 'ruination_blocked'; regionId: RegionId }
+  | { type: 'dial_counter'; regionId: RegionId; power: Power }
+  | { type: 'provender_score'; power: Power; vp: number }
+
+  // ── End ──────────────────────────────────────────────────────────────────────
+  | { type: 'narcotic_release'; power: Power; followerId: string }
+  | { type: 'hero_removal'; regionId: RegionId; power: Power; followerClass: FollowerClass; followerId: string }
+  | { type: 'world_card_effect'; subtype: 'normagne_heir_discard'; power: Power; cardId: string }
+  | { type: 'world_card_effect'; subtype: 'northern_heir'; power: Power; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'diplomatic_envoy'; power: Power; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'chaos_countermeasures'; power: Power; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'great_exorcism_figures'; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'great_exorcism_events'; regionId: RegionId; eventsMoved: number }
+  | { type: 'world_card_effect'; subtype: 'central_overpopulation'; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'cleansing_wave'; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'noble_scrutiny'; power: Power; regionId: RegionId }
+  | { type: 'world_card_effect'; subtype: 'eastern_armistice'; power: Power; regionId: RegionId; followerClass: FollowerClass; followerId: string }
+  | { type: 'world_card_effect'; subtype: 'peasant_harvest'; power: Power; vp: number; claimed: number }
+  | { type: 'world_card_effect'; subtype: 'accelerating_doom' }
+  | { type: 'world_card_effect'; subtype: 'forward_scouts_empty' }
+  | { type: 'ruination_scoring'; regionId: RegionId; cardIndex: number; first: Power[]; firstVP: number; second: Power[]; secondVP: number }
+  | { type: 'dial_advance'; power: Power; position: number; threat: number | 'victory' }
+  | { type: 'dial_vp'; power: Power; vp: number }
+  | { type: 'dial_victory'; power: Power }
+  | { type: 'card_drawn'; power: Power; cardId: string; source: string }
+  | { type: 'ritual_death_draw'; power: Power; cardId: string }
+
+  // ── Reducers (interactive action results) ────────────────────────────────────
+  | { type: 'forced_discard'; power: Power; count: number }
+  | { type: 'upgrade_taken'; power: Power; upgradeCardId: string }
+  | { type: 'dial_place_token'; power: Power; regionId: RegionId; tokenType: 'noble' | 'chaos_stone' }
+  | { type: 'dial_remove_corruption'; power: Power; regionId: RegionId; targetPower: Power }
+  | { type: 'dial_remove_world_token'; power: Power; regionId: RegionId; tokenType: TokenType }
+  | { type: 'hero_forced_removal'; power: Power; regionId: RegionId; followerClass: FollowerClass; followerId: string }
+  | { type: 'harvest_kill'; regionId: RegionId; killedBy: Power; targetPower: Power; targetClass: FollowerClass; followerId: string };
 
 // ─── Win result ───────────────────────────────────────────────────────────────
+
+/** @deprecated Use GameEvent instead. */
+export type PhaseEvent = GameEvent;
 
 export interface WinResult {
   winners: Power[];

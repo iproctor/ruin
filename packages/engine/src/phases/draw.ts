@@ -1,4 +1,4 @@
-import type { GameState, Power, TenzenDiscardAction } from '../types.js';
+import type { GameEvent, GameState, Power, TenzenDiscardAction } from '../types.js';
 import { BASE_DRAW_AMOUNT, BASE_POWER_POINTS, UPGRADES, TENZEN_DRAW_TO } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import { updatePower } from '../helpers.js';
@@ -23,7 +23,7 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: GameL
           context: { drawTarget },
         },
       };
-      log.push('Draw phase: waiting for Tenzen discard choice.');
+      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', description: 'Draw phase: waiting for Tenzen discard choice.' });
       return { state: s, log };
     }
   }
@@ -46,9 +46,9 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
       hand: tenzen.hand.filter(id => id !== action.cardId),
       discardIds: [...tenzen.discardIds, action.cardId],
     });
-    log.push(`Tenzen discards ${action.cardId}.`);
+    log.emit({ type: 'tenzen_discard', cardId: action.cardId });
   } else {
-    log.push('Tenzen keeps hand.');
+    log.emit({ type: 'tenzen_discard', cardId: null });
   }
 
   return resolveAllDraws(s, log);
@@ -62,7 +62,7 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   for (const power of s.activePowers) {
     const result = drawForPower(s, power);
     s = result.state;
-    log.push(result.entry);
+    log.emit(result.event);
   }
 
   // Reset power points and sync basePowerPoints so the UI reflects upgrades
@@ -90,12 +90,12 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   // phase transition + pendingAction set happen in the same step, so
   // autoAdvance immediately breaks on pendingAction before reaching its
   // banner-emit branch.
-  log.push(`== Round ${s.round}: SUMMONING ==`);
+  log.emit({ type: 'summoning_banner', round: s.round });
 
   return { state: s, log };
 }
 
-function drawForPower(state: GameState, power: Power): { state: GameState; entry: string } {
+function drawForPower(state: GameState, power: Power): { state: GameState; event: GameEvent } {
   let s = state;
   const p = s.powers[power]!;
 
@@ -128,7 +128,7 @@ function drawForPower(state: GameState, power: Power): { state: GameState; entry
 
   hand = [...hand, ...drawn];
   s = updatePower(s, power, { hand, deckIds, discardIds });
-  return { state: s, entry: `${power} draws ${drawn.length} card(s) (hand: ${hand.length}).` };
+  return { state: s, event: { type: 'power_draw', power, drawn: drawn.length, handSize: hand.length } };
 }
 
 function getTenzenDrawTarget(state: GameState): number {

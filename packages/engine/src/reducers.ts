@@ -96,7 +96,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
         },
       };
       const log = new GameLog();
-      log.push(`${action.power} discards ${toDiscard.length} card(s) (Meddling of Rats).`);
+      log.emit({ type: 'forced_discard', power: action.power as Power, count: toDiscard.length });
       result = { state: s, log };
       break;
     }
@@ -124,7 +124,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
         s = { ...s, powers: { ...s.powers, [action.power]: { ...s.powers[action.power]!, basePowerPoints: newBase, powerPoints: newBase } } };
       }
       const log = new GameLog();
-      log.push(`${action.power} takes upgrade: ${action.upgradeCardId}.`);
+      log.emit({ type: 'upgrade_taken', power: action.power, upgradeCardId: action.upgradeCardId });
       result = { state: s, log };
       break;
     }
@@ -150,7 +150,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const log = new GameLog();
-      log.push(`${action.power} (dial) places ${reward.tokenType} on ${action.regionId}.`);
+      log.emit({ type: 'dial_place_token', power: action.power as Power, regionId: action.regionId, tokenType: reward.tokenType });
       result = { state: s, log };
       break;
     }
@@ -177,9 +177,8 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
-      const targetLabel = target === action.power ? 'own' : `${target}'s`;
       const log = new GameLog();
-      log.push(`${action.power} (dial) removes 1 ${targetLabel} corruption from ${action.regionId}.`);
+      log.emit({ type: 'dial_remove_corruption', power: action.power as Power, regionId: action.regionId, targetPower: target });
       result = { state: s, log };
       break;
     }
@@ -205,7 +204,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const log = new GameLog();
-      log.push(`${action.power} (dial) removes ${action.tokenType} from ${action.regionId}.`);
+      log.emit({ type: 'dial_remove_world_token', power: action.power as Power, regionId: action.regionId, tokenType: action.tokenType });
       result = { state: s, log };
       break;
     }
@@ -235,7 +234,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
         },
       };
       const log = new GameLog();
-      log.push(`${action.power} removes ${figure.class} (${action.followerId}) due to Hero token.`);
+      log.emit({ type: 'hero_forced_removal', power: action.power as Power, regionId: action.regionId, followerClass: figure.class, followerId: action.followerId });
       result = { state: s, log };
       break;
     }
@@ -287,7 +286,7 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
     // Skip for end-phase re-entries while draining dial rewards (banner was already emitted).
     const isEndReEntry = s.phase === 'end' && s.pendingDialRewards !== null;
     if (s.phase !== lastBannerPhase && !isEndReEntry) {
-      log.push(`== Round ${s.round}: ${s.phase.toUpperCase()} ==`);
+      log.emit({ type: 'phase_start', phase: s.phase, round: s.round });
       lastBannerPhase = s.phase;
     }
 
@@ -299,7 +298,7 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
         const victory = checkVictory(s);
         if (victory) {
           s = { ...s, winners: victory.winners, winCondition: victory.condition, phase: 'completed' };
-          log.push(`Game over: ${victory.winners.join(', ')} win by ${victory.condition}.`);
+          log.emit({ type: 'game_over', winners: victory.winners, condition: victory.condition });
           return { state: s, log };
         }
         next = resolveWorldPhase(s);
