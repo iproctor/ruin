@@ -19,7 +19,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance,
+  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
   type GameState, type Action, type Power,
 } from '@ruin/engine';
 import {
@@ -79,7 +79,7 @@ function runGame(seed: number, challengerPlays: Power, configLabel: string): Gam
       playerTypes: Object.fromEntries(ALL_POWERS.map(p => [p, 'ai'])) as Record<Power, 'ai'>,
       seed,
     }),
-    log: [],
+    log: new GameLog(),
   });
 
   let actionCount = 0;

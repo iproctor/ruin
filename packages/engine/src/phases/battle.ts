@@ -1,5 +1,5 @@
 import type {
-  GameState, Power, RegionId, FollowerInstance,
+  GameState, Power, RegionId, FollowerInstance, PhaseEvent,
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
 } from '../types.js';
 import {
@@ -9,13 +9,14 @@ import {
   updatePower, updateRegion, isWorldCardActive,
 } from '../helpers.js';
 import { rollWithExplosions, countHits, makeRng, shuffle } from '../dice.js';
+import { GameLog } from '../gameLog.js';
 import type { ApplyResult } from '../reducers.js';
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 export function resolveBattlePhase(
   state: GameState,
-): { state: GameState; log: string[] } {
+): { state: GameState; log: GameLog } {
   const s: GameState = {
     ...state,
     phase: 'battle',
@@ -26,7 +27,7 @@ export function resolveBattlePhase(
       nextStep: null,
     },
   };
-  const log: string[] = [];
+  const log = new GameLog();
   return resolveFromRegion(s, 0, log);
 }
 
@@ -34,8 +35,8 @@ export function resolveBattlePhase(
 export function applyCorruptionHarvestChoice(
   state: GameState,
   action: CorruptionHarvestChoiceAction,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s: GameState = { ...state, pendingAction: null };
   const { regionId, followerIds } = action;
 
@@ -55,7 +56,7 @@ export function applyBattleHitAssignment(
   state: GameState,
   action: BattleHitAssignmentAction,
 ): ApplyResult {
-  const log: string[] = [];
+  const log = new GameLog();
   let s: GameState = { ...state, pendingAction: null };
 
   const { regionId, followerIds, peasantsToTake = 0, power: attacker, warFrenzyPartialHits } = action;
@@ -106,6 +107,7 @@ export function applyBattleHitAssignment(
         f.id === fId ? { ...f, tipped: true } : f
       ),
     });
+    log.event({ type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
     log.push(`${regionId}: ${attacker} kills ${figure.power} ${figure.class} (${fId}).`);
 
     // Xarm Heart Offering: draw a chaos card per kill
@@ -144,10 +146,10 @@ export function applyBattleHitAssignment(
   const nextStep = s.battleState!.nextStep;
   s = { ...s, battleState: { ...s.battleState!, nextStep: null } };
 
-  // Resume based on next step type
+  // Resume based on next step type — internal functions mutate the shared
+  // GameLog by reference, so we just need the final state.
   if (nextStep === null) {
-    // Shouldn't happen, but fall through to post_normal
-    return runPostNormal(s, regionId, log);
+    return { state: runPostNormal(s, regionId, log).state, log };
   }
 
   // War Frenzy (beginning-of-battle) clears tipped figures before normal battle starts
@@ -158,29 +160,30 @@ export function applyBattleHitAssignment(
     }
   }
 
-  let result: { state: GameState; log: string[] };
+  let inner: { state: GameState; log: GameLog };
   switch (nextStep.type) {
     case 'normal_battle':
-      result = runNormalBattle(s, regionId, nextStep.powerIndex, log);
+      inner = runNormalBattle(s, regionId, nextStep.powerIndex, log);
       break;
     case 'undying_fury':
-      result = runUndyingFury(s, regionId, nextStep.powerIndex, log);
+      inner = runUndyingFury(s, regionId, nextStep.powerIndex, log);
       break;
     case 'post_normal':
-      result = runPostNormal(s, regionId, log);
+      inner = runPostNormal(s, regionId, log);
       break;
     case 'post_undying':
-      result = runPostUndying(s, regionId, log);
+      inner = runPostUndying(s, regionId, log);
       break;
   }
 
   // If the current region finished without a new pause, advance to the next region
-  if (!result.state.pendingAction && result.state.phase === 'battle') {
-    const nextIdx = result.state.battleState!.currentRegionIndex + 1;
-    return resolveFromRegion(result.state, nextIdx, result.log);
+  if (!inner.state.pendingAction && inner.state.phase === 'battle') {
+    const nextIdx = inner.state.battleState!.currentRegionIndex + 1;
+    const fromRegion = resolveFromRegion(inner.state, nextIdx, inner.log);
+    return { state: fromRegion.state, log };
   }
 
-  return result;
+  return { state: inner.state, log };
 }
 
 // ─── Region iteration ─────────────────────────────────────────────────────────
@@ -188,8 +191,8 @@ export function applyBattleHitAssignment(
 function resolveFromRegion(
   state: GameState,
   startIdx: number,
-  outerLog: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const regions = REGION_ORDER;
 
@@ -197,18 +200,17 @@ function resolveFromRegion(
     const regionId = regions[i]!;
     s = { ...s, battleState: s.battleState ? { ...s.battleState, currentRegionIndex: i } : null };
 
-    const result = resolveRegion(s, regionId, outerLog);
+    const result = resolveRegion(s, regionId, log);
     s = result.state;
-    outerLog = result.log;
+    log = result.log;
 
     if (s.pendingAction !== null) {
-      // Pause for interactive choice — caller will resume
-      return { state: s, log: outerLog };
+      return { state: s, log };
     }
   }
 
   // All regions done — apply end-of-battle effects then move to corruption
-  return finalizeBattle(s, outerLog);
+  return finalizeBattle(s, log);
 }
 
 // ─── Single-region resolution ─────────────────────────────────────────────────
@@ -216,8 +218,8 @@ function resolveFromRegion(
 function resolveRegion(
   state: GameState,
   regionId: RegionId,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const region = s.regions[regionId]!;
   const activePowers = s.activePowers;
@@ -254,6 +256,9 @@ function resolveRegion(
 
   const battleOccurs = powersThatCanRoll.some(p => hasEnemyTargets(p));
   if (!battleOccurs) return { state: s, log };
+
+  // Emit region start event
+  log.event({ type: 'battle_region_start', regionId });
 
   // Detect card effects (Null Weave cancels all other card text)
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
@@ -294,6 +299,7 @@ function resolveRegion(
     const rolls = rollWithExplosions(2, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
+    log.event({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
     log.push(`${regionId}: ${CARD_BY_ID['xarm_war_frenzy']!.name} — Xarm rolls ${rolls.join(',')} → ${hits} hit(s).`);
     if (hits > 0) {
       const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
@@ -335,8 +341,8 @@ function runNormalBattle(
   state: GameState,
   regionId: RegionId,
   startPowerIndex: number,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
   const euphoricHaze = !nullWeaveActive && regionCardActive(s, regionId, 'lasha_ecstasy');
@@ -363,6 +369,7 @@ function runNormalBattle(
     const rolls = rollWithExplosions(diceCap, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
+    log.event({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'normal' });
     log.push(`${regionId}: ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
 
     if (hits > 0) {
@@ -390,8 +397,8 @@ function runNormalBattle(
 function runPostNormal(
   state: GameState,
   regionId: RegionId,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
@@ -427,8 +434,8 @@ function runUndyingFury(
   state: GameState,
   regionId: RegionId,
   startPowerIndex: number,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
   const chokepoint = isWorldCardActive(s, 'the_chokepoint') && s.regions[regionId]!.tokens.includes('event');
@@ -444,6 +451,7 @@ function runUndyingFury(
     const rolls = rollWithExplosions(diceCap, rng);
     const hits = countHits(rolls);
     s = { ...s, actionCount: s.actionCount + 1 };
+    log.event({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'undying_fury' });
     log.push(`${regionId}: ${CARD_BY_ID['xarm_bloody_rebirth']!.name} extra battle — ${power} rolls ${rolls.join(',')} → ${hits} hit(s).`);
 
     if (hits > 0) {
@@ -466,8 +474,8 @@ function runUndyingFury(
 function runPostUndying(
   state: GameState,
   regionId: RegionId,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
@@ -530,9 +538,9 @@ function pauseForHitChoice(
   hitsRemaining: number,
   nullWeaveActive: boolean,
   nextStep: BattleNextStep,
-  log: string[],
+  log: GameLog,
   extraContext: Record<string, unknown> = {},
-): { state: GameState; log: string[] } {
+): { state: GameState; log: GameLog } {
   const peasantsAvailable = state.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
   const s: GameState = {
     ...state,
@@ -546,6 +554,7 @@ function pauseForHitChoice(
       context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable, ...extraContext },
     },
   };
+  log.event({ type: 'battle_hit_wait', regionId, power: attacker, hits: hitsRemaining });
   log.push(`${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.`);
   return { state: s, log };
 }
@@ -595,7 +604,7 @@ function claimPeasant(
   state: GameState,
   regionId: RegionId,
   claimedBy: Power,
-  log: string[],
+  log: GameLog,
 ): GameState {
   const tokens = [...state.regions[regionId]!.tokens];
   const idx = tokens.indexOf('peasant');
@@ -616,8 +625,8 @@ function removeFigureFromBoard(
   state: GameState,
   regionId: RegionId,
   followerId: string,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = updateRegion(state, regionId, {
     placements: state.regions[regionId]!.placements.filter(f => f.id !== followerId),
   });
@@ -644,8 +653,8 @@ function killFollower(
   regionId: RegionId,
   followerId: string,
   _killedBy: Power,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   const figure = state.regions[regionId]!.placements.find(f => f.id === followerId);
   if (!figure) return { state, log };
   log.push(`${regionId}: ${CARD_BY_ID['gormen_inevitable_rot']!.name} kills ${figure.power} ${figure.class} (${followerId}).`);
@@ -656,8 +665,8 @@ function killFollower(
 
 function finalizeBattle(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
 
   // Armistice end-of-battle: each player removes 1 figure per event-token region
@@ -765,7 +774,7 @@ function regionCardActive(state: GameState, regionId: RegionId, cardId: string):
 
 // ─── Card draw helper ─────────────────────────────────────────────────────────
 
-function drawCardForPower(state: GameState, power: Power, log: string[]): GameState {
+function drawCardForPower(state: GameState, power: Power, log: GameLog): GameState {
   const p = state.powers[power]!;
   let { deckIds, discardIds, hand } = p;
 

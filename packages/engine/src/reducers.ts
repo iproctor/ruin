@@ -7,10 +7,11 @@ import { resolveCorruptionPhase } from './phases/corruption.js';
 import { resolveEndPhase } from './phases/end.js';
 import { applyCardOnPlayChoice } from './phases/cardChoices.js';
 import { checkVictory } from './victory.js';
+import { GameLog } from './gameLog.js';
 
 export interface ApplyResult {
   state: GameState;
-  log: string[];
+  log: GameLog;
 }
 
 /**
@@ -25,6 +26,7 @@ export function applyActionForPreview(state: GameState, action: Action): ApplyRe
   }
   return applyActionSwitch(s, action);
 }
+
 
 /** Remove the first item from the dial rewards queue; returns null when empty. */
 function popDialReward(queue: DialPendingReward[] | null): DialPendingReward[] | null {
@@ -87,14 +89,15 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
             pendingForcedDiscards: 0,
           },
         },
-        // Give this power their summoning turn now
         pendingAction: {
           waitingFor: action.power as Power,
           actionKind: 'summoning_action',
           context: {},
         },
       };
-      result = { state: s, log: [`${action.power} discards ${toDiscard.length} card(s) (Meddling of Rats).`] };
+      const log = new GameLog();
+      log.push(`${action.power} discards ${toDiscard.length} card(s) (Meddling of Rats).`);
+      result = { state: s, log };
       break;
     }
 
@@ -116,12 +119,13 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           },
         },
       };
-      // Sync basePowerPoints (and powerPoints) immediately so the UI reflects PP upgrades right away
       const newBase = getBasePP(s, action.power);
       if (newBase !== p.basePowerPoints) {
         s = { ...s, powers: { ...s.powers, [action.power]: { ...s.powers[action.power]!, basePowerPoints: newBase, powerPoints: newBase } } };
       }
-      result = { state: s, log: [`${action.power} takes upgrade: ${action.upgradeCardId}.`] };
+      const log = new GameLog();
+      log.push(`${action.power} takes upgrade: ${action.upgradeCardId}.`);
+      result = { state: s, log };
       break;
     }
 
@@ -145,7 +149,9 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
-      result = { state: s, log: [`${action.power} (dial) places ${reward.tokenType} on ${action.regionId}.`] };
+      const log = new GameLog();
+      log.push(`${action.power} (dial) places ${reward.tokenType} on ${action.regionId}.`);
+      result = { state: s, log };
       break;
     }
 
@@ -154,8 +160,6 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       const reward = queue[0];
       if (!reward || reward.kind !== 'remove_corruption') throw new Error('No remove_corruption reward pending');
       const region = s.regions[action.regionId]!;
-      // The dial reward strips corruption belonging to `targetPower` — which
-      // can be the acting power's own (cleanup) or any opponent's (disruption).
       const target = action.targetPower;
       const curr = region.corruptionTokens[target];
       if (curr <= 0) throw new Error(`No ${target} corruption in ${action.regionId}`);
@@ -174,7 +178,9 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const targetLabel = target === action.power ? 'own' : `${target}'s`;
-      result = { state: s, log: [`${action.power} (dial) removes 1 ${targetLabel} corruption from ${action.regionId}.`] };
+      const log = new GameLog();
+      log.push(`${action.power} (dial) removes 1 ${targetLabel} corruption from ${action.regionId}.`);
+      result = { state: s, log };
       break;
     }
 
@@ -198,7 +204,9 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
-      result = { state: s, log: [`${action.power} (dial) removes ${action.tokenType} from ${action.regionId}.`] };
+      const log = new GameLog();
+      log.push(`${action.power} (dial) removes ${action.tokenType} from ${action.regionId}.`);
+      result = { state: s, log };
       break;
     }
 
@@ -226,16 +234,14 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
           },
         },
       };
-      result = {
-        state: s,
-        log: [`${action.power} removes ${figure.class} (${action.followerId}) due to Hero token.`],
-      };
+      const log = new GameLog();
+      log.push(`${action.power} removes ${figure.class} (${action.followerId}) due to Hero token.`);
+      result = { state: s, log };
       break;
     }
 
     case 'world_card_effect':
-      // Generic world card effect — currently no additional interactive world card effects
-      result = { state: { ...s, pendingAction: null }, log: [] };
+      result = { state: { ...s, pendingAction: null }, log: new GameLog() };
       break;
 
     default:
@@ -281,19 +287,19 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
     // Skip for end-phase re-entries while draining dial rewards (banner was already emitted).
     const isEndReEntry = s.phase === 'end' && s.pendingDialRewards !== null;
     if (s.phase !== lastBannerPhase && !isEndReEntry) {
-      log = [...log, `== Round ${s.round}: ${s.phase.toUpperCase()} ==`];
+      log.push(`== Round ${s.round}: ${s.phase.toUpperCase()} ==`);
       lastBannerPhase = s.phase;
     }
 
     // Check for autonomous phase transitions
-    let next: ApplyResult;
+    let next: { state: GameState; log: GameLog };
 
     switch (s.phase) {
       case 'world': {
         const victory = checkVictory(s);
         if (victory) {
           s = { ...s, winners: victory.winners, winCondition: victory.condition, phase: 'completed' };
-          log = [...log, `Game over: ${victory.winners.join(', ')} win by ${victory.condition}.`];
+          log.push(`Game over: ${victory.winners.join(', ')} win by ${victory.condition}.`);
           return { state: s, log };
         }
         next = resolveWorldPhase(s);
@@ -305,8 +311,6 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
         break;
 
       case 'battle':
-        // Battle is only started by autoAdvance once (from summoning → battle transition)
-        // After that, battle may require choices — handled by applyCorruptionHarvestChoice
         next = resolveBattlePhase(s);
         break;
 
@@ -319,11 +323,10 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
         break;
 
       default:
-        // summoning, lobby, completed: no autonomous advance
         return { state: s, log };
     }
 
-    log = [...log, ...next.log];
+    log.absorb(next.log);
     s = next.state;
   }
 

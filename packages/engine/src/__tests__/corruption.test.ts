@@ -29,7 +29,7 @@ describe('basic domination', () => {
     const vpXarmBefore = s.powers.xarm!.victoryPoints;
     const vpGormenBefore = s.powers.gormen!.victoryPoints;
     const { state, log } = resolveCorruptionPhase(s);
-    expect(log.some(l => l.includes('Tied domination'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Tied domination'))).toBe(true);
     expect(state.powers.xarm!.victoryPoints).toBe(vpXarmBefore);
     expect(state.powers.gormen!.victoryPoints).toBe(vpGormenBefore);
   });
@@ -168,7 +168,7 @@ describe('Xarm War Cry (no corruption tokens in region)', () => {
     const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
     const { state, log } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
-    expect(log.some(l => l.includes('War Cry'))).toBe(true);
+    expect(log.entries.some(l => l.includes('War Cry'))).toBe(true);
   });
 });
 
@@ -182,7 +182,7 @@ describe("Gormen Death's Perfume (+2 corruption on win)", () => {
     // domination = 1 + 3 = 4 > resistance 1
     const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
     const { state, log } = resolveCorruptionPhase(s);
-    if (log.some(l => l.includes('gormen dominates') || l.includes('gormen') && l.includes('scores'))) {
+    if (log.entries.some(l => l.includes('gormen dominates') || l.includes('gormen') && l.includes('scores'))) {
       expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore + 2);
     }
   });
@@ -291,7 +291,7 @@ describe('Gormen Provender of Ruin (+3 VP on any ruination)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund'); // triggers ruination
     const vpBefore = s.powers.gormen!.victoryPoints;
     const { state, log } = resolveCorruptionPhase(s);
-    if (log.some(l => l.includes('RUINED'))) {
+    if (log.entries.some(l => l.includes('RUINED'))) {
       expect(state.powers.gormen!.victoryPoints).toBeGreaterThanOrEqual(vpBefore + 3);
     }
   });

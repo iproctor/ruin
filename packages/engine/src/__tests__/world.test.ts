@@ -144,7 +144,7 @@ describe('accelerating_doom', () => {
       worldDeck: ['accelerating_doom', 'raise_the_militia'],
     });
     const { state, log } = resolveWorldPhase(s);
-    expect(log.some(l => l.includes('False Lead'))).toBe(true);
+    expect(log.entries.some(l => l.includes('False Lead'))).toBe(true);
     expect(state.phase).toBe('draw');
     expect(state.worldDeck).toContain('raise_the_militia');
   });
@@ -246,7 +246,7 @@ describe('forward_scouts', () => {
   test('no effect when no Chaos Stones on board', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['forward_scouts'] });
     const { state, log } = resolveWorldPhase(s);
-    expect(log.some(l => l.includes('no Chaos Stone'))).toBe(true);
+    expect(log.entries.some(l => l.includes('no Chaos Stone'))).toBe(true);
     expect(state.phase).toBe('draw');
   });
 });
@@ -267,7 +267,7 @@ describe('world track', () => {
     let s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['eastern_armistice'] });
     s = { ...s, worldTrack: { slot1: 'mittelreich_diplomacy', slot2: null, discardCard: null } }; // war_zone has hasCometIcon = true
     const { state, log } = resolveWorldPhase(s);
-    expect(log.some(l => l.includes('comet'))).toBe(true);
+    expect(log.entries.some(l => l.includes('comet'))).toBe(true);
     expect(state.worldTrack.slot1).toBe('eastern_armistice');
     expect(state.worldTrack.slot2).toBeNull();
   });

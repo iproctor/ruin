@@ -7,7 +7,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance,
+  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
 import type { Power, Action } from '@ruin/engine';
@@ -44,14 +44,14 @@ let { state, log } = autoAdvance({
     playerTypes: Object.fromEntries(activePowers.map(p => [p, 'ai'])) as Record<Power, 'ai'>,
     seed,
   }),
-  log: [],
+  log: new GameLog(),
 });
 
-function printLog(lines: string[]) {
-  for (const l of lines) console.log(l);
+function printLog(entries: string[]) {
+  for (const l of entries) console.log(l);
 }
 
-printLog(log);
+printLog(log.entries);
 
 // ── Game loop ─────────────────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ while (state.winners === null && state.phase !== 'completed') {
   // Apply
   try {
     const result = applyAction(state, action);
-    printLog(result.log);
+    printLog(result.log.entries);
     state = result.state;
   } catch (err) {
     console.error(`\n[ERROR] applyAction threw for ${waitingFor}:`, err);

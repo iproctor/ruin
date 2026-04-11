@@ -1,5 +1,6 @@
 import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
 import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
+import { GameLog } from '../gameLog.js';
 import {
   lowestThreatPower, addTokenToRegion, removeTokenFromRegion,
   isWorldCardActive, updateRegion, updatePower, scoreVP,
@@ -48,8 +49,8 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
 /** Draw the next world card and apply its immediate effects.
  *  If the card requires a player choice, sets pendingAction and returns early.
  *  Otherwise, fully resolves and advances to the draw phase. */
-export function resolveWorldPhase(state: GameState): { state: GameState; log: string[] } {
-  let log: string[] = [];
+export function resolveWorldPhase(state: GameState): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   // Clear previous round's discard card
   let s: GameState = { ...state, worldTrack: { ...state.worldTrack, discardCard: null } };
 
@@ -83,7 +84,6 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: st
   // Apply immediate effects (non-choice ones first)
   const result = applyWorldCardImmediate(s, cardId!, log);
   s = result.state;
-  log = result.log;
 
   if (result.needsChoice) {
     // Set pendingAction and wait — caller must submit a WorldChoiceAction
@@ -105,14 +105,13 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: st
 }
 
 /** Apply a world choice action and continue. */
-export function applyWorldChoice(state: GameState, action: WorldChoiceAction): { state: GameState; log: string[] } {
-  let log: string[] = [];
+export function applyWorldChoice(state: GameState, action: WorldChoiceAction): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s: GameState = { ...state, pendingAction: null };
   const { cardId, choices } = action;
 
   const result = applyWorldCardChoice(s, cardId, choices, log);
   s = result.state;
-  log = result.log;
 
   s = placeOnTrackOrDiscard(s, cardId);
   s = advanceToDrawPhase(s);
@@ -143,8 +142,8 @@ function advanceToDrawPhase(state: GameState): GameState {
 function applyWorldCardImmediate(
   state: GameState,
   cardId: string,
-  log: string[],
-): { state: GameState; log: string[]; needsChoice: boolean } {
+  log: GameLog,
+): { state: GameState; needsChoice: boolean } {
   let s = state;
 
   switch (cardId) {
@@ -153,45 +152,45 @@ function applyWorldCardImmediate(
       for (const r of ['almerida', 'normagne', 'norrsund'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'event', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'purchased_title': {
       // Find first Peasant on board and replace with Noble (no player choice for auto)
       // If multiple Peasants: lowest-threat player chooses — set needsChoice
       const peasantRegions = REGION_ORDER.filter(r => s.regions[r]!.tokens.includes('peasant'));
-      if (peasantRegions.length === 0) return { state: s, log, needsChoice: false };
+      if (peasantRegions.length === 0) return { state: s, needsChoice: false };
       if (peasantRegions.length === 1) {
         s = removeTokenFromRegion(s, peasantRegions[0]!, 'peasant');
         s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
         s = addTokenIfAvailable(s, peasantRegions[0]!, 'noble', log);
-        return { state: s, log, needsChoice: false };
+        return { state: s, needsChoice: false };
       }
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'ratmen_incursion': {
       // Place Ratmen on 2 regions — lowest threat player chooses
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'peasant_prosperity': {
-      return { state: s, log, needsChoice: true }; // choose 2 regions for Peasant
+      return { state: s, needsChoice: true }; // choose 2 regions for Peasant
     }
 
     case 'chaos_storm': {
-      return { state: s, log, needsChoice: true }; // choose 2 regions for Chaos Stone
+      return { state: s, needsChoice: true }; // choose 2 regions for Chaos Stone
     }
 
     case 'grand_muster': {
-      return { state: s, log, needsChoice: true }; // choose regions for all three token types
+      return { state: s, needsChoice: true }; // choose regions for all three token types
     }
 
     case 'accelerating_doom': {
       // Draw another card immediately — caller handles this by re-running resolveWorldPhase
       log.push(`${WORLD_CARD_BY_ID['accelerating_doom']!.name}: drawing another World card.`);
       s = { ...s, phase: 'world' };
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'raise_the_militia': {
@@ -199,7 +198,7 @@ function applyWorldCardImmediate(
       for (const r of REGION_ORDER.filter(id => id !== 'the_barrens')) {
         s = addTokenIfAvailable(s, r, 'peasant', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'peasant_harvest': {
@@ -215,36 +214,36 @@ function applyWorldCardImmediate(
         s = scoreVP(s, p, vp);
         if (vp > 0) log.push(`${p} scores ${vp} VP from ${WORLD_CARD_BY_ID['peasant_harvest']!.name} (${claimed} claimed Peasants).`);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'diplomatic_envoy': {
       // Place Noble on 3 different regions — choice required
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'normagne_heir': {
       // Noble on Normagne + one other region
       s = addTokenIfAvailable(s, 'normagne', 'noble', log);
-      return { state: s, log, needsChoice: true }; // choose the second region
+      return { state: s, needsChoice: true }; // choose the second region
     }
 
     case 'northern_heir': {
       // Noble on (Norrsund+Volensk) OR (Talvimaa+Mittelreich) — choice required
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'mittelreich_diplomacy': {
       // Event on Mittelreich + one other — choice required
       s = addTokenIfAvailable(s, 'mittelreich', 'event', log);
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'the_chokepoint': {
       for (const r of ['the_barrens', 'mittelreich', 'toscavar'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'event', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'central_overpopulation': {
@@ -254,28 +253,28 @@ function applyWorldCardImmediate(
       for (const r of REGION_ORDER) {
         s = addTokenIfAvailable(s, r, 'peasant', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'great_exorcism': {
-      return { state: s, log, needsChoice: true }; // choose which region gets Event token
+      return { state: s, needsChoice: true }; // choose which region gets Event token
     }
 
     case 'heroes_of_order': {
-      return { state: s, log, needsChoice: true }; // choose pair: (Normagne+Mittelreich) or (Almerida+Toscavar)
+      return { state: s, needsChoice: true }; // choose pair: (Normagne+Mittelreich) or (Almerida+Toscavar)
     }
 
     case 'cleansing_wave': {
       // Event on Normagne + adjacent region — Normagne is fixed, adjacent choice needed
       s = addTokenIfAvailable(s, 'normagne', 'event', log);
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'chaos_countermeasures': {
       for (const r of ['the_barrens', 'pelascos'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'hero', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'forward_scouts': {
@@ -286,27 +285,27 @@ function applyWorldCardImmediate(
       );
       if (eligible.length === 0) {
         log.push(`${WORLD_CARD_BY_ID['forward_scouts']!.name}: no Chaos Stone tokens on board. No effect.`);
-        return { state: s, log, needsChoice: false };
+        return { state: s, needsChoice: false };
       }
-      return { state: s, log, needsChoice: true };
+      return { state: s, needsChoice: true };
     }
 
     case 'the_exchange': {
-      return { state: s, log, needsChoice: true }; // choose region for 2 Chaos Stones
+      return { state: s, needsChoice: true }; // choose region for 2 Chaos Stones
     }
 
     case 'noble_scrutiny': {
       for (const r of ['normagne', 'mittelreich', 'almerida'] as RegionId[]) {
         s = addTokenIfAvailable(s, r, 'noble', log);
       }
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
     }
 
     case 'kashnir_arms': // alias — same as noble_scrutiny placement
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
 
     default:
-      return { state: s, log, needsChoice: false };
+      return { state: s, needsChoice: false };
   }
 }
 
@@ -315,8 +314,8 @@ function applyWorldCardChoice(
   state: GameState,
   cardId: string,
   choices: Record<string, unknown>,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
 
   const cardName = WORLD_CARD_BY_ID[cardId]?.name ?? cardId;
@@ -425,10 +424,10 @@ function applyWorldCardChoice(
     }
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
-function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: string[]): GameState {
+function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
   if (state.tokenSupply[token] <= 0) {
     log.push(`Token supply exhausted: ${token}`);
     return state;

@@ -5,6 +5,7 @@ import { applyAction, autoAdvance } from '../reducers.js';
 import { createInitialState } from '../setup.js';
 import { makeState, placeFollower, setWorldCard, setPP } from './helpers.js';
 import type { Power } from '../types.js';
+import { GameLog } from '../gameLog.js';
 
 // Fixed-seed state that has already passed the world phase
 function summoningState() {
@@ -46,20 +47,20 @@ describe('summoning → battle transition', () => {
 describe('autoAdvance', () => {
   test('autoAdvance stops at pendingAction', () => {
     const s = summoningState();
-    const result = autoAdvance({ state: s, log: [] });
+    const result = autoAdvance({ state: s, log: new GameLog() });
     expect(result.state.pendingAction).not.toBeNull();
   });
 
   test('autoAdvance moves through corruption and end phases when no figures present', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     // Battle with no figures → corruption → end → world (empty deck → completed)
-    const result = autoAdvance({ state: s, log: [] });
+    const result = autoAdvance({ state: s, log: new GameLog() });
     expect(['world', 'summoning', 'completed'].includes(result.state.phase)).toBe(true);
   });
 
   test('round increments after completing full round', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
-    const result = autoAdvance({ state: s, log: [] });
+    const result = autoAdvance({ state: s, log: new GameLog() });
     // End phase increments round
     expect(result.state.round).toBeGreaterThanOrEqual(2);
   });
@@ -78,7 +79,7 @@ describe('full round via applyAction', () => {
 
   test('world phase with empty deck results in world_exhausted victory', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: [] });
-    const result = autoAdvance({ state: s, log: [] });
+    const result = autoAdvance({ state: s, log: new GameLog() });
     // Empty deck at world phase → checkVictory returns world_exhausted → completed
     expect(result.state.phase).toBe('completed');
     expect(result.state.winCondition).toBe('world_exhausted');

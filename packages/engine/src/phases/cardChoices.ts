@@ -5,6 +5,7 @@
 import type {
   GameState, Power, RegionId, TokenType, CardOnPlayChoiceAction,
 } from '../types.js';
+import { GameLog } from '../gameLog.js';
 import { CARD_BY_ID, REGION_ORDER } from '../constants.js';
 import { updatePower, updateRegion } from '../helpers.js';
 import { advanceSummoningTurn } from './summoning.js';
@@ -12,8 +13,8 @@ import { advanceSummoningTurn } from './summoning.js';
 export function applyCardOnPlayChoice(
   state: GameState,
   action: CardOnPlayChoiceAction,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s: GameState = { ...state, pendingAction: null };
   const { power, cardId, regionId, choices } = action;
 

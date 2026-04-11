@@ -13,7 +13,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance,
+  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
 import type { Power, Action } from '@ruin/engine';
@@ -207,12 +207,12 @@ function runGame(seed: number): GameResult {
       playerTypes: Object.fromEntries(activePowers.map(p => [p, 'ai'])) as Record<Power, 'ai'>,
       seed,
     }),
-    log: [],
+    log: new GameLog(),
   });
 
   // Scan initial setup log too
-  scanLogForDac(initialLog, state.round, dacByRound);
-  scanLogForIndicators(initialLog, indicators);
+  scanLogForDac(initialLog.entries, state.round, dacByRound);
+  scanLogForIndicators(initialLog.entries, indicators);
 
   // Sample tenzen cultist count at game start
   const sampleTenzen = (): void => {
@@ -327,8 +327,8 @@ function runGame(seed: number): GameResult {
     try {
       const result = applyAction(state, action);
       const prevRound = state.round;
-      scanLogForDac(result.log, state.round, dacByRound);
-      scanLogForIndicators(result.log, indicators);
+      scanLogForDac(result.log.entries, state.round, dacByRound);
+      scanLogForIndicators(result.log.entries, indicators);
       state = result.state;
       // Sample tenzen cultists on every round transition (post-end-phase
       // snapshot of the durable cultist count).

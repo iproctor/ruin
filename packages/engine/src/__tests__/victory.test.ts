@@ -5,6 +5,7 @@ import { checkVictory } from '../victory.js';
 import { autoAdvance } from '../reducers.js';
 import { makeState, setVP, ruinRegion } from './helpers.js';
 import { REGION_ORDER } from '../constants.js';
+import { GameLog } from '../gameLog.js';
 
 describe('VP victory (≥50)', () => {
   test('no winner when no power has 50+ VP', () => {
@@ -112,7 +113,7 @@ describe('threat dial victory', () => {
       winners: ['gormen'],
       winCondition: 'vp',
     });
-    const { state } = autoAdvance({ state: s, log: [] });
+    const { state } = autoAdvance({ state: s, log: new GameLog() });
     // Game is already over — phase must not change
     expect(state.phase).toBe('completed');
     expect(state.winners).toContain('gormen');
@@ -126,7 +127,7 @@ describe('no winner state', () => {
 
   test('completed phase is not re-evaluated', () => {
     const s = makeState({ phase: 'completed', winners: ['tenzen'], winCondition: 'vp' });
-    const { state } = autoAdvance({ state: s, log: [] });
+    const { state } = autoAdvance({ state: s, log: new GameLog() });
     expect(state.phase).toBe('completed');
   });
 });

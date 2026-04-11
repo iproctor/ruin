@@ -202,6 +202,20 @@ export type GameEvent =
   | { type: 'ruination'; round: number; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number }
   | { type: 'ruination_scoring'; round: number; regionId: RegionId; cardIndex: number; first: Power[]; firstVP: number; second: Power[]; secondVP: number };
 
+// ─── Phase events (ephemeral, broadcast but not persisted) ──────────────────
+
+export type PhaseEvent =
+  // Battle
+  | { type: 'battle_region_start'; regionId: RegionId }
+  | { type: 'battle_roll'; regionId: RegionId; power: Power; dice: number[]; hits: number; kind: 'normal' | 'war_frenzy' | 'undying_fury' }
+  | { type: 'battle_hit_wait'; regionId: RegionId; power: Power; hits: number }
+  | { type: 'battle_kill'; regionId: RegionId; attacker: Power; targetPower: Power; targetClass: FollowerClass; targetId: string }
+  | { type: 'battle_region_end'; regionId: RegionId }
+  // Corruption
+  | { type: 'domination_result'; regionId: RegionId; power: Power | null; value: number; resistance: number; conquered: boolean; vp: number }
+  | { type: 'corruption_placement'; regionId: RegionId; power: Power; tokens: number }
+  | { type: 'corruption_ruination'; regionId: RegionId; cardIndex: number; ruiners: Power[]; ruinerVP: number };
+
 // ─── Win result ───────────────────────────────────────────────────────────────
 
 export interface WinResult {

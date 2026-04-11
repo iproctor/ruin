@@ -55,7 +55,7 @@ describe('Enthrallment release', () => {
     s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
     const { state, log } = resolveEndPhase(s);
     // Controlled gormen cultist should be released
-    expect(log.some(l => l.includes('Enthrallment discarded'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Enthrallment discarded'))).toBe(true);
     const cultist = state.powers.gormen!.followers.find(f => f.class === 'cultist')!;
     expect(cultist.controlledBy).toBeNull();
   });
@@ -70,7 +70,7 @@ describe('Hero token resolution', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'hero');
     const { state, log } = resolveEndPhase(s);
-    expect(log.some(l => l.includes('Hero token') && l.includes('xarm'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Hero token') && l.includes('xarm'))).toBe(true);
     expect(state.regions.norrsund!.placements.filter(f => (f.controlledBy ?? f.power) === 'xarm')).toHaveLength(0);
   });
 
@@ -160,7 +160,7 @@ describe('ruined region scoring', () => {
     // First place must clearly out-score second place from end-phase scoring.
     expect(xarmGain).toBeGreaterThan(gormenGain);
     // And the end-phase scoring log line must be present.
-    const allLog = [...corr.log, ...end.log];
+    const allLog = [...corr.log.entries, ...end.log.entries];
     expect(allLog.some(l => l.includes('Ruination scoring') && l.includes('xarm'))).toBe(true);
   });
 });
@@ -239,7 +239,7 @@ describe('world card persistent effects during end phase', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'normagne');
     s = giveCards(s, 'xarm', ['xarm_war_cry']);
     const { state, log } = resolveEndPhase(s);
-    expect(log.some(l => l.includes('Strategic Vanguard'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Strategic Vanguard'))).toBe(true);
     expect(state.powers.xarm!.hand).not.toContain('xarm_war_cry');
   });
 

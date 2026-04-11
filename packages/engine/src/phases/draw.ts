@@ -1,11 +1,12 @@
 import type { GameState, Power, TenzenDiscardAction } from '../types.js';
 import { BASE_DRAW_AMOUNT, BASE_POWER_POINTS, UPGRADES, TENZEN_DRAW_TO } from '../constants.js';
+import { GameLog } from '../gameLog.js';
 import { updatePower } from '../helpers.js';
 import { shuffle, makeRng } from '../dice.js';
 
 /** Begin the draw phase. Sets pendingAction for Tenzen if needed, else resolves all draws. */
-export function beginDrawPhase(state: GameState): { state: GameState; log: string[] } {
-  const log: string[] = [];
+export function beginDrawPhase(state: GameState): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s = state;
 
   // Check if Tenzen is active and must make a discard choice
@@ -22,7 +23,8 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: strin
           context: { drawTarget },
         },
       };
-      return { state: s, log: ['Draw phase: waiting for Tenzen discard choice.'] };
+      log.push('Draw phase: waiting for Tenzen discard choice.');
+      return { state: s, log };
     }
   }
 
@@ -31,8 +33,8 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: strin
 }
 
 /** Apply Tenzen's discard choice, then resolve all draws. */
-export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction): { state: GameState; log: string[] } {
-  const log: string[] = [];
+export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s: GameState = { ...state, pendingAction: null };
 
   if (action.cardId !== null) {
@@ -54,7 +56,7 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
 
 // ─── Internal ─────────────────────────────────────────────────────────────────
 
-function resolveAllDraws(state: GameState, log: string[]): { state: GameState; log: string[] } {
+function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; log: GameLog } {
   let s = state;
 
   for (const power of s.activePowers) {
@@ -88,7 +90,7 @@ function resolveAllDraws(state: GameState, log: string[]): { state: GameState; l
   // phase transition + pendingAction set happen in the same step, so
   // autoAdvance immediately breaks on pendingAction before reaching its
   // banner-emit branch.
-  log = [...log, `== Round ${s.round}: SUMMONING ==`];
+  log.push(`== Round ${s.round}: SUMMONING ==`);
 
   return { state: s, log };
 }

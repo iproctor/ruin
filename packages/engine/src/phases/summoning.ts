@@ -4,6 +4,7 @@ import type {
   TenzenApprenticeChoiceAction,
 } from '../types.js';
 import { CARD_BY_ID, FOLLOWERS, UPGRADES, UPGRADE_BY_ID } from '../constants.js';
+import { GameLog } from '../gameLog.js';
 import {
   updatePower, updateRegion, legalPlacementRegions,
   cardSlotsAvailable, isRuined, followersInRegion, isWorldCardActive,
@@ -15,8 +16,8 @@ import {
 export function applySummonFigure(
   state: GameState,
   action: SummonFigureAction,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s = state;
   const { power, followerId, toRegion } = action;
   const p = s.powers[power]!;
@@ -118,8 +119,8 @@ export function applySummonFigure(
 export function applyPlayCard(
   state: GameState,
   action: PlayCardAction,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s = state;
   const { power, cardId, toRegion, slotIndex } = action;
   const p = s.powers[power]!;
@@ -223,10 +224,11 @@ function hasOnPlayChoiceTarget(
 export function applySummoningPass(
   state: GameState,
   action: SummoningPassAction,
-): { state: GameState; log: string[] } {
+): { state: GameState; log: GameLog } {
   const { power } = action;
   let s = updatePower(state, power, { powerPoints: 0, passedSummoning: true });
-  const log = [`${power} passes summoning.`];
+  const log = new GameLog();
+  log.push(`${power} passes summoning.`);
   return { state: advanceSummoningTurn(s, power), log };
 }
 
@@ -235,9 +237,9 @@ export function applySummoningPass(
 export function applyTenzenApprenticeChoice(
   state: GameState,
   action: TenzenApprenticeChoiceAction,
-): { state: GameState; log: string[] } {
+): { state: GameState; log: GameLog } {
   let s = state;
-  const log: string[] = [];
+  const log = new GameLog();
   if (action.carry) {
     const fromRegion = s.regions[action.fromRegion];
     if (fromRegion && fromRegion.tokens.includes('chaos_stone') && s.tokenSupply.chaos_stone >= 0) {
@@ -416,7 +418,7 @@ function applyOnPlayEffect(
   cardId: string,
   power: Power,
   regionId: RegionId,
-  log: string[],
+  log: GameLog,
 ): GameState {
   let s = state;
   switch (cardId) {

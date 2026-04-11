@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { eq, asc } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { createInitialState, applyAction, autoAdvance, getLegalActions } from '@ruin/engine';
+import { createInitialState, applyAction, autoAdvance, getLegalActions, GameLog } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
@@ -119,9 +119,10 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
     }
 
     const { state: next, log } = applyAction(current, action);
-    await saveGame(gameId, next, log);
+    await saveGame(gameId, next, log.entries);
     broadcast(gameId, { type: 'state', state: next });
-    if (log.length > 0) broadcast(gameId, { type: 'log', entries: log });
+    if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
+    if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
     current = next;
   }
 
@@ -142,12 +143,12 @@ export async function createGame(
   const seed = Math.floor(Math.random() * 2 ** 31);
 
   const initialState = createInitialState({ gameId, activePowers: powers, playerTypes, seed });
-  const { state, log } = autoAdvance({ state: initialState, log: [] });
+  const { state, log } = autoAdvance({ state: initialState, log: new GameLog() });
 
   await db.insert(games).values({
     id: gameId,
     state: state as unknown as Record<string, unknown>,
-    eventLog: log as unknown as Record<string, unknown>,
+    eventLog: log.entries as unknown as Record<string, unknown>,
     round: state.round,
     phase: state.phase,
     createdBy,
@@ -185,9 +186,10 @@ export async function applyPlayerAction(
 
   const { state: afterAction, log } = applyAction(state, action);
 
-  await saveGame(gameId, afterAction, log);
+  await saveGame(gameId, afterAction, log.entries);
   broadcast(gameId, { type: 'state', state: afterAction });
-  if (log.length > 0) broadcast(gameId, { type: 'log', entries: log });
+  if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
+  if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
 
   return maybeRunAiTurns(gameId, afterAction);
 }

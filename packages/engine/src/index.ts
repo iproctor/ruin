@@ -12,6 +12,7 @@ export type {
   DialPendingReward,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
   GameEvent,
+  PhaseEvent,
 } from './types.js';
 
 export { createInitialState } from './setup.js';
@@ -19,6 +20,7 @@ export type { GameConfig } from './setup.js';
 
 export { applyAction, applyActionForPreview, autoAdvance } from './reducers.js';
 export type { ApplyResult } from './reducers.js';
+export { GameLog } from './gameLog.js';
 
 export { getLegalActions } from './legalActions.js';
 export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination } from './phases/corruption.js';

@@ -7,6 +7,7 @@ import {
   updatePower, updateRegion, scoreVP, isWorldCardActive, isRuined,
   magicSymbolCount, totalCorruption,
 } from '../helpers.js';
+import { GameLog } from '../gameLog.js';
 
 // ─── Public helper ────────────────────────────────────────────────────────────
 
@@ -70,8 +71,8 @@ export function getRegionDomination(
 
 export function resolveCorruptionPhase(
   state: GameState,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s = state;
 
   // Snapshot corruption tokens BEFORE any phase work. Used at ruination time
@@ -97,8 +98,8 @@ export function resolveCorruptionPhase(
 
 function resolveDomination(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
 
   for (const regionId of REGION_ORDER) {
@@ -122,7 +123,9 @@ function resolveDomination(
 
     const leaders = s.activePowers.filter(p => domValues.get(p) === maxDom);
     if (leaders.length > 1) {
+      const resistance = calcResistance(s, regionId, nullWeave);
       log.push(`${regionId}: Tied domination (${maxDom}) — no conquest.`);
+      log.event({ type: 'domination_result', regionId, power: null, value: maxDom, resistance, conquered: false, vp: 0 });
       continue;
     }
 
@@ -134,6 +137,7 @@ function resolveDomination(
       s = scoreVP(s, winner, conquestValue);
       s = { ...s, events: [...s.events, { type: 'domination' as const, round: s.round, regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue }] };
       log.push(`${regionId}: ${winner} dominates (${maxDom} vs resistance ${resistance}) — scores ${conquestValue} VP.`);
+      log.event({ type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
 
       // Gormen Death's Perfume: place 2 corruption tokens on domination
       if (!nullWeave && winner === 'gormen' &&
@@ -276,9 +280,9 @@ function calcConquestValue(state: GameState, regionId: RegionId): number {
 
 function resolveCorruption(
   state: GameState,
-  log: string[],
+  log: GameLog,
   corruptionSnapshot: Record<string, Record<Power, number>>,
-): { state: GameState; log: string[] } {
+): { state: GameState; log: GameLog } {
   let s = state;
 
   for (const regionId of REGION_ORDER) {
@@ -304,6 +308,7 @@ function resolveCorruption(
         },
       });
       log.push(`${regionId}: ${power} places ${tokensToPlace} corruption token(s).`);
+      log.event({ type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
 
       // Dial advancement counters
       s = checkDialAdvancement(s, regionId, power, tokensToPlace, nullWeave, log);
@@ -387,7 +392,7 @@ function checkDialAdvancement(
   power: Power,
   tokensPlaced: number,
   _nullWeave: boolean,
-  log: string[],
+  log: GameLog,
 ): GameState {
   let s = state;
   const region = s.regions[regionId]!;
@@ -437,7 +442,7 @@ function applyRuination(
   state: GameState,
   regionId: RegionId,
   placedBy: Set<Power>,
-  log: string[],
+  log: GameLog,
 ): GameState {
   let s = state;
   const nextCardIndex = s.ruinationCardsUsed + 1;
@@ -457,6 +462,7 @@ function applyRuination(
   }
   s = { ...s, events: [...s.events, { type: 'ruination' as const, round: s.round, regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore }] };
   log.push(`${regionId}: RUINED (card ${nextCardIndex}). Ruiners score ${card.ruinersScore} VP each.`);
+  log.event({ type: 'corruption_ruination', regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore });
 
   // Gormen Provender of Ruin upgrade: +3 VP on any ruination
   for (const power of s.activePowers) {

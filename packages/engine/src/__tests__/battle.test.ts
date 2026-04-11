@@ -10,6 +10,7 @@ import type { GameState } from '../types.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from '../phases/battle.js';
 import { applyAction } from '../reducers.js';
 import { REGION_ORDER } from '../constants.js';
+import { GameLog } from '../gameLog.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
   giveCards, withUpgrade, setPP, setWorldCard, followersIn,
@@ -150,8 +151,8 @@ describe('interactive hit assignment', () => {
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.phase).toBe('corruption');
     // Both powers had attack dice, so both should appear in roll logs
-    const xarmRolls = log.filter(l => l.includes('norrsund: xarm rolls'));
-    const gormenRolls = log.filter(l => l.includes('norrsund: gormen rolls'));
+    const xarmRolls = log.entries.filter(l => l.includes('norrsund: xarm rolls'));
+    const gormenRolls = log.entries.filter(l => l.includes('norrsund: gormen rolls'));
     expect(xarmRolls.length).toBeGreaterThan(0);
     expect(gormenRolls.length).toBeGreaterThan(0);
   });
@@ -181,7 +182,7 @@ describe('Euphoric Haze (no dice)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'lasha_ecstasy', 'lasha', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    const hitLogs = log.filter(l => l.includes('→') && l.includes('hit'));
+    const hitLogs = log.entries.filter(l => l.includes('→') && l.includes('hit'));
     expect(hitLogs).toHaveLength(0);
   });
 });
@@ -196,7 +197,7 @@ describe('War Zone (no battle if event token)', () => {
     s = addToken(s, 'norrsund', 'event');
     s = setWorldCard(s, 'mittelreich_diplomacy');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    const norrsundBattleLogs = log.filter(l => l.startsWith('norrsund:'));
+    const norrsundBattleLogs = log.entries.filter(l => l.startsWith('norrsund:'));
     expect(norrsundBattleLogs).toHaveLength(0);
   });
 
@@ -206,7 +207,7 @@ describe('War Zone (no battle if event token)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'mittelreich');
     s = placeFollower(s, 'gormen', 'cultist', 'mittelreich');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
   });
 
   test('event token + great_exorcism does not suppress battle (only mittelreich_diplomacy does)', () => {
@@ -217,7 +218,7 @@ describe('War Zone (no battle if event token)', () => {
     s = addToken(s, 'mittelreich', 'event');
     s = setWorldCard(s, 'great_exorcism');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
   });
 });
 
@@ -230,7 +231,7 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('War Frenzy'))).toBe(true);
+    expect(log.entries.some(l => l.includes('War Frenzy'))).toBe(true);
   });
 
   test('War Frenzy pauses for hit assignment before normal battle when it scores hits', () => {
@@ -250,8 +251,8 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
         bs.nextStep.powerIndex === 0
       ) {
         // War Frenzy specifically paused (nextStep = normal_battle[0] = not yet started)
-        expect(raw.log.some(l => l.includes('War Frenzy'))).toBe(true);
-        const normalXarmRolls = raw.log.filter(l =>
+        expect(raw.log.entries.some(l => l.includes('War Frenzy'))).toBe(true);
+        const normalXarmRolls = raw.log.entries.filter(l =>
           /norrsund: xarm rolls/.test(l) && !l.includes('War Frenzy')
         );
         expect(normalXarmRolls).toHaveLength(0);
@@ -278,7 +279,7 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
     s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('War Frenzy'))).toBe(false);
+    expect(log.entries.some(l => l.includes('War Frenzy'))).toBe(false);
   });
 });
 
@@ -291,7 +292,7 @@ describe('Undying Fury (second battle round)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('Undying Fury extra battle'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Undying Fury extra battle'))).toBe(true);
   });
 
   test('Undying Fury resolves out of battle phase', () => {
@@ -354,7 +355,7 @@ describe("Xarm Heart Offering (draw card on kill)", () => {
     };
     const handBefore = s.powers.xarm!.hand.length;
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
-    const killed = log.some(l => l.includes('kills gormen'));
+    const killed = log.entries.some(l => l.includes('kills gormen'));
     if (killed) {
       expect(state.powers.xarm!.hand.length).toBeGreaterThan(handBefore);
     }
@@ -370,7 +371,7 @@ describe('Tenzen Recursive Pattern (persist if Tenzen killed)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'tenzen_persistence_matrix', 'tenzen', 'norrsund');
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
-    const killed = log.some(l => l.includes('tenzen kills gormen'));
+    const killed = log.entries.some(l => l.includes('tenzen kills gormen'));
     if (killed) {
       // Card persists on the board (Tenzen had 4 warriors, Gormen only 1 — Tenzen survives)
       const card = state.regions.norrsund!.chaosCards.find(c => c?.cardId === 'tenzen_persistence_matrix');
@@ -447,7 +448,7 @@ describe('Tenzen Null Weave (cancels all other card text)', () => {
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
     s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('War Frenzy'))).toBe(false);
+    expect(log.entries.some(l => l.includes('War Frenzy'))).toBe(false);
   });
 });
 
@@ -460,7 +461,7 @@ describe("Lasha Rapture upgrade (auto-control enemy at battle start)", () => {
     s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('Rapture upgrade'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Rapture upgrade'))).toBe(true);
   });
 });
 
@@ -474,7 +475,7 @@ describe('Armistice (remove 1 figure per event region post-battle)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('Armistice'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Armistice'))).toBe(true);
     expect(state.regions.norrsund!.placements.length).toBeLessThan(2);
   });
 });
@@ -488,7 +489,7 @@ describe('Xarm Heartseekers upgrade (cultists gain attack 1)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'peasant');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.some(l => l.includes('norrsund: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('norrsund: xarm rolls'))).toBe(true);
   });
 });
 
@@ -502,7 +503,7 @@ describe('Xarm Heartrippers upgrade (place 1 corruption on kill)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const corrBefore = s.regions.norrsund!.corruptionTokens.xarm;
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
-    const killed = log.some(l => l.includes('kills gormen'));
+    const killed = log.entries.some(l => l.includes('kills gormen'));
     if (killed) {
       expect(state.regions.norrsund!.corruptionTokens.xarm).toBeGreaterThan(corrBefore);
     }
@@ -613,7 +614,7 @@ describe('War Frenzy partial hit carry-over', () => {
     });
     // Let normal battle finish with no more hits (xarm warrior has attack 2, but may roll 0)
     // Drive to completion and check warFrenzyHits reset
-    const { state } = autoResolveBattle({ state: afterWF, log: [] });
+    const { state } = autoResolveBattle({ state: afterWF, log: new GameLog() });
     // After the region resolves, any surviving figure should have warFrenzyHits = 0
     for (const region of Object.values(state.regions)) {
       for (const f of region.placements) {

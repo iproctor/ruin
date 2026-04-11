@@ -10,7 +10,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
-  createInitialState, applyAction, autoAdvance, getLegalActions, type GameState, type Action, type Power,
+  createInitialState, applyAction, autoAdvance, getLegalActions, GameLog, type GameState, type Action, type Power,
 } from '@ruin/engine';
 import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS,
@@ -121,7 +121,7 @@ function runGame(seed: number): GameResult {
       playerTypes: Object.fromEntries(ALL_POWERS.map(p => [p, 'ai'])) as Record<Power, 'ai'>,
       seed,
     }),
-    log: [],
+    log: new GameLog(),
   });
 
   let actionCount = 0;

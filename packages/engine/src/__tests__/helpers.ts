@@ -13,6 +13,7 @@ import {
 import { applyAction } from '../reducers.js';
 import { applyBattleHitAssignment } from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
+import { GameLog } from '../gameLog.js';
 
 // ─── Follower factories ───────────────────────────────────────────────────────
 
@@ -360,8 +361,8 @@ export function setWorldCard(
  * battle resolution.
  */
 export function autoResolveBattle(
-  result: { state: GameState; log: string[] },
-): { state: GameState; log: string[] } {
+  result: { state: GameState; log: GameLog },
+): { state: GameState; log: GameLog } {
   const DEFENSE: Record<string, number> = { cultist: 1, warrior: 2, incarnation: 3 };
   let { state: s, log } = result;
   let iters = 0;
@@ -388,7 +389,7 @@ export function autoResolveBattle(
       kind: 'battle_hit_assignment', power, regionId, followerIds: chosen,
     });
     s = next.state;
-    log = [...log, ...next.log];
+    log.absorb(next.log);
     iters++;
   }
 
@@ -406,8 +407,8 @@ export function autoResolveBattle(
  * Returns the final resolved state (phase advanced to 'world' or 'completed').
  */
 export function autoResolveEndPhase(
-  result: { state: GameState; log: string[] },
-): { state: GameState; log: string[] } {
+  result: { state: GameState; log: GameLog },
+): { state: GameState; log: GameLog } {
   let { state: s, log } = result;
   let iters = 0;
 
@@ -416,21 +417,21 @@ export function autoResolveEndPhase(
     if (!pending) break;
     const power = pending.waitingFor;
 
-    let next: { state: GameState; log: string[] };
+    let next: { state: GameState; log: GameLog };
 
     switch (pending.actionKind) {
       case 'upgrade_choice': {
         const upgradeId = s.powers[power]!.availableUpgradeIds[0];
         if (!upgradeId) break;
         next = applyAction(s, { kind: 'upgrade_choice', power, upgradeCardId: upgradeId });
-        s = next.state; log = [...log, ...next.log];
+        s = next.state; log.absorb(next.log);
         break;
       }
       case 'dial_place_token': {
         const region = REGION_ORDER.find(r => s.regions[r]!.ruinationCardIndex === null);
         if (!region) break;
         next = applyAction(s, { kind: 'dial_place_token', power, regionId: region });
-        s = next.state; log = [...log, ...next.log];
+        s = next.state; log.absorb(next.log);
         break;
       }
       case 'dial_remove_corruption': {
@@ -453,7 +454,7 @@ export function autoResolveEndPhase(
         }
         if (!region) break;
         next = applyAction(s, { kind: 'dial_remove_corruption', power, regionId: region, targetPower });
-        s = next.state; log = [...log, ...next.log];
+        s = next.state; log.absorb(next.log);
         break;
       }
       case 'dial_remove_world_token': {
@@ -461,7 +462,7 @@ export function autoResolveEndPhase(
           const token = s.regions[regionId]!.tokens.find(t => t !== 'chaos_stone');
           if (token) {
             next = applyAction(s, { kind: 'dial_remove_world_token', power, regionId, tokenType: token });
-            s = next.state; log = [...log, ...next.log];
+            s = next.state; log.absorb(next.log);
             break;
           }
         }
@@ -478,7 +479,7 @@ export function autoResolveEndPhase(
   if (s.phase === 'end' && s.pendingDialRewards === null && !s.pendingAction) {
     const next = resolveEndPhase(s);
     s = next.state;
-    log = [...log, ...next.log];
+    log.absorb(next.log);
   }
 
   return { state: s, log };

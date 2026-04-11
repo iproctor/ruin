@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import type { GameState } from '@ruin/engine';
+import type { GameState, PhaseEvent } from '@ruin/engine';
 import { connectGameStream } from '../api/sse.js';
 import type { ChatMessage, StreamEvent } from '../api/sse.js';
 
@@ -8,15 +8,17 @@ export type { ChatMessage };
 export interface GameStreamResult {
   state: GameState | null;
   eventLog: string[];
+  phaseEvents: PhaseEvent[];
   chat: ChatMessage[];
   connected: boolean;
 }
 
 export function useGameStream(gameId: string): GameStreamResult {
-  const [state, setState]    = useState<GameState | null>(null);
-  const [eventLog, setLog]   = useState<string[]>([]);
-  const [chat, setChat]      = useState<ChatMessage[]>([]);
-  const [connected, setConn] = useState(false);
+  const [state, setState]          = useState<GameState | null>(null);
+  const [eventLog, setLog]         = useState<string[]>([]);
+  const [phaseEvents, setPhaseEvt] = useState<PhaseEvent[]>([]);
+  const [chat, setChat]            = useState<ChatMessage[]>([]);
+  const [connected, setConn]       = useState(false);
 
   const handleEvent = useCallback((ev: StreamEvent) => {
     if (ev.type === 'history') {
@@ -28,6 +30,8 @@ export function useGameStream(gameId: string): GameStreamResult {
       setState(ev.state);
     } else if (ev.type === 'log') {
       setLog((prev) => [...prev, ...ev.entries]);
+    } else if (ev.type === 'phase_events') {
+      setPhaseEvt((prev) => [...prev, ...ev.events]);
     } else if (ev.type === 'chat') {
       setChat((prev) => [...prev, ev.message]);
     }
@@ -39,5 +43,5 @@ export function useGameStream(gameId: string): GameStreamResult {
     return cleanup;
   }, [gameId, handleEvent]);
 
-  return { state, eventLog, chat, connected };
+  return { state, eventLog, phaseEvents, chat, connected };
 }

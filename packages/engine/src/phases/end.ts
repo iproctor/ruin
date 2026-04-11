@@ -1,4 +1,5 @@
 import type { GameState, Power, RegionId, DialPendingReward } from '../types.js';
+import { GameLog } from '../gameLog.js';
 import {
   CARD_BY_ID, REGION_ORDER, RUINATION_CARDS, THREAT_DIALS, UPGRADES, WORLD_CARD_BY_ID,
 } from '../constants.js';
@@ -12,8 +13,8 @@ import { checkVictory } from '../victory.js';
 
 export function resolveEndPhase(
   state: GameState,
-): { state: GameState; log: string[] } {
-  const log: string[] = [];
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
   let s = state;
 
   // If we're mid-way through draining dial reward choices, continue from here.
@@ -58,8 +59,8 @@ export function resolveEndPhase(
 /** Set pendingAction for the next queued dial reward, or finalize the round. */
 function drainDialRewards(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
   const queue = s.pendingDialRewards ?? [];
 
@@ -113,8 +114,8 @@ function drainDialRewards(
 
 function finalizeEndPhase(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState; log: GameLog } {
   let s = state;
 
   // Check for victory
@@ -145,8 +146,8 @@ function finalizeEndPhase(
 
 function removeChaosCards(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
 
   for (const regionId of REGION_ORDER) {
@@ -199,15 +200,15 @@ function removeChaosCards(
     }
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 // ─── Step 2: Resolve Hero tokens ─────────────────────────────────────────────
 
 function resolveHeroTokens(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
 
   for (const regionId of REGION_ORDER) {
@@ -246,15 +247,15 @@ function resolveHeroTokens(
     }
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 // ─── Step 3: Resolve World Card persistent effects ────────────────────────────
 
 function resolveWorldCardEffects(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
 
   // Process slot1 first, then slot2
@@ -263,14 +264,14 @@ function resolveWorldCardEffects(
     ({ state: s } = applyWorldCardPersistentEffect(s, slotCard, log));
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 function applyWorldCardPersistentEffect(
   state: GameState,
   cardId: string,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
   const lowest = lowestThreatPower(s);
   const highest = highestThreatPower(s);
@@ -453,15 +454,15 @@ function applyWorldCardPersistentEffect(
       break;
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 // ─── Step 4: Score ruined regions ────────────────────────────────────────────
 
 function scoreRuinedRegions(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
 
   for (const regionId of REGION_ORDER) {
@@ -528,15 +529,15 @@ function scoreRuinedRegions(
     };
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 // ─── Step 5: Advance threat dials ────────────────────────────────────────────
 
 function advanceThreatDials(
   state: GameState,
-  log: string[],
-): { state: GameState; log: string[] } {
+  log: GameLog,
+): { state: GameState } {
   let s = state;
   const queuedRewards: DialPendingReward[] = [];
 
@@ -572,21 +573,21 @@ function advanceThreatDials(
     s = { ...s, pendingDialRewards: queuedRewards };
   }
 
-  return { state: s, log };
+  return { state: s };
 }
 
 function advanceDial(
   state: GameState,
   power: Power,
-  log: string[],
-): { state: GameState; log: string[]; rewards: DialPendingReward[] } {
+  log: GameLog,
+): { state: GameState; rewards: DialPendingReward[] } {
   let s = state;
   const rewards: DialPendingReward[] = [];
   const p = s.powers[power]!;
   const dial = THREAT_DIALS[power]!;
   const nextPos = p.dialPosition + 1;
 
-  if (nextPos >= dial.length) return { state: s, log, rewards };
+  if (nextPos >= dial.length) return { state: s, rewards };
 
   const entry = dial[nextPos]!;
   const newThreat = entry.threat === 'victory' ? p.threatValue : entry.threat;
@@ -663,7 +664,7 @@ function advanceDial(
       break;
   }
 
-  return { state: s, log, rewards };
+  return { state: s, rewards };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -671,7 +672,7 @@ function advanceDial(
 function drawOneCard(
   state: GameState,
   power: Power,
-  log: string[],
+  log: GameLog,
   source: string,
 ): GameState {
   const p = state.powers[power]!;
