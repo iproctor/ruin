@@ -29,12 +29,7 @@ export function useGameStream(gameId: string): GameStreamResult {
       setConn(true);
     } else if (ev.type === 'state' || ev.type === 'sync') {
       setState(ev.state);
-    } else if (ev.type === 'log') {
-      setLog((prev) => [...prev, ...ev.entries]);
     } else if (ev.type === 'events') {
-      setEvents((prev) => [...prev, ...ev.events]);
-    } else if (ev.type === 'phase_events') {
-      // Legacy: phase_events are now GameEvent[], merge into events
       setEvents((prev) => [...prev, ...ev.events]);
     } else if (ev.type === 'chat') {
       setChat((prev) => [...prev, ev.message]);

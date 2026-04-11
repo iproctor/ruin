@@ -249,11 +249,6 @@ export class GameLog {
     this.entries.push(msg);
   }
 
-  /** @deprecated Use `events` instead. */
-  get phaseEvents(): GameEvent[] {
-    return this.events;
-  }
-
   /** Absorb all entries and events from another GameLog. */
   absorb(other: GameLog): void {
     this.entries.push(...other.entries);

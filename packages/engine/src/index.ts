@@ -12,7 +12,6 @@ export type {
   DialPendingReward,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
   GameEvent,
-  PhaseEvent,
 } from './types.js';
 
 export { createInitialState } from './setup.js';

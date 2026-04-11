@@ -288,9 +288,6 @@ export type GameEvent =
 
 // ─── Win result ───────────────────────────────────────────────────────────────
 
-/** @deprecated Use GameEvent instead. */
-export type PhaseEvent = GameEvent;
-
 export interface WinResult {
   winners: Power[];
   condition: WinCondition;

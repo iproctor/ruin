@@ -122,9 +122,6 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
     await saveGame(gameId, next, log.entries);
     broadcast(gameId, { type: 'state', state: next });
-    if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
-    if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
-    // New structured event broadcasts
     if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
     if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
     current = next;
@@ -211,9 +208,6 @@ export async function applyPlayerAction(
 
   await saveGame(gameId, afterAction, log.entries);
   broadcast(gameId, { type: 'state', state: afterAction });
-  if (log.entries.length > 0) broadcast(gameId, { type: 'log', entries: log.entries });
-  if (log.phaseEvents.length > 0) broadcast(gameId, { type: 'phase_events', events: log.phaseEvents });
-  // New structured event broadcasts
   if (log.events.length > 0) broadcast(gameId, { type: 'events', events: log.events });
   if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
 

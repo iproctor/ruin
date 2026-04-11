@@ -632,7 +632,7 @@ interface BoardProps {
   animationRegion?: RegionId | null;
   animationKilledIds?: Set<string>;
   hideKilled?: boolean;
-  battlePaneEvents?: import('@ruin/engine').PhaseEvent[];
+  battlePaneEvents?: import('@ruin/engine').GameEvent[];
   dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
   corruptionOverrides?: Map<RegionId, Partial<Record<Power, number>>>;
   corruptionFlies?: Array<{ id: number; regionId: RegionId; power: Power; tokens: number; startedAt: number }>;

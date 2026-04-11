@@ -14,9 +14,7 @@ export type StreamEvent =
   | { type: 'history'; state: GameState; eventLog: string[]; events: GameEvent[]; chat: ChatMessage[] }
   | { type: 'state';   state: GameState }
   | { type: 'sync';    state: GameState }
-  | { type: 'log';     entries: string[] }
   | { type: 'events';  events: GameEvent[] }
-  | { type: 'phase_events'; events: GameEvent[] }
   | { type: 'chat';    message: ChatMessage }
   | { type: 'error';   message: string };
 

@@ -1,4 +1,4 @@
-import type { Power, FollowerClass, PhaseEvent, RegionId } from '@ruin/engine';
+import type { Power, FollowerClass, GameEvent, RegionId } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
 // ── Figure symbol ────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ function DiceValue({ value }: { value: number }) {
 
 interface BattlePaneProps {
   regionId: RegionId;
-  events: PhaseEvent[];
+  events: GameEvent[];
 }
 
 interface PowerRow {
