@@ -63,7 +63,8 @@
       "Bash(pnpm --filter engine test --run end.test)",
       "Bash(ls -t /Users/iainap/code/chaos/packages/ai/data/bench_iter_*.json)",
       "Bash(wc -l /Users/iainap/code/chaos/packages/client/src/components/*.tsx)",
-      "Bash(ls /Users/iainap/code/chaos/packages/ai/data/training_iter_*.jsonl)"
+      "Bash(ls /Users/iainap/code/chaos/packages/ai/data/training_iter_*.jsonl)",
+      "Bash(./scripts/pull-hetzner.sh)"
     ]
   }
 }

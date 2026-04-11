@@ -273,6 +273,7 @@ function runGame(seed: number): GameResult {
       const useMcts =
         pending.actionKind === 'summoning_action' ||
         pending.actionKind === 'battle_hit_assignment' ||
+        pending.actionKind === 'tenzen_discard' ||
         pending.actionKind === 'dial_place_token' ||
         pending.actionKind === 'dial_remove_corruption' ||
         pending.actionKind === 'dial_remove_world_token' ||

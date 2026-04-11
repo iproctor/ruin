@@ -170,6 +170,7 @@ function runGame(seed: number): GameResult {
       } else {
         const useMcts =
           pending.actionKind === 'battle_hit_assignment' ||
+          pending.actionKind === 'tenzen_discard' ||
           pending.actionKind === 'dial_place_token' ||
           pending.actionKind === 'dial_remove_corruption' ||
           pending.actionKind === 'dial_remove_world_token' ||

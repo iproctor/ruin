@@ -23,17 +23,22 @@ rsync -avz -e "ssh ${SSH_OPTS}" \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
   "${LOCAL_ROOT}/packages/ai/data/model.json"
 
-echo "→ Pulling all model_iter_*.json snapshots (incremental)"
+echo "→ Pulling all model_iter_*.json snapshots (incremental, then clean remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
   --include='model_iter_*.json' --exclude='*' \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
   "${LOCAL_ROOT}/packages/ai/data/"
+# Keep only the latest snapshot on the box, delete the rest
+ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
+  "cd ${REMOTE_PATH}/packages/ai/data && ls -t model_iter_*.json 2>/dev/null | tail -n +2 | xargs rm -f"
 
-echo "→ Pulling all bench_iter_*.json results (incremental)"
+echo "→ Pulling all bench_iter_*.json results (incremental, then clean remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
   --include='bench_iter_*.json' --exclude='*' \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
   "${LOCAL_ROOT}/packages/ai/data/"
+ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
+  "rm -f ${REMOTE_PATH}/packages/ai/data/bench_iter_*.json"
 
 echo "→ Pulling training_loop.log (training progress / bench summaries)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
