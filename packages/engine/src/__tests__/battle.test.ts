@@ -292,7 +292,7 @@ describe('Undying Fury (second battle round)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('Undying Fury extra battle'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Bloody Rebirth extra battle'))).toBe(true);
   });
 
   test('Undying Fury resolves out of battle phase', () => {
@@ -461,7 +461,7 @@ describe("Lasha Rapture upgrade (auto-control enemy at battle start)", () => {
     s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('Rapture upgrade'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Rapture Upgrade'))).toBe(true);
   });
 });
 

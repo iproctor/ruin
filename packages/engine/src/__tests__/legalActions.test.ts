@@ -124,15 +124,15 @@ describe('summoning_action', () => {
 
 describe('tenzen_discard', () => {
   test('returns null option plus each card in hand', () => {
-    let s = giveCards(makeState(), 'tenzen', ['tenzen_changer_of_fate', 'tenzen_stasis_web']);
+    let s = giveCards(makeState(), 'tenzen', ['tenzen_persistence_matrix', 'tenzen_shimmer']);
     s = {
       ...s,
       pendingAction: { waitingFor: 'tenzen', actionKind: 'tenzen_discard', context: {} },
     };
     const actions = getLegalActions(s, 'tenzen');
     expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === null)).toBe(true);
-    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_changer_of_fate')).toBe(true);
-    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_stasis_web')).toBe(true);
+    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_persistence_matrix')).toBe(true);
+    expect(actions.some(a => a.kind === 'tenzen_discard' && (a as any).cardId === 'tenzen_shimmer')).toBe(true);
   });
 });
 

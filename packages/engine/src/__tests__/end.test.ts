@@ -55,7 +55,7 @@ describe('Enthrallment release', () => {
     s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
     const { state, log } = resolveEndPhase(s);
     // Controlled gormen cultist should be released
-    expect(log.entries.some(l => l.includes('Enthrallment discarded'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Narcotic Musk discarded'))).toBe(true);
     const cultist = state.powers.gormen!.followers.find(f => f.class === 'cultist')!;
     expect(cultist.controlledBy).toBeNull();
   });
@@ -239,7 +239,7 @@ describe('world card persistent effects during end phase', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'normagne');
     s = giveCards(s, 'xarm', ['xarm_war_cry']);
     const { state, log } = resolveEndPhase(s);
-    expect(log.entries.some(l => l.includes('Strategic Vanguard'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Normagne Heir'))).toBe(true);
     expect(state.powers.xarm!.hand).not.toContain('xarm_war_cry');
   });
 

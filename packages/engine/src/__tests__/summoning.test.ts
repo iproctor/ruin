@@ -447,7 +447,7 @@ describe('Tenzen Apprentices upgrade (carry Chaos Stone)', () => {
     s = addToken(s, 'norrsund', 'chaos_stone');
     const { state } = applySummonFigure(s, {
       kind: 'summoning_summon_figure', power: 'tenzen', followerId: 'tenzen_cultist_1',
-      toRegion: 'talvimaa',
+      toRegion: 'talvimaa', carry: true,
     });
     expect(state.regions.norrsund!.tokens.includes('chaos_stone')).toBe(false);
     expect(state.regions.talvimaa!.tokens.includes('chaos_stone')).toBe(true);

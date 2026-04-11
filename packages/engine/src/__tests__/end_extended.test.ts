@@ -114,7 +114,7 @@ describe('great_exorcism persistent effect (end phase)', () => {
     const { state, log } = resolveEndPhase(s);
     // Figure removed from norrsund
     expect(state.regions.norrsund!.placements.filter(f => f.power === 'xarm').length).toBe(0);
-    expect(log.entries.some(l => l.includes('Exodus') && l.includes('norrsund'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Great Exorcism') && l.includes('norrsund'))).toBe(true);
     // Event token moved away from norrsund
     expect(state.regions.norrsund!.tokens).not.toContain('event');
     // Event now in most-corrupt region
@@ -130,7 +130,7 @@ describe('central_overpopulation persistent effect (end phase)', () => {
     s = addToken(s, 'norrsund', 'peasant');
     const { state, log } = resolveEndPhase(s);
     expect(state.regions.norrsund!.tokens).not.toContain('peasant');
-    expect(log.entries.some(l => l.includes('Misdirection'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Central Overpopulation'))).toBe(true);
   });
 
   test('does not remove Peasant from regions without an Event token', () => {

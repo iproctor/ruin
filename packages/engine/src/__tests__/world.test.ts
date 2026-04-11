@@ -144,7 +144,7 @@ describe('accelerating_doom', () => {
       worldDeck: ['accelerating_doom', 'raise_the_militia'],
     });
     const { state, log } = resolveWorldPhase(s);
-    expect(log.entries.some(l => l.includes('False Lead'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Accelerating Doom'))).toBe(true);
     expect(state.phase).toBe('draw');
     expect(state.worldDeck).toContain('raise_the_militia');
   });
