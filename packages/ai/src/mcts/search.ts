@@ -1,9 +1,6 @@
 import type { GameState, Action, Power } from '@ruin/engine';
 import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
-// Load Node fs lazily via dynamic require so the ai package (no @types/node)
-// still typechecks. Used only for the expand-throw debug log.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _fs: any = (() => { try { return (eval('require') as (s: string) => unknown)('node:fs'); } catch { return null; } })();
+import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
 import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion, isFeedingXarmDac, isRetreatFromXarm, isTenzenDefensivePlay } from './filter-actions.js';
@@ -284,12 +281,12 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
     // that getLegalActions reports as legal but applyAction rejects.
     const e = err as Error;
     try {
-      if (_fs) {
+      {
         // Full serialized state so a tiny repro script can do:
         //   const r = JSON.parse(fs.readFileSync('record.json', 'utf-8'));
         //   applyAction(r.state, r.action);
         // …without needing to replay from a seed.
-        _fs.appendFileSync('/tmp/mcts-expand-throws.log', JSON.stringify({
+        appendFileSync('/tmp/mcts-expand-throws.log', JSON.stringify({
           ts: new Date().toISOString(),
           round: node.state.round,
           phase: node.state.phase,

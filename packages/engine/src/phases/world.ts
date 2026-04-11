@@ -86,6 +86,17 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
   s = result.state;
 
   if (result.needsChoice) {
+    // Verify there are actually valid choices (regions may all be ruined).
+    // If not, skip the choice and auto-resolve.
+    const choiceRegions = getWorldChoiceRegions(s, cardId!);
+    const isPairCard = cardId === 'northern_heir' || cardId === 'heroes_of_order';
+    if (!isPairCard && choiceRegions.length === 0) {
+      // No valid regions — skip choice, place card and move on
+      s = placeOnTrackOrDiscard(s, cardId!);
+      s = advanceToDrawPhase(s);
+      return { state: s, log };
+    }
+
     // Set pendingAction and wait — caller must submit a WorldChoiceAction
     s = {
       ...s,

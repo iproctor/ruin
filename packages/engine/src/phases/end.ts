@@ -87,7 +87,16 @@ function drainDialRewards(
         },
       };
       break;
-    case 'remove_corruption':
+    case 'remove_corruption': {
+      // Skip if there's no corruption anywhere to remove
+      const hasAnyCorruption = REGION_ORDER.some(r =>
+        Object.values(s.regions[r]!.corruptionTokens).some(v => v > 0)
+      );
+      if (!hasAnyCorruption) {
+        // Pop this reward and drain the next one
+        s = { ...s, pendingDialRewards: queue.slice(1) };
+        return drainDialRewards(s, log);
+      }
       s = {
         ...s,
         pendingAction: {
@@ -97,6 +106,7 @@ function drainDialRewards(
         },
       };
       break;
+    }
     case 'remove_world_tokens':
       s = {
         ...s,
