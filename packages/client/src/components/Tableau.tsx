@@ -17,6 +17,12 @@ interface TableauProps {
   onUndo?: () => void;
   onEndTurn?: () => void;
   submitError?: string;
+  apprenticeChoice?: {
+    fromRegion: string;
+    toRegion: string;
+    onCarry: () => void;
+    onLeave: () => void;
+  };
 }
 
 // ── Draggable hand card ───────────────────────────────────────────────────────
@@ -310,6 +316,7 @@ export default function Tableau({
   onUndo,
   onEndTurn,
   submitError,
+  apprenticeChoice,
 }: TableauProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
 
@@ -443,7 +450,24 @@ export default function Tableau({
                   Undo
                 </button>
               )}
-              <button
+              {apprenticeChoice && (
+                <div style={{ display: 'flex', gap: 4, marginRight: 'auto' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', alignSelf: 'center' }}>Chaos Stone?</span>
+                  <button
+                    onClick={apprenticeChoice.onCarry}
+                    style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: 4, border: '1px solid #6366f1', background: '#312e81', color: '#c4b5fd', cursor: 'pointer' }}
+                  >
+                    Carry
+                  </button>
+                  <button
+                    onClick={apprenticeChoice.onLeave}
+                    style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: 4, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
+                  >
+                    Leave
+                  </button>
+                </div>
+              )}
+              {onEndTurn && <button
                 onClick={onEndTurn}
                 style={{
                   fontSize: '0.75rem',
@@ -458,7 +482,7 @@ export default function Tableau({
                 }}
               >
                 {pendingAction ? 'Confirm & End Turn' : 'End Turn'}
-              </button>
+              </button>}
             </div>
           </div>
         )}

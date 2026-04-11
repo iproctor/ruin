@@ -83,26 +83,37 @@ export function applySummonFigure(
   }
 
   // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board.
-  // This is a player choice — we set a pending action and pause the
-  // summoning turn until the player decides whether to carry the stone.
+  // If `carry` is provided in the action, apply it inline. If not (legacy/AI
+  // without the field), fall back to pausing with a pending action.
   if (power === 'tenzen' && follower.class === 'cultist' &&
       s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
       follower.regionId !== null) {
     const from = follower.regionId;
     if (s.regions[from]!.tokens.includes('chaos_stone')) {
       log.emit({ type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion: follower.regionId, cost });
-      // Pause for the player to decide whether to carry the chaos stone.
-      // Do NOT call advanceSummoningTurn yet — that happens after the choice.
+
+      if (action.carry !== undefined) {
+        // Carry decision bundled into the summon action
+        if (action.carry) {
+          s = updateRegion(s, from, {
+            tokens: removeFirst(s.regions[from]!.tokens, 'chaos_stone'),
+          });
+          s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
+          s = addTokenIfAvailable(s, toRegion, 'chaos_stone');
+          log.emit({ type: 'apprentice_choice', followerId, fromRegion: from, toRegion, carry: true });
+        } else {
+          log.emit({ type: 'apprentice_choice', followerId, fromRegion: from, toRegion, carry: false });
+        }
+        return { state: advanceSummoningTurn(s, power, log), log };
+      }
+
+      // Legacy fallback: pause for separate choice action
       s = {
         ...s,
         pendingAction: {
           waitingFor: 'tenzen',
           actionKind: 'tenzen_apprentice_choice',
-          context: {
-            followerId,
-            fromRegion: from,
-            toRegion,
-          },
+          context: { followerId, fromRegion: from, toRegion },
         },
       };
       log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion: from, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${from}?` });

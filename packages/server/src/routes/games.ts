@@ -129,7 +129,7 @@ const zChoices = z.record(z.unknown());
 
 const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tenzen_discard'),            power: z.literal('tenzen'), cardId: z.string().nullable() }),
-  z.object({ kind: z.literal('summoning_summon_figure'),   power: zPower, followerId: z.string(), toRegion: zRegionId }),
+  z.object({ kind: z.literal('summoning_summon_figure'),   power: zPower, followerId: z.string(), toRegion: zRegionId, carry: z.boolean().optional() }),
   z.object({ kind: z.literal('summoning_play_card'),       power: zPower, cardId: z.string(), toRegion: zRegionId, slotIndex: z.union([z.literal(0), z.literal(1)]) }),
   z.object({ kind: z.literal('summoning_pass'),            power: zPower }),
   z.object({ kind: z.literal('world_choice'),              power: zPower, cardId: z.string(), choices: zChoices }),

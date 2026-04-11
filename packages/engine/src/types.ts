@@ -304,6 +304,8 @@ export interface SummonFigureAction {
   power: Power;
   followerId: string;
   toRegion: RegionId;
+  /** Tenzen Apprentices: carry the chaos stone from the origin region? */
+  carry?: boolean;
 }
 
 export interface PlayCardAction {

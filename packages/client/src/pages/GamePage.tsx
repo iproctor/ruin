@@ -345,9 +345,10 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const isMyTurn        = myPower !== null;
   const isSummoningTurn = isMyTurn && serverPending?.actionKind === 'summoning_action';
 
-  // After applying pendingAction client-side, the engine may pause for an on-play choice
+  // After applying pendingAction client-side, the engine may pause for a follow-up choice
   const afterPlayPending = pendingAction ? displayState.pendingAction : null;
   const needsOnPlayChoice = !!pendingAction && afterPlayPending?.actionKind === 'card_on_play_choice';
+  const needsApprenticeChoice = !!pendingAction && afterPlayPending?.actionKind === 'tenzen_apprentice_choice';
   const onPlayContext = needsOnPlayChoice ? (afterPlayPending!.context ?? {}) : null;
 
   // When choosing a destination region for the on-play choice, highlight all valid regions
@@ -470,7 +471,13 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             onSelectCard={setSelectedCardId}
             pendingAction={pendingOnPlayChoice ?? pendingAction}
             onUndo={handleUndo}
-            onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) ? handleEndTurn : undefined}
+            onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) && !needsApprenticeChoice ? handleEndTurn : undefined}
+            apprenticeChoice={needsApprenticeChoice ? {
+              fromRegion: (afterPlayPending!.context['fromRegion'] as string),
+              toRegion: (afterPlayPending!.context['toRegion'] as string),
+              onCarry: () => setPendingAction(prev => prev ? { ...prev, carry: true } : prev),
+              onLeave: () => setPendingAction(prev => prev ? { ...prev, carry: false } : prev),
+            } : undefined}
             submitError={submitError}
           />
         )}
