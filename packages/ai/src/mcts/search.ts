@@ -39,6 +39,14 @@ function makeRootPriors(
 ): ((action: Action) => number) | null {
   const raw = policyForState(state, forPower);
   if (raw === null) return null;
+  return makeRootPriorsFromRaw(raw, state, rootActions);
+}
+
+function makeRootPriorsFromRaw(
+  raw: Float32Array,
+  state: GameState,
+  rootActions: Action[],
+): ((action: Action) => number) | null {
   // Build slot → raw policy
   const slotPriors = new Map<number, number>();
   let totalForLegal = 0;
@@ -151,41 +159,29 @@ export function runMcts(
     return legalRoot[0]!;
   }
 
-  // Random downsample to keep root branching tractable.
-  const prunedRoot = pruneActions(state, forPower, legalRoot);
+  // If the policy head is loaded, trust PUCT to focus search — give it
+  // all legal actions and let the priors guide exploration. Without a
+  // policy head, fall back to random downsampling.
+  const rawPolicy = policyForState(state, forPower);
+  const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
 
-  const root = createNode(state, null, null, null, forPower, [...prunedRoot]);
-
-  // Attach policy priors at the root if a policy head is loaded.
-  // Selection switches to PUCT when priors are present, UCB1 otherwise.
-  const priors = makeRootPriors(state, forPower, prunedRoot);
+  const root = createNode(state, null, null, null, forPower, [...rootActions]);
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  // Adaptive rollout depth based on the root state's round — see
-  // rolloutDepthForRound for the rationale.
   const rolloutDepth = rolloutDepthForRound(state.round);
-
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
   while (iteration < maxIterations && Date.now() < deadline) {
-    // 1. Selection
     const selected = select(root, explorationC, usePuct);
-
-    // 2. Expansion
     const expanded = expand(selected, forPower);
-
-    // 3. Simulation (rollout)
     const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
-
-    // 4. Backpropagation
     backpropagate(expanded, score);
-
     iteration += 1;
   }
 
-  // Return the action from the most-visited child of root.
   return bestAction(root);
 }
 
@@ -230,10 +226,11 @@ export function runMctsWithStats(
     };
   }
 
-  const prunedRoot = pruneActions(state, forPower, legalRoot);
-  const root = createNode(state, null, null, null, forPower, [...prunedRoot]);
+  const rawPolicy = policyForState(state, forPower);
+  const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
+  const root = createNode(state, null, null, null, forPower, [...rootActions]);
 
-  const priors = makeRootPriors(state, forPower, prunedRoot);
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 

@@ -452,6 +452,12 @@ export function isRetreatFromXarm(state: GameState, action: Action): boolean {
   // Is the figure's CURRENT region dangerous?
   if (!xarmCanAttackInRegion(state, follower.regionId)) return false;
 
+  // Don't bias retreat when the power has a large cultist pile — the
+  // corruption placement from staying is worth more than the figures lost.
+  const ownCultists = followersInRegion(state, follower.regionId as import('@ruin/engine').RegionId, action.power)
+    .filter(f => !f.tipped && f.class === 'cultist').length;
+  if (ownCultists > 2) return false;
+
   // Moving to a DIFFERENT region = retreat.
   return action.toRegion !== follower.regionId;
 }
