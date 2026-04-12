@@ -9,6 +9,7 @@
  */
 
 import type { GameState, GameEvent, Power, RegionId } from './types.js';
+import { getBasePP } from './phases/draw.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -162,7 +163,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       });
     }
     case 'upgrade_taken':
-      return applyUpgrade(state, event.power, event.upgradeCardId, event.powerPoints, event.basePowerPoints);
+      return applyUpgrade(state, event.power, event.upgradeCardId);
     case 'dial_place_token':
       return addToken(state, event.regionId, event.tokenType);
     case 'dial_remove_corruption':
@@ -210,8 +211,6 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'world_track_update':
       return { ...state, worldTrack: { ...state.worldTrack, slot1: event.slot1, slot2: event.slot2 } };
 
-    case 'summoning_banner':
-      return { ...state, phase: 'summoning' };
     case 'world_card_drawn':
     case 'comet_removed':
     case 'world_card_choice':
@@ -422,14 +421,18 @@ function drawCard(state: GameState, power: Power, cardId: string): GameState {
   });
 }
 
-function applyUpgrade(state: GameState, power: Power, upgradeCardId: string, pp: number, basePP: number): GameState {
+function applyUpgrade(state: GameState, power: Power, upgradeCardId: string): GameState {
   const p = state.powers[power]!;
-  return patchPower(state, power, {
+  let s = patchPower(state, power, {
     upgradesInPlay: [...p.upgradesInPlay, upgradeCardId],
     availableUpgradeIds: p.availableUpgradeIds.filter(id => id !== upgradeCardId),
-    powerPoints: pp,
-    basePowerPoints: basePP,
   });
+  // Recalculate PP if the upgrade changed basePP
+  const newBase = getBasePP(s, power);
+  if (newBase !== s.powers[power]!.basePowerPoints) {
+    s = patchPower(s, power, { basePowerPoints: newBase, powerPoints: newBase });
+  }
+  return s;
 }
 
 function applyApprenticeChoice(
@@ -451,12 +454,13 @@ function applyCardEffect(
     case 'plaguefather_corruption':
       return addCorruption(state, event.regionId, 'gormen', event.tokens);
     case 'fractals_summon': {
-      // Free warrior summon from Fractals upgrade
-      const tp = state.powers['tenzen']!;
-      const warrior = tp.followers.find(f => f.id === event.followerId);
-      if (!warrior) return state;
+      // Free warrior summon — find first reserve warrior deterministically
+      const tp = state.powers['tenzen'];
+      if (!tp) return state;
+      const reserve = tp.followers.find(f => f.class === 'warrior' && f.regionId === null);
+      if (!reserve) return state;
       return patchPower(state, 'tenzen', {
-        followers: tp.followers.map(f => f.id === event.followerId ? { ...f, regionId: event.regionId } : f),
+        followers: tp.followers.map(f => f.id === reserve.id ? { ...f, regionId: event.regionId } : f),
       });
     }
     case 'call_to_war':
@@ -495,9 +499,16 @@ function applyCardEffect(
     case 'decay':
       return removeCorruption(state, event.regionId, event.power, 1);
     case 'siphon_power': {
+      // Derive victims: opponents with cultists in the region and PP > 0
       let s2 = state;
-      for (const victim of event.stolenFrom) {
-        s2 = patchPower(s2, victim, { powerPoints: Math.max(0, s2.powers[victim]!.powerPoints - 1) });
+      for (const p of s2.activePowers) {
+        if (p === 'tenzen') continue;
+        const hasCultist = s2.powers[p]!.followers.some(f =>
+          f.regionId === event.regionId && f.class === 'cultist' && (f.controlledBy ?? f.power) === p
+        );
+        if (hasCultist && s2.powers[p]!.powerPoints > 0) {
+          s2 = patchPower(s2, p, { powerPoints: s2.powers[p]!.powerPoints - 1 });
+        }
       }
       s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
       return s2;

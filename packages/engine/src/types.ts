@@ -214,7 +214,7 @@ export type GameEvent =
   // ── Draw ─────────────────────────────────────────────────────────────────────
   | { type: 'tenzen_discard'; cardId: string | null }
   | { type: 'power_draw'; power: Power; drawn: number; handSize: number; powerPoints: number; basePowerPoints: number; drawnCardIds: string[] }
-  | { type: 'summoning_banner'; round: number }
+
 
   // ── Summoning ────────────────────────────────────────────────────────────────
   | { type: 'summon_figure'; power: Power; followerId: string; followerClass: FollowerClass; toRegion: RegionId; fromRegion: RegionId | null; cost: number }
@@ -222,7 +222,7 @@ export type GameEvent =
   | { type: 'summoning_pass'; power: Power }
   | { type: 'apprentice_choice'; followerId: string; fromRegion: RegionId; toRegion: RegionId; carry: boolean }
   | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }
-  | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerId: string; followerName: string }
+  | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerName: string }
   | { type: 'card_effect'; subtype: 'call_to_war'; power: Power; followerId: string; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerId: string; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'meddling_of_rats'; targetPower: Power }
@@ -230,7 +230,7 @@ export type GameEvent =
   | { type: 'card_effect'; subtype: 'hidden_influence'; tokenType: TokenType; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'narcotic_musk'; power: Power; followerId: string }
   | { type: 'card_effect'; subtype: 'decay'; power: Power; regionId: RegionId }
-  | { type: 'card_effect'; subtype: 'siphon_power'; power: Power; stolenFrom: Power[] }
+  | { type: 'card_effect'; subtype: 'siphon_power'; power: Power; regionId: RegionId }
   | { type: 'card_effect'; subtype: 'depraved_infiltration'; regionId: RegionId }
 
   // ── Battle ───────────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ export type GameEvent =
 
   // ── Reducers (interactive action results) ────────────────────────────────────
   | { type: 'forced_discard'; power: Power; count: number; cardIds: string[] }
-  | { type: 'upgrade_taken'; power: Power; upgradeCardId: string; powerPoints: number; basePowerPoints: number }
+  | { type: 'upgrade_taken'; power: Power; upgradeCardId: string }
   | { type: 'dial_place_token'; power: Power; regionId: RegionId; tokenType: 'noble' | 'chaos_stone' }
   | { type: 'dial_remove_corruption'; power: Power; regionId: RegionId; targetPower: Power }
   | { type: 'dial_remove_world_token'; power: Power; regionId: RegionId; tokenType: TokenType }

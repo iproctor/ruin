@@ -123,7 +123,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       }
       const log = new GameLog();
       const ps = s.powers[action.power]!;
-      log.emit({ type: 'upgrade_taken', power: action.power, upgradeCardId: action.upgradeCardId, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints });
+      log.emit({ type: 'upgrade_taken', power: action.power, upgradeCardId: action.upgradeCardId });
       result = { state: s, log };
       break;
     }

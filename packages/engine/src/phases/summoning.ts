@@ -183,7 +183,7 @@ export function applyPlayCard(
       s = updatePower(s, 'tenzen', {
         followers: s.powers['tenzen']!.followers.map(f => f.id === reserve.id ? updated : f),
       });
-      log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerId: reserve.id, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
+      log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
     }
   }
 
@@ -430,20 +430,20 @@ function applyOnPlayEffect(
       // placement, before ruination check) — handled in resolveCorruption.
       break;
     case 'tenzen_siphon_power': {
-      const stolenFrom: Power[] = [];
+      let gained = false;
       for (const p of s.activePowers) {
         if (p === power) continue;
         if (followersInRegion(s, regionId, p).some(f => f.class === 'cultist')) {
           const pp = s.powers[p]!.powerPoints;
           if (pp > 0) {
             s = updatePower(s, p, { powerPoints: pp - 1 });
-            stolenFrom.push(p);
+            gained = true;
           }
         }
       }
-      if (stolenFrom.length > 0) {
+      if (gained) {
         s = updatePower(s, power, { powerPoints: s.powers[power]!.powerPoints + 1 });
-        log.emit({ type: 'card_effect', subtype: 'siphon_power', power, stolenFrom });
+        log.emit({ type: 'card_effect', subtype: 'siphon_power', power, regionId });
       }
       break;
     }

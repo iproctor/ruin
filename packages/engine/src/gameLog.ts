@@ -86,8 +86,6 @@ export function renderText(event: GameEvent): string | null {
         : 'Tenzen keeps hand.';
     case 'power_draw':
       return `${P(event.power)} draws ${event.drawn} card(s) (hand: ${event.handSize}).`;
-    case 'summoning_banner':
-      return `== Round ${event.round}: SUMMONING ==`;
 
     // ── Summoning ─────────────────────────────────────────────────────────
     case 'summon_figure': {

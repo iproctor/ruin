@@ -43,11 +43,6 @@ export function maskEvent(event: GameEvent, viewerPower: Power | null): GameEven
       }
       return event;
 
-    // Forced discard: mask card IDs for non-owner
-    case 'forced_discard':
-      if (!isOwn(event.power)) return { ...event, cardIds: event.cardIds.map(() => '?') };
-      return event;
-
     // Everything else: no hidden info
     default:
       return event;

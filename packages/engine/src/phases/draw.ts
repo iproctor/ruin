@@ -101,11 +101,10 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
     s = updatePower(s, power, { passedSummoning: false });
   }
 
-  // Emit the SUMMONING banner here. autoAdvance can't emit it because the
-  // phase transition + pendingAction set happen in the same step, so
-  // autoAdvance immediately breaks on pendingAction before reaching its
-  // banner-emit branch.
-  log.emit({ type: 'summoning_banner', round: s.round });
+  // Emit phase_start here because autoAdvance can't — the phase transition +
+  // pendingAction set happen in the same step, so autoAdvance breaks before
+  // reaching its banner-emit branch.
+  log.emit({ type: 'phase_start', phase: 'summoning', round: s.round });
   log.emit({ type: 'awaiting_action', power: firstSummoner, actionKind: 'summoning_action', context: {}, description: `${firstSummoner}'s turn to summon.` });
 
   return { state: s, log };
