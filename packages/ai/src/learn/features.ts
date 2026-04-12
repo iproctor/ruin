@@ -122,6 +122,14 @@ const VIEWPOINT_HAND_DIMS = CHAOS_CARD_IDS.length;
 const PROTECTED_PER_CLASS_DIMS = 3 * REGION_ORDER.length;
 const PROTECTED_LASHA_DIMS = REGION_ORDER.length;
 
+// Potential corruption tokens each power would place per region this round.
+// Accounts for War Cry (blocks all), Shimmer (-1 per opponent), Changer of Fate
+// (cancels both), Lasha Ravers upgrade (warriors count), and controlledBy.
+const POTENTIAL_CORRUPTION_DIMS = POWERS.length * REGION_ORDER.length;
+
+// Per-region binary: would this region ruin if corruption is placed now?
+const EXPECTED_RUIN_DIMS = REGION_ORDER.length;
+
 export const FEATURE_DIM =
   GLOBAL_DIMS +
   POWERS.length * PER_POWER +
@@ -129,7 +137,9 @@ export const FEATURE_DIM =
   WORLD_TRACK_DIMS +
   VIEWPOINT_HAND_DIMS +
   PROTECTED_PER_CLASS_DIMS +
-  PROTECTED_LASHA_DIMS;
+  PROTECTED_LASHA_DIMS +
+  POTENTIAL_CORRUPTION_DIMS +
+  EXPECTED_RUIN_DIMS;
 
 // ── Extractor ────────────────────────────────────────────────────────────────
 
@@ -354,6 +364,53 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       }
     }
     out[i++] = Math.min(n / 2, 1);
+  }
+
+  // ── Potential corruption per power per region ──────────────────────────
+  // Also accumulate totals per region for the expected-ruin feature.
+  const lashaRavers = state.powers['lasha']?.upgradesInPlay.includes('lasha_ravers_up') ?? false;
+  const potentialPerRegion = new Array<number>(REGION_ORDER.length).fill(0);
+  for (const p of POWERS) {
+    for (let ri = 0; ri < REGION_ORDER.length; ri++) {
+      const r = REGION_ORDER[ri]!;
+      const region = state.regions[r];
+      if (!region || region.ruinationCardIndex !== null) { out[i++] = 0; continue; }
+
+      const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+      const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+      if (warCry && !changer) { out[i++] = 0; continue; }
+
+      const cultists = region.placements.filter(f =>
+        !f.tipped && (f.controlledBy ?? f.power) === p && f.class === 'cultist'
+      ).length;
+
+      let warriors = 0;
+      if (p === 'lasha' && lashaRavers) {
+        warriors = region.placements.filter(f =>
+          !f.tipped && (f.controlledBy ?? f.power) === 'lasha' && f.class === 'warrior' && f.power === 'lasha'
+        ).length;
+      }
+
+      const shimmer = !changer && region.chaosCards.some(c => c?.cardId === 'tenzen_shimmer');
+      const reduction = (shimmer && p !== 'tenzen') ? 1 : 0;
+      const tokens = Math.max(0, cultists + warriors - reduction);
+
+      potentialPerRegion[ri]! += tokens;
+      out[i++] = Math.min(tokens / 4, 1);
+    }
+  }
+
+  // ── Expected ruin: would this region ruin after corruption placement? ──
+  for (let ri = 0; ri < REGION_ORDER.length; ri++) {
+    const r = REGION_ORDER[ri]!;
+    const region = state.regions[r];
+    if (!region || region.ruinationCardIndex !== null) { out[i++] = 0; continue; }
+    const corrTokens = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
+    const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
+    const fatespinnerBonus =
+      state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+      region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+    out[i++] = (corrTokens + chaosStones + fatespinnerBonus + potentialPerRegion[ri]!) >= 12 ? 1 : 0;
   }
 
   return out;
