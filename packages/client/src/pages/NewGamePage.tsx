@@ -11,10 +11,10 @@ const POWER_LABELS: Record<Power, string> = {
   lasha: 'Lasha',
 };
 const POWER_DESCRIPTIONS: Record<Power, string> = {
-  xarm: 'Masters of war and conquest',
-  gormen: 'Lords of pestilence and growth',
-  tenzen: 'Weavers of sorcery and change',
-  lasha: 'Princes of excess and pleasure',
+  xarm: 'Typically wins by dial. Advancement is earned by killing in battle. War Cry blocks corruption, working against opponents\' efforts to ruin regions.',
+  gormen: 'Cheap warriors lead to easy dominations and secure positions. Dominate valuable regions repeatedly to win by VP.',
+  tenzen: 'Avoid direct confrontation with cards while piling in cultists to rapidly ruin regions. Win by chaining ruinations and shutting opponents out.',
+  lasha: 'Steal valuable dominations while advancing the dial, and sneak into ruinations when the hard work is done. Stay flexible and take advantage of opportunities.',
 };
 
 type PlayerTypeChoice = PlayerType;
@@ -29,8 +29,8 @@ function defaultConfig(): Record<Power, PowerConfig> {
   return {
     xarm: { enabled: true, playerType: 'human', inviteEmail: '' },
     gormen: { enabled: true, playerType: 'ai', inviteEmail: '' },
-    tenzen: { enabled: false, playerType: 'ai', inviteEmail: '' },
-    lasha: { enabled: false, playerType: 'ai', inviteEmail: '' },
+    tenzen: { enabled: true, playerType: 'ai', inviteEmail: '' },
+    lasha: { enabled: true, playerType: 'ai', inviteEmail: '' },
   };
 }
 
