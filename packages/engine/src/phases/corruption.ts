@@ -5,7 +5,7 @@ import {
 } from '../constants.js';
 import {
   updatePower, updateRegion, scoreVP, isWorldCardActive, isRuined,
-  magicSymbolCount, totalCorruption,
+  magicSymbolCount, totalCorruption, followersInRegion,
 } from '../helpers.js';
 import { GameLog } from '../gameLog.js';
 
@@ -48,7 +48,7 @@ export function getRegionDomination(
   // Compute for all active powers, plus any power with a presence in the region
   // that might not be in activePowers (e.g. figures from card effects)
   const powersToCheck = new Set<Power>(state.activePowers);
-  for (const f of region.placements) {
+  for (const f of followersInRegion(state, regionId)) {
     const p = (f.controlledBy ?? f.power) as Power;
     if (state.powers[p]) powersToCheck.add(p);
   }
@@ -180,7 +180,7 @@ function calcDomination(
   }
 
   // Figure count
-  const figures = region.placements.filter(f => (f.controlledBy ?? f.power) === power);
+  const figures = followersInRegion(state, regionId, power);
 
   if (hollowPact && power !== 'lasha') {
     // Hollow Pact: enemies contribute 0 figures
@@ -314,21 +314,24 @@ function resolveCorruption(
     // Gormen Plague Bloom: after corruption placement, remove Gormen figures and
     // place 1 corruption token per 2 figures removed (before ruination check).
     if (!nullWeave && regionCardActive(s, regionId, 'gormen_vile_consumption')) {
-      const gormenFigures = s.regions[regionId]!.placements.filter(f => f.power === 'gormen');
+      const gormenFigures = followersInRegion(s, regionId).filter(f => f.power === 'gormen');
       if (gormenFigures.length > 0) {
         const tokensToPlace = Math.floor(gormenFigures.length / 2);
-        s = updateRegion(s, regionId, {
-          placements: s.regions[regionId]!.placements.filter(f => f.power !== 'gormen'),
-          corruptionTokens: tokensToPlace > 0 ? {
-            ...s.regions[regionId]!.corruptionTokens,
-            gormen: s.regions[regionId]!.corruptionTokens.gormen + tokensToPlace,
-          } : s.regions[regionId]!.corruptionTokens,
-        });
+        // Remove gormen figures from this region
         s = updatePower(s, 'gormen', {
           followers: s.powers['gormen']!.followers.map(f =>
             gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
           ),
         });
+        // Place corruption tokens
+        if (tokensToPlace > 0) {
+          s = updateRegion(s, regionId, {
+            corruptionTokens: {
+              ...s.regions[regionId]!.corruptionTokens,
+              gormen: s.regions[regionId]!.corruptionTokens.gormen + tokensToPlace,
+            },
+          });
+        }
         log.emit({ type: 'vile_consumption', regionId, figuresRemoved: gormenFigures.length, tokensPlaced: tokensToPlace });
       }
     }
@@ -359,18 +362,13 @@ function corruptionTokensToPlace(
   power: Power,
   nullWeave: boolean,
 ): number {
-  const region = state.regions[regionId]!;
-
   // Count cultists (and Lasha warriors if Ravers upgrade active)
-  const cultists = region.placements.filter(f =>
-    (f.controlledBy ?? f.power) === power && f.class === 'cultist'
-  ).length;
+  const powerFigs = followersInRegion(state, regionId, power);
+  const cultists = powerFigs.filter(f => f.class === 'cultist').length;
 
   let warriors = 0;
   if (power === 'lasha' && state.powers['lasha']!.upgradesInPlay.includes('lasha_ravers_up')) {
-    warriors = region.placements.filter(f =>
-      (f.controlledBy ?? f.power) === 'lasha' && f.class === 'warrior' && f.power === 'lasha'
-    ).length;
+    warriors = powerFigs.filter(f => f.class === 'warrior' && f.power === 'lasha').length;
   }
 
   // Tenzen Kaleidoscope: one cultist per opponent doesn't count
@@ -410,7 +408,7 @@ function checkDialAdvancement(
       const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
       // Tenzen Fatespinner upgrade: counts as 2 chaos stones
       const fatespinnerBonus = s.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-        region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen') ? 2 : 0;
+        followersInRegion(s, regionId).some(f => f.class === 'incarnation' && f.power === 'tenzen') ? 2 : 0;
       if (magicCount + chaosStones + fatespinnerBonus >= 2) earnedCounter = true;
       break;
     }

@@ -54,21 +54,8 @@ export function applySummonFigure(
     }
   }
 
-  // Remove from current region if on board
-  if (follower.regionId !== null) {
-    const fromRegion = follower.regionId;
-    s = updateRegion(s, fromRegion, {
-      placements: s.regions[fromRegion]!.placements.filter(f => f.id !== followerId),
-    });
-  }
-
   // Update follower
   const updatedFollower = { ...follower, regionId: toRegion, placedAt: s.actionCount };
-
-  // Add to region placements
-  s = updateRegion(s, toRegion, {
-    placements: [...s.regions[toRegion]!.placements, updatedFollower],
-  });
 
   // Update the follower in its owner's array (may differ from acting power for controlled figures)
   s = updatePower(s, ownerPower, {
@@ -196,9 +183,6 @@ export function applyPlayCard(
       s = updatePower(s, 'tenzen', {
         followers: s.powers['tenzen']!.followers.map(f => f.id === reserve.id ? updated : f),
       });
-      s = updateRegion(s, toRegion, {
-        placements: [...s.regions[toRegion]!.placements, updated],
-      });
       log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
     }
   }
@@ -238,15 +222,15 @@ function hasOnPlayChoiceTarget(
       // Any own figure on the board in a different region
       return state.powers[power]!.followers.some(f => f.regionId !== null && f.regionId !== regionId);
     case 'tenzen_teleport':
-      return region.placements.some(f => f.class === 'cultist' || f.class === 'warrior');
+      return followersInRegion(state, regionId).some(f => f.class === 'cultist' || f.class === 'warrior');
     case 'tenzen_the_meddling_of_rats':
       return state.activePowers.some(p => p !== power && state.powers[p]!.hand.length > 0);
     case 'tenzen_fate_shield':
-      return region.placements.some(f => (f.controlledBy ?? f.power) === power);
+      return followersInRegion(state, regionId, power).length > 0;
     case 'lasha_hidden_influence':
       return region.tokens.some(t => t === 'peasant' || t === 'hero' || t === 'noble');
     case 'lasha_narcotic_musk':
-      return region.placements.some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
+      return followersInRegion(state, regionId).some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
     default:
       return false;
   }
@@ -400,8 +384,8 @@ export function getFollowerCost(
   // Gormen free Plaguecarrier in empty region
   if (power === 'gormen' && cls === 'cultist' &&
       state.powers['gormen']!.upgradesInPlay.includes('gormen_plaguecarriers_up')) {
-    const hasOtherFigures = state.regions[toRegion]!.placements.some(
-      f => f.power === 'gormen' && f.id !== followerId
+    const hasOtherFigures = state.powers['gormen']!.followers.some(
+      f => f.regionId === toRegion && f.id !== followerId
     );
     if (!hasOtherFigures) cost = 0;
   }
@@ -487,11 +471,10 @@ function applyOnPlayEffect(
       // placement, before ruination check) — handled in resolveCorruption.
       break;
     case 'tenzen_siphon_power': {
-      const region = s.regions[regionId]!;
       let gained = 0;
       for (const p of s.activePowers) {
         if (p === power) continue;
-        if (region.placements.some(f => (f.controlledBy ?? f.power) === p && f.class === 'cultist')) {
+        if (followersInRegion(s, regionId, p).some(f => f.class === 'cultist')) {
           const pp = s.powers[p]!.powerPoints;
           s = updatePower(s, p, { powerPoints: Math.max(0, pp - 1) });
           gained = 1;

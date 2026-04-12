@@ -11,6 +11,7 @@ import {
   giveCards, giveInDeck, withUpgrade, setVP, setThreat, ruinRegion, setWorldCard,
 } from './helpers.js';
 import { BASE_POWER_POINTS } from '../constants.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── Chaos card removal ───────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ describe('Hero token resolution', () => {
     s = addToken(s, 'norrsund', 'hero');
     const { state, log } = resolveEndPhase(s);
     expect(log.entries.some(l => l.includes('Hero token') && l.includes('xarm'))).toBe(true);
-    expect(state.regions.norrsund!.placements.filter(f => (f.controlledBy ?? f.power) === 'xarm')).toHaveLength(0);
+    expect(followersInRegion(state, 'norrsund', 'xarm')).toHaveLength(0);
   });
 
   test('two hero tokens force two separate removals', () => {
@@ -82,7 +83,7 @@ describe('Hero token resolution', () => {
     s = addToken(s, 'norrsund', 'hero');
     s = addToken(s, 'norrsund', 'hero');
     const { state } = resolveEndPhase(s);
-    expect(state.regions.norrsund!.placements.filter(f => (f.controlledBy ?? f.power) === 'xarm')).toHaveLength(0);
+    expect(followersInRegion(state, 'norrsund', 'xarm')).toHaveLength(0);
   });
 
   test('hero token does nothing if no figures in region', () => {

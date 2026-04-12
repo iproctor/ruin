@@ -9,6 +9,7 @@ import type {
 import { REGION_ORDER, CARD_BY_ID, UPGRADES, ADJACENCY, FOLLOWERS } from './constants.js';
 import {
   legalPlacementRegions, cardSlotsAvailable, isRuined, isWorldCardActive,
+  followersInRegion,
 } from './helpers.js';
 import { getWorldChoiceRegions } from './phases/world.js';
 import { getFollowerCost, getCardCost } from './phases/summoning.js';
@@ -179,9 +180,8 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
 
     case 'hero_removal': {
       const regionId = state.pendingAction.context['regionId'] as RegionId;
-      const region = state.regions[regionId];
-      if (!region) return [];
-      return region.placements
+      if (!state.regions[regionId]) return [];
+      return followersInRegion(state, regionId)
         .filter(f => f.power === power)
         .map(f => ({
           kind: 'hero_removal' as const,
@@ -222,7 +222,7 @@ function getBattleHitAssignmentActions(state: GameState, power: Power): BattleHi
   const region = state.regions[regionId]!;
 
   const annotated: AnnotatedEnemy[] = [];
-  for (const f of region.placements) {
+  for (const f of followersInRegion(state, regionId)) {
     const ctrl = f.controlledBy ?? f.power;
     if (ctrl === power || f.tipped || f.protected) continue;
     const stats = FOLLOWERS[f.power as import('./types.js').Power]?.[f.class]?.base;
@@ -419,7 +419,6 @@ function isCardPlayableInRegion(
   cardId: string,
   regionId: RegionId,
 ): boolean {
-  const region = state.regions[regionId]!;
   switch (cardId) {
     case 'xarm_call_to_war':
       // Requires own (non-musked) figures in at least one other region to move here
@@ -428,23 +427,23 @@ function isCardPlayableInRegion(
       );
     case 'tenzen_teleport':
       // Requires a cultist or warrior already in the region
-      return region.placements.some(f => f.class === 'cultist' || f.class === 'warrior');
+      return followersInRegion(state, regionId).some(f => f.class === 'cultist' || f.class === 'warrior');
     case 'tenzen_the_meddling_of_rats':
       // Requires an opponent with figures AND cards in hand in this region
       return state.activePowers.some(p =>
         p !== power &&
         (state.powers[p]?.hand.length ?? 0) > 0 &&
-        region.placements.some(f => (f.controlledBy ?? f.power) === p)
+        followersInRegion(state, regionId, p).length > 0
       );
     case 'tenzen_fate_shield':
       // Requires own figure in the region
-      return region.placements.some(f => (f.controlledBy ?? f.power) === power);
+      return followersInRegion(state, regionId, power).length > 0;
     case 'lasha_narcotic_musk':
       // Requires an opponent cultist in the region
-      return region.placements.some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
+      return followersInRegion(state, regionId).some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);
     case 'lasha_hidden_influence':
       // Requires a movable token in the region
-      return region.tokens.some(t => t === 'peasant' || t === 'hero' || t === 'noble');
+      return state.regions[regionId]!.tokens.some(t => t === 'peasant' || t === 'hero' || t === 'noble');
     default:
       return true;
   }
@@ -493,7 +492,7 @@ function getCorruptionHarvestActions(
   const regionId = ctx['regionId'] as import('./types.js').RegionId;
   const maxKills = ctx['maxKills'] as number;
 
-  const targets = state.regions[regionId]!.placements.filter(f => {
+  const targets = followersInRegion(state, regionId).filter(f => {
     const ctrl = f.controlledBy ?? f.power;
     return ctrl !== 'gormen' && (f.class === 'cultist' || f.class === 'warrior');
   });
@@ -549,7 +548,6 @@ function getCardOnPlayChoiceActions(
   const ctx = state.pendingAction!.context as { cardId: string; regionId: RegionId };
   const cardId = ctx['cardId'];
   const regionId = ctx['regionId'];
-  const region = state.regions[regionId]!;
   const actions: CardOnPlayChoiceAction[] = [];
 
   const base = { kind: 'card_on_play_choice' as const, power, cardId, regionId };
@@ -574,7 +572,7 @@ function getCardOnPlayChoiceActions(
     }
 
     case 'tenzen_teleport': {
-      const moveable = region.placements.filter(
+      const moveable = followersInRegion(state, regionId).filter(
         f => f.class === 'cultist' || f.class === 'warrior'
       );
       for (const f of moveable) {
@@ -597,7 +595,7 @@ function getCardOnPlayChoiceActions(
     }
 
     case 'tenzen_fate_shield': {
-      const ownFigures = region.placements.filter(f => (f.controlledBy ?? f.power) === power);
+      const ownFigures = followersInRegion(state, regionId, power);
       for (const f of ownFigures) {
         actions.push({ ...base, choices: { followerId: f.id } });
       }
@@ -610,8 +608,9 @@ function getCardOnPlayChoiceActions(
     }
 
     case 'lasha_hidden_influence': {
+      const hiddenRegion = state.regions[regionId]!;
       const moveable = (['peasant', 'hero', 'noble'] as TokenType[]).filter(
-        t => region.tokens.includes(t)
+        t => hiddenRegion.tokens.includes(t)
       );
       for (const token of moveable) {
         for (const dest of REGION_ORDER) {
@@ -624,7 +623,7 @@ function getCardOnPlayChoiceActions(
     }
 
     case 'lasha_narcotic_musk': {
-      const targets = region.placements.filter(
+      const targets = followersInRegion(state, regionId).filter(
         f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power
       );
       for (const f of targets) {

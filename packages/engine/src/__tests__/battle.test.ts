@@ -16,6 +16,7 @@ import {
   giveCards, withUpgrade, setPP, setWorldCard, followersIn,
   autoResolveBattle,
 } from './helpers.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── Basic battle mechanics ───────────────────────────────────────────────────
 
@@ -46,17 +47,17 @@ describe('basic battle mechanics', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'tenzen', 'warrior', 'norrsund', { protected: true });
     for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
-    const tenzenWarriorId = s.regions.norrsund!.placements.find(f => f.power === 'tenzen')!.id;
+    const tenzenWarriorId = followersInRegion(s, 'norrsund').find(f => f.power === 'tenzen')!.id;
     const { state } = autoResolveBattle(resolveBattlePhase(s));
-    expect(state.regions.norrsund!.placements.find(f => f.id === tenzenWarriorId)).toBeDefined();
+    expect(followersInRegion(state, 'norrsund').find(f => f.id === tenzenWarriorId)).toBeDefined();
   });
 
   test('after battle, protected flags cleared on surviving figures', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'tenzen', 'warrior', 'norrsund', { protected: true });
     const { state } = autoResolveBattle(resolveBattlePhase(s));
-    for (const region of Object.values(state.regions)) {
-      for (const f of region.placements) {
+    for (const regionId of Object.keys(state.regions) as import('../types.js').RegionId[]) {
+      for (const f of followersInRegion(state, regionId)) {
         expect(f.protected).toBe(false);
       }
     }
@@ -86,7 +87,7 @@ describe('interactive hit assignment', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 1 });
     for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    const gormenCultistId = s.regions.norrsund!.placements.find(f => f.power === 'gormen')!.id;
+    const gormenCultistId = followersInRegion(s, 'norrsund').find(f => f.power === 'gormen')!.id;
 
     // Drive until we get the hit assignment or it completes
     let result = resolveBattlePhase(s);
@@ -109,14 +110,14 @@ describe('interactive hit assignment', () => {
 
     // Drive to completion
     const { state } = autoResolveBattle(next);
-    expect(state.regions.norrsund!.placements.find(f => f.id === gormenCultistId)).toBeUndefined();
+    expect(followersInRegion(state, 'norrsund').find(f => f.id === gormenCultistId)).toBeUndefined();
   });
 
   test('attacker may choose to assign 0 kills (use no hits)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 1 });
     for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    const gormenCultistId = s.regions.norrsund!.placements.find(f => f.power === 'gormen')!.id;
+    const gormenCultistId = followersInRegion(s, 'norrsund').find(f => f.power === 'gormen')!.id;
 
     let result = resolveBattlePhase(s);
     if (result.state.pendingAction?.actionKind !== 'battle_hit_assignment') return; // 0 hits
@@ -130,7 +131,7 @@ describe('interactive hit assignment', () => {
     });
     const { state } = autoResolveBattle(next);
     // Gormen cultist survives (attacker chose not to kill)
-    expect(state.regions.norrsund!.placements.find(f => f.id === gormenCultistId)).toBeDefined();
+    expect(followersInRegion(state, 'norrsund').find(f => f.id === gormenCultistId)).toBeDefined();
   });
 
   test('auto-resolve drives battle out of battle phase', () => {
@@ -402,7 +403,7 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
     s = placeCard(s, 'gormen_inevitable_rot', 'gormen', 'norrsund');
     const { state: withPending } = autoResolveBattle(resolveBattlePhase(s));
     expect(withPending.pendingAction?.actionKind).toBe('corruption_harvest_choice');
-    const targets = withPending.regions.norrsund!.placements
+    const targets = followersInRegion(withPending, 'norrsund')
       .filter(f => (f.controlledBy ?? f.power) !== 'gormen')
       .map(f => f.id)
       .slice(0, 2);
@@ -413,7 +414,7 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
       followerIds: targets,
     });
     for (const id of targets) {
-      expect(state.regions.norrsund!.placements.find(f => f.id === id)).toBeUndefined();
+      expect(followersInRegion(state, 'norrsund').find(f => f.id === id)).toBeUndefined();
     }
     expect(state.phase).toBe('corruption');
   });
@@ -476,7 +477,7 @@ describe('Armistice (remove 1 figure per event region post-battle)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
     expect(log.entries.some(l => l.includes('Armistice'))).toBe(true);
-    expect(state.regions.norrsund!.placements.length).toBeLessThan(2);
+    expect(followersInRegion(state, 'norrsund').length).toBeLessThan(2);
   });
 });
 
@@ -534,7 +535,7 @@ describe('War Frenzy partial hit carry-over', () => {
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'tenzen', 'incarnation', 'norrsund'); // defense 2
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
-    const tenzenIncarnationId = s.regions.norrsund!.placements.find(f => f.power === 'tenzen')!.id;
+    const tenzenIncarnationId = followersInRegion(s, 'norrsund').find(f => f.power === 'tenzen')!.id;
     s = {
       ...s,
       phase: 'battle',
@@ -563,7 +564,7 @@ describe('War Frenzy partial hit carry-over', () => {
       followerIds: [],
       warFrenzyPartialHits: [{ followerId: tenzenIncarnationId, hits: 1 }],
     });
-    const figure = state.regions.norrsund!.placements.find(f => f.id === tenzenIncarnationId);
+    const figure = followersInRegion(state, 'norrsund').find(f => f.id === tenzenIncarnationId);
     expect(figure).toBeDefined();
     expect(figure!.warFrenzyHits).toBe(1);
     expect(figure!.tipped).toBe(false);
@@ -599,7 +600,7 @@ describe('War Frenzy partial hit carry-over', () => {
       followerIds: [tenzenIncarnationId],
     });
     // Figure should have been killed and removed (post_normal runs after the assignment)
-    const figure = state.regions.norrsund!.placements.find(f => f.id === tenzenIncarnationId);
+    const figure = followersInRegion(state, 'norrsund').find(f => f.id === tenzenIncarnationId);
     expect(figure).toBeUndefined();
   });
 
@@ -616,8 +617,8 @@ describe('War Frenzy partial hit carry-over', () => {
     // Drive to completion and check warFrenzyHits reset
     const { state } = autoResolveBattle({ state: afterWF, log: new GameLog() });
     // After the region resolves, any surviving figure should have warFrenzyHits = 0
-    for (const region of Object.values(state.regions)) {
-      for (const f of region.placements) {
+    for (const regionId of Object.keys(state.regions) as import('../types.js').RegionId[]) {
+      for (const f of followersInRegion(state, regionId)) {
         expect(f.warFrenzyHits).toBe(0);
       }
     }

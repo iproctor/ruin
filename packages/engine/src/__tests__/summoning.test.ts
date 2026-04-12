@@ -11,6 +11,7 @@ import {
   giveCards, withUpgrade, setPP, followersIn,
 } from './helpers.js';
 import { BASE_POWER_POINTS } from '../constants.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── Figure summoning ─────────────────────────────────────────────────────────
 
@@ -21,7 +22,7 @@ describe('summoning figures', () => {
       kind: 'summoning_summon_figure', power: 'xarm', followerId: 'xarm_cultist_1', toRegion: 'norrsund',
     });
     expect(state.powers.xarm!.powerPoints).toBe(BASE_POWER_POINTS.xarm - 1);
-    expect(state.regions.norrsund!.placements).toHaveLength(1);
+    expect(followersInRegion(state, 'norrsund')).toHaveLength(1);
   });
 
   test('summon warrior costs 2 PP', () => {
@@ -40,12 +41,12 @@ describe('summoning figures', () => {
     expect(state.powers.xarm!.powerPoints).toBe(BASE_POWER_POINTS.xarm - 3);
   });
 
-  test('figure is placed in region placements and follower regionId updated', () => {
+  test('figure is placed in region and follower regionId updated', () => {
     const s = makeState();
     const { state } = applySummonFigure(s, {
       kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_cultist_1', toRegion: 'mittelreich',
     });
-    expect(state.regions.mittelreich!.placements.some(f => f.id === 'gormen_cultist_1')).toBe(true);
+    expect(followersInRegion(state, 'mittelreich').some(f => f.id === 'gormen_cultist_1')).toBe(true);
     expect(state.powers.gormen!.followers.find(f => f.id === 'gormen_cultist_1')!.regionId).toBe('mittelreich');
   });
 
@@ -54,8 +55,8 @@ describe('summoning figures', () => {
     const { state } = applySummonFigure(s, {
       kind: 'summoning_summon_figure', power: 'xarm', followerId: 'xarm_warrior_1', toRegion: 'talvimaa',
     });
-    expect(state.regions.norrsund!.placements).toHaveLength(0);
-    expect(state.regions.talvimaa!.placements).toHaveLength(1);
+    expect(followersInRegion(state, 'norrsund')).toHaveLength(0);
+    expect(followersInRegion(state, 'talvimaa')).toHaveLength(1);
   });
 
   test('cannot summon with insufficient power points', () => {
@@ -197,7 +198,7 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
       toRegion: 'norrsund', slotIndex: 0,
     });
     // On-play: figures remain, no extra corruption tokens
-    expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(2);
+    expect(followersInRegion(state, 'norrsund').filter(f => f.power === 'gormen')).toHaveLength(2);
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(0);
   });
 
@@ -209,7 +210,7 @@ describe('Gormen Plague Bloom (end of corruption phase effect)', () => {
     s = { ...s, regions: { ...s.regions, norrsund: { ...s.regions.norrsund!, chaosCards: [{ cardId: 'gormen_vile_consumption', playedBy: 'gormen', slotIndex: 0, persistNextRound: false, placedAt: 0 }, null] } } };
     const { state } = resolveCorruptionPhase(s);
     // 3 figures removed → floor(3/2) = 1 token
-    expect(state.regions.norrsund!.placements.filter(f => f.power === 'gormen')).toHaveLength(0);
+    expect(followersInRegion(state, 'norrsund').filter(f => f.power === 'gormen')).toHaveLength(0);
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBeGreaterThanOrEqual(1);
   });
 });
@@ -314,13 +315,13 @@ describe('Tenzen Phase Shift (move figure to any region)', () => {
       kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_teleport',
       toRegion: 'norrsund', slotIndex: 0,
     });
-    const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
+    const followerId = followersInRegion(afterPlay, 'norrsund')[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
       kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_teleport',
       regionId: 'norrsund', choices: { followerId, toRegion: 'mittelreich' },
     });
-    expect(state.regions.norrsund!.placements).toHaveLength(0);
-    expect(state.regions.mittelreich!.placements).toHaveLength(1);
+    expect(followersInRegion(state, 'norrsund')).toHaveLength(0);
+    expect(followersInRegion(state, 'mittelreich')).toHaveLength(1);
   });
 });
 
@@ -353,12 +354,12 @@ describe("Tenzen Fate's Aegis (protect figure)", () => {
       kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_fate_shield',
       toRegion: 'norrsund', slotIndex: 0,
     });
-    const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
+    const followerId = followersInRegion(afterPlay, 'norrsund')[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
       kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_fate_shield',
       regionId: 'norrsund', choices: { followerId },
     });
-    expect(state.regions.norrsund!.placements.find(f => f.id === followerId)!.protected).toBe(true);
+    expect(followersInRegion(state, 'norrsund').find(f => f.id === followerId)!.protected).toBe(true);
   });
 });
 
@@ -392,12 +393,12 @@ describe('Lasha Enthrallment (control enemy cultist)', () => {
       kind: 'summoning_play_card', power: 'lasha', cardId: 'lasha_narcotic_musk',
       toRegion: 'norrsund', slotIndex: 0,
     });
-    const followerId = afterPlay.regions.norrsund!.placements[0]!.id;
+    const followerId = followersInRegion(afterPlay, 'norrsund')[0]!.id;
     const { state } = applyCardOnPlayChoice(afterPlay, {
       kind: 'card_on_play_choice', power: 'lasha', cardId: 'lasha_narcotic_musk',
       regionId: 'norrsund', choices: { followerId },
     });
-    const f = state.regions.norrsund!.placements.find(f => f.id === followerId)!;
+    const f = followersInRegion(state, 'norrsund').find(f => f.id === followerId)!;
     expect(f.controlledBy).toBe('lasha');
   });
 });
@@ -502,14 +503,14 @@ describe('Tenzen Fractals upgrade (free Fractal on magic symbol card)', () => {
   test('playing a magic symbol card summons a Fractal to that region for free', () => {
     let s = withUpgrade(makeState(), 'tenzen', 'tenzen_fractals_up');
     s = giveCards(s, 'tenzen', ['tenzen_changer_of_fate']); // hasMagicSymbol: true
-    const fractalsInRegionBefore = s.regions.norrsund!.placements.filter(
+    const fractalsInRegionBefore = followersInRegion(s, 'norrsund').filter(
       f => f.class === 'warrior' && f.power === 'tenzen',
     ).length;
     const { state } = applyPlayCard(s, {
       kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_changer_of_fate',
       toRegion: 'norrsund', slotIndex: 0,
     });
-    const fractalsAfter = state.regions.norrsund!.placements.filter(
+    const fractalsAfter = followersInRegion(state, 'norrsund').filter(
       f => f.class === 'warrior' && f.power === 'tenzen',
     ).length;
     expect(fractalsAfter).toBe(fractalsInRegionBefore + 1);

@@ -7,7 +7,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
-import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions } from '@ruin/engine';
+import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions, followersInRegion } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -596,8 +596,7 @@ function CorruptionHarvestPanel({
   if (!regionId) return <p style={{ color: '#f87171' }}>Missing region in context.</p>;
   const safeRegionId: RegionId = regionId;
 
-  const region = state.regions[safeRegionId];
-  const enemyFigures = (region?.placements ?? []).filter(
+  const enemyFigures = followersInRegion(state, safeRegionId).filter(
     (f) => (f.controlledBy ?? f.power) !== myPower && (f.class === 'cultist' || f.class === 'warrior') && !f.tipped,
   );
   // Must kill exactly this many
@@ -821,7 +820,7 @@ function StolenThoughtsPanel({
   const region = state.regions[regionId];
   const eligiblePowers = state.activePowers.filter(p =>
     p !== myPower &&
-    (region?.placements ?? []).some(f => (f.controlledBy ?? f.power) === p) &&
+    followersInRegion(state, regionId).some(f => (f.controlledBy ?? f.power) === p) &&
     (state.powers[p]?.hand.length ?? 0) > 0
   );
 
@@ -963,7 +962,7 @@ function PhaseShiftPanel({
   const [chosenRegion, setChosenRegion] = useState<RegionId | null>(null);
   const [carry, setCarry] = useState(false);
 
-  const moveable = (state.regions[regionId]?.placements ?? []).filter(
+  const moveable = followersInRegion(state, regionId).filter(
     f => f.class === 'cultist' || f.class === 'warrior'
   );
   const validDests = ALL_REGIONS.filter(r => r !== regionId);
@@ -1028,9 +1027,7 @@ function FatesAegisPanel({
   state: GameState; myPower: Power; regionId: RegionId;
   onSubmit: (choices: Record<string, unknown>) => void;
 }) {
-  const figures = (state.regions[regionId]?.placements ?? []).filter(
-    f => (f.controlledBy ?? f.power) === myPower
-  );
+  const figures = followersInRegion(state, regionId, myPower);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
@@ -1060,7 +1057,7 @@ function EnthrallmentPanel({
   state: GameState; regionId: RegionId;
   onSubmit: (choices: Record<string, unknown>) => void;
 }) {
-  const targets = (state.regions[regionId]?.placements ?? []).filter(
+  const targets = followersInRegion(state, regionId).filter(
     f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== 'lasha'
   );
 
@@ -1170,7 +1167,7 @@ function BattleHitAssignmentPanel({
 
   const region = state.regions[safeRegionId]!;
   const CLASS_ORDER: Record<string, number> = { cultist: 0, warrior: 1, incarnation: 2 };
-  const targets = region.placements
+  const targets = followersInRegion(state, safeRegionId)
     .filter(f => {
       const ctrl = f.controlledBy ?? f.power;
       return ctrl !== myPower && !f.tipped && !f.protected;

@@ -1,5 +1,5 @@
 import type { GameState, Action } from '@ruin/engine';
-import { CHAOS_CARDS } from '@ruin/engine';
+import { CHAOS_CARDS, followersInRegion } from '@ruin/engine';
 
 /**
  * Hard-block "pointless" card plays — actions where the card's prerequisites
@@ -69,8 +69,9 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
   if (!region) return false;
 
   const power = action.power;
-  const ownFigs = region.placements.filter(f => (f.controlledBy ?? f.power) === power);
-  const enemyFigs = region.placements.filter(f => (f.controlledBy ?? f.power) !== power);
+  const allFigs = followersInRegion(state, action.toRegion);
+  const ownFigs = allFigs.filter(f => (f.controlledBy ?? f.power) === power);
+  const enemyFigs = allFigs.filter(f => (f.controlledBy ?? f.power) !== power);
   const enemyCultists = enemyFigs.filter(f => f.class === 'cultist');
   const ownCorr = region.corruptionTokens[power] ?? 0;
 
@@ -142,7 +143,7 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
 
     // Teleport: needs a movable figure (cultist or warrior) of any power in region
     case 'tenzen_teleport': {
-      const movable = region.placements.filter(
+      const movable = followersInRegion(state, action.toRegion).filter(
         f => f.class === 'cultist' || f.class === 'warrior',
       );
       return movable.length === 0;
@@ -166,7 +167,7 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
 
     // War Cry: blocks corruption placement here this round — useless if no figures at all
     case 'xarm_war_cry':
-      return region.placements.length === 0;
+      return followersInRegion(state, action.toRegion).length === 0;
 
     // Call to War: moves up to 2 own figures into this region — needs own figures elsewhere
     case 'xarm_call_to_war': {
@@ -219,7 +220,7 @@ export function isXarmDelayPlay(state: GameState, action: Action): boolean {
   if (!region) return false;
 
   if (action.cardId === 'xarm_war_cry') {
-    const cultistCount = region.placements.filter(
+    const cultistCount = followersInRegion(state, action.toRegion).filter(
       f => f.class === 'cultist' && !f.tipped,
     ).length;
     if (cultistCount > 6) return true;
@@ -234,13 +235,14 @@ export function isXarmDelayPlay(state: GameState, action: Action): boolean {
     // from eradicating enemy cultists (who would otherwise place corruption
     // next round); killing warriors/incarnations is tactical but doesn't
     // directly stall the opponent's VP race the same way.
-    const xarmAttackPresent = region.placements.some(f =>
+    const regionFigs = followersInRegion(state, action.toRegion);
+    const xarmAttackPresent = regionFigs.some(f =>
       !f.tipped &&
       (f.controlledBy ?? f.power) === 'xarm' &&
       (f.class === 'warrior' || f.class === 'incarnation'),
     );
     if (!xarmAttackPresent) return false;
-    const enemyCultistCount = region.placements.filter(f =>
+    const enemyCultistCount = regionFigs.filter(f =>
       !f.tipped &&
       f.class === 'cultist' &&
       (f.controlledBy ?? f.power) !== 'xarm',
@@ -293,7 +295,8 @@ export function isTenzenDefensivePlay(state: GameState, action: Action): boolean
   const region = state.regions[action.toRegion];
   if (!region) return false;
 
-  const tenzenCultists = region.placements.filter(
+  const regionFigs = followersInRegion(state, action.toRegion);
+  const tenzenCultists = regionFigs.filter(
     f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
   ).length;
 
@@ -302,7 +305,7 @@ export function isTenzenDefensivePlay(state: GameState, action: Action): boolean
 
   // Teleport: worth playing when enemy attackers threaten tenzen's cultists
   if (action.cardId === 'tenzen_teleport' && tenzenCultists >= 1) {
-    const enemyAttackers = region.placements.some(
+    const enemyAttackers = regionFigs.some(
       f => !f.tipped && (f.controlledBy ?? f.power) !== 'tenzen' &&
            (f.class === 'warrior' || f.class === 'incarnation'),
     );
@@ -359,7 +362,7 @@ export function isDacCompletion(state: GameState, action: Action): boolean {
       ).length;
       const fatespinnerBonus =
         state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-        region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)
+        followersInRegion(state, action.toRegion).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)
           ? 2
           : 0;
       return cs + ms + fatespinnerBonus >= 2;
@@ -395,7 +398,7 @@ function xarmCanAttackInRegion(state: GameState, regionId: string): boolean {
   const xarmHasHeartseekers =
     state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
 
-  return region.placements.some(f => {
+  return followersInRegion(state, regionId as import('@ruin/engine').RegionId).some(f => {
     if (f.tipped) return false;
     if ((f.controlledBy ?? f.power) !== 'xarm') return false;
     if (f.class === 'warrior' || f.class === 'incarnation') return true;
@@ -421,7 +424,7 @@ export function isFeedingXarmDac(state: GameState, action: Action): boolean {
   if (!xarmCanAttackInRegion(state, action.toRegion)) return false;
 
   // Would the summoning power's figure be alone (straggler)?
-  const ownFigsThere = region.placements.filter(
+  const ownFigsThere = followersInRegion(state, action.toRegion).filter(
     f => !f.tipped && (f.controlledBy ?? f.power) === action.power,
   ).length;
   // Only flag if going from 0 own figures → 1 (the straggler pattern).
@@ -483,7 +486,7 @@ export function actionBuildsTowardDac(state: GameState, action: Action): boolean
 
     if (power === 'xarm') {
       // Any figure into a contested region (xarm earns DAC from kills)
-      return region.placements.some(f => (f.controlledBy ?? f.power) !== 'xarm');
+      return followersInRegion(state, action.toRegion).some(f => (f.controlledBy ?? f.power) !== 'xarm');
     }
   }
 
@@ -495,7 +498,7 @@ export function actionBuildsTowardDac(state: GameState, action: Action): boolean
     // Tenzen: playing a magic-symbol card into a region with own cultists
     // moves toward the (≥2 magic symbols + own corruption) trigger.
     if (power === 'tenzen' && MAGIC_SYMBOL_CARDS.has(action.cardId)) {
-      const tenzenHere = region.placements.filter(
+      const tenzenHere = followersInRegion(state, action.toRegion).filter(
         f => (f.controlledBy ?? f.power) === 'tenzen',
       ).length;
       return tenzenHere > 0;
@@ -503,7 +506,7 @@ export function actionBuildsTowardDac(state: GameState, action: Action): boolean
 
     // Lasha: Hidden Influence to bring a Noble/Hero into a region with own cultists.
     if (power === 'lasha' && action.cardId === 'lasha_hidden_influence') {
-      const lashaHere = region.placements.filter(
+      const lashaHere = followersInRegion(state, action.toRegion).filter(
         f => (f.controlledBy ?? f.power) === 'lasha',
       ).length;
       return lashaHere > 0;
@@ -517,7 +520,7 @@ export function actionBuildsTowardDac(state: GameState, action: Action): boolean
         'gormen_deaths_perfume',
       ]);
       if (helpfulCards.has(action.cardId)) {
-        const gormenHere = region.placements.filter(
+        const gormenHere = followersInRegion(state, action.toRegion).filter(
           f => (f.controlledBy ?? f.power) === 'gormen',
         ).length;
         return gormenHere > 0;
@@ -532,7 +535,7 @@ export function actionBuildsTowardDac(state: GameState, action: Action): boolean
         'xarm_bloody_rebirth',
       ]);
       if (combatCards.has(action.cardId)) {
-        return region.placements.some(f => (f.controlledBy ?? f.power) !== 'xarm');
+        return followersInRegion(state, action.toRegion).some(f => (f.controlledBy ?? f.power) !== 'xarm');
       }
     }
   }

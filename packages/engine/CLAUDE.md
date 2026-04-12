@@ -5,7 +5,7 @@ This package is the source of truth for game rules. Treat it conservatively: AI 
 ## Invariants — do not violate
 
 - **Immutability.** Never mutate `state` or any nested object. Use `updatePower(s, power, {...})` and `updateRegion(s, regionId, {...})` (helpers.ts) which shallow-spread + merge. Hand/deck/follower arrays are replaced via `[...]`, `filter`, `map`, `slice` — never `push`/`splice`/`shift`.
-- **Dual follower tracking.** Each `FollowerInstance` lives in BOTH `PowerState.followers[]` AND `RegionState.placements[]`. When you move/kill/spawn a figure, update both. Forgetting is a silent bug — queries split between the two arrays.
+- **Single follower source of truth.** Each `FollowerInstance` lives in `PowerState.followers[]`. Region figures are derived on the fly via `followersInRegion(state, regionId)` (helpers.ts). When you move/kill/spawn a figure, only update `PowerState.followers` (setting `regionId`, `controlledBy`, etc.).
 - **`actionCount` increments.** `applyAction` increments `state.actionCount` on entry. It's the RNG offset for replay determinism. Don't bypass.
 - **`pendingAction` is the state machine.** Null = phase will auto-advance. Non-null = waiting for a specific power's action of a specific kind. Handlers must set or clear it. Don't leave it stale.
 - **`pendingDialRewards` distinguishes `null` from `[]`.** `null` = not in reward draining; `[]` = drained. End-phase logic relies on this — see reducers.ts:30 (`popDialReward`).

@@ -25,6 +25,7 @@ export { GameLog, renderText } from './gameLog.js';
 
 export { getLegalActions } from './legalActions.js';
 export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination } from './phases/corruption.js';
+export { followersInRegion } from './helpers.js';
 export { getWorldChoiceRegions } from './phases/world.js';
 export { checkVictory } from './victory.js';
 

@@ -5,7 +5,7 @@ import type {
   Power,
   RegionId,
 } from '@ruin/engine';
-import { FOLLOWERS } from '@ruin/engine';
+import { FOLLOWERS, followersInRegion } from '@ruin/engine';
 
 /**
  * Enumerate hit-assignment actions at a battle_hit_assignment decision point.
@@ -58,7 +58,7 @@ export function enumerateKillActions(
   if (!region) return [];
 
   // Non-tipped, non-protected enemies only
-  const enemies = region.placements.filter(f => {
+  const enemies = followersInRegion(state, ctx.regionId).filter(f => {
     const ctrl = f.controlledBy ?? f.power;
     return ctrl !== attacker && !f.tipped && !f.protected;
   });

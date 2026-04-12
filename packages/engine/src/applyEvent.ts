@@ -8,7 +8,7 @@
  * This is the "single source of truth" for what each event does to state.
  */
 
-import type { GameState, GameEvent, Power, RegionId, FollowerClass } from './types.js';
+import type { GameState, GameEvent, Power, RegionId } from './types.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -237,31 +237,20 @@ function removeToken(state: GameState, regionId: RegionId, tokenType: string): G
 
 function moveFigure(
   state: GameState, power: Power, followerId: string,
-  toRegion: RegionId, fromRegion: RegionId | null, cost: number,
+  toRegion: RegionId, _fromRegion: RegionId | null, cost: number,
 ): GameState {
-  let s = state;
-  const p = s.powers[power]!;
+  const p = state.powers[power]!;
   const follower = p.followers.find(f => f.id === followerId);
-  if (!follower) return s;
+  if (!follower) return state;
 
-  // Remove from old region placements
-  if (fromRegion) {
-    const oldRegion = s.regions[fromRegion]!;
-    s = { ...s, regions: { ...s.regions, [fromRegion]: { ...oldRegion, placements: oldRegion.placements.filter(f => f.id !== followerId) } } };
-  }
-
-  // Update follower
+  // Update follower's regionId and deduct cost
   const updated = { ...follower, regionId: toRegion };
   const newFollowers = p.followers.map(f => f.id === followerId ? updated : f);
 
-  // Add to new region
-  const newRegion = s.regions[toRegion]!;
-  s = {
-    ...s,
-    regions: { ...s.regions, [toRegion]: { ...newRegion, placements: [...newRegion.placements, updated] } },
-    powers: { ...s.powers, [power]: { ...p, followers: newFollowers, powerPoints: p.powerPoints - cost } },
+  return {
+    ...state,
+    powers: { ...state.powers, [power]: { ...p, followers: newFollowers, powerPoints: p.powerPoints - cost } },
   };
-  return s;
 }
 
 function playCard(
@@ -287,27 +276,19 @@ function playCard(
   };
 }
 
-function killFigure(state: GameState, regionId: RegionId, followerId: string): GameState {
-  const region = state.regions[regionId]!;
-  const fig = region.placements.find(f => f.id === followerId);
-  if (!fig) return state;
-
-  return {
-    ...state,
-    regions: {
-      ...state.regions,
-      [regionId]: { ...region, placements: region.placements.filter(f => f.id !== followerId) },
-    },
-    powers: {
-      ...state.powers,
-      [fig.power]: {
-        ...state.powers[fig.power]!,
-        followers: state.powers[fig.power]!.followers.map(f =>
+function killFigure(state: GameState, _regionId: RegionId, followerId: string): GameState {
+  // Find which power owns this figure
+  for (const power of state.activePowers) {
+    const fig = state.powers[power]!.followers.find(f => f.id === followerId);
+    if (fig) {
+      return patchPower(state, power, {
+        followers: state.powers[power]!.followers.map(f =>
           f.id === followerId ? { ...f, regionId: null, controlledBy: null, tipped: false } : f
         ),
-      },
-    },
-  };
+      });
+    }
+  }
+  return state;
 }
 
 function removeFigure(state: GameState, regionId: RegionId, followerId: string): GameState {
@@ -321,31 +302,14 @@ function claimPeasant(state: GameState, regionId: RegionId, power: Power): GameS
 }
 
 function setControlledBy(state: GameState, followerId: string, controller: Power | null): GameState {
-  // Find which power owns this figure and update both followers AND placements
+  // Find which power owns this figure and update followers
   for (const power of state.activePowers) {
     const p = state.powers[power]!;
     const fig = p.followers.find(f => f.id === followerId);
     if (fig) {
-      let s = patchPower(state, power, {
+      return patchPower(state, power, {
         followers: p.followers.map(f => f.id === followerId ? { ...f, controlledBy: controller } : f),
       });
-      // Also update region placements (dual tracking)
-      if (fig.regionId) {
-        const region = s.regions[fig.regionId]!;
-        s = {
-          ...s,
-          regions: {
-            ...s.regions,
-            [fig.regionId]: {
-              ...region,
-              placements: region.placements.map(f =>
-                f.id === followerId ? { ...f, controlledBy: controller } : f
-              ),
-            },
-          },
-        };
-      }
-      return s;
     }
   }
   return state;
@@ -401,11 +365,15 @@ function applyCardEffect(
     case 'call_to_war':
       return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, 0);
     case 'teleport': {
-      // Move figure from fromRegion to toRegion
-      const region = state.regions[event.fromRegion]!;
-      const fig = region.placements.find(f =>
-        (f.controlledBy ?? f.power) === event.power && f.class === event.followerClass
-      );
+      // Move figure from fromRegion to toRegion — find in powers
+      let fig: { power: Power; id: string } | null = null;
+      for (const p of state.activePowers) {
+        const f = state.powers[p]!.followers.find(f =>
+          f.regionId === event.fromRegion &&
+          (f.controlledBy ?? f.power) === event.power && f.class === event.followerClass
+        );
+        if (f) { fig = { power: f.power, id: f.id }; break; }
+      }
       if (!fig) return state;
       return moveFigure(state, fig.power, fig.id, event.toRegion, event.fromRegion, 0);
     }
@@ -418,26 +386,9 @@ function applyCardEffect(
         const p = state.powers[power]!;
         const fig = p.followers.find(f => f.id === event.followerId);
         if (fig) {
-          let s = patchPower(state, power, {
+          return patchPower(state, power, {
             followers: p.followers.map(f => f.id === event.followerId ? { ...f, protected: true } : f),
           });
-          // Dual tracking: also update region placements
-          if (fig.regionId) {
-            const region = s.regions[fig.regionId]!;
-            s = {
-              ...s,
-              regions: {
-                ...s.regions,
-                [fig.regionId]: {
-                  ...region,
-                  placements: region.placements.map(f =>
-                    f.id === event.followerId ? { ...f, protected: true } : f
-                  ),
-                },
-              },
-            };
-          }
-          return s;
         }
       }
       return state;
@@ -462,23 +413,14 @@ function applyCardEffect(
 
 function applyVileConsumption(
   state: GameState, regionId: RegionId,
-  figuresRemoved: number, tokensPlaced: number,
+  _figuresRemoved: number, tokensPlaced: number,
 ): GameState {
-  const region = state.regions[regionId]!;
-  const gormenFigs = region.placements.filter(f => f.power === 'gormen');
   let s = state;
 
-  // Remove gormen figures
-  s = {
-    ...s,
-    regions: {
-      ...s.regions,
-      [regionId]: { ...region, placements: region.placements.filter(f => f.power !== 'gormen') },
-    },
-  };
+  // Remove gormen figures from this region (set regionId to null)
   s = patchPower(s, 'gormen', {
     followers: s.powers['gormen']!.followers.map(f =>
-      gormenFigs.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
+      f.regionId === regionId ? { ...f, regionId: null } : f
     ),
   });
 
@@ -555,17 +497,17 @@ function applyWorldCardEffect(
       return addToken(state, event.regionId, 'hero');
     case 'great_exorcism_figures': {
       // Remove all figures from region
-      const region = state.regions[event.regionId]!;
-      let s: GameState = {
-        ...state,
-        regions: { ...state.regions, [event.regionId]: { ...region, placements: [] } },
-      };
-      for (const fig of region.placements) {
-        s = patchPower(s, fig.power, {
-          followers: s.powers[fig.power]!.followers.map(f =>
-            f.id === fig.id ? { ...f, regionId: null, controlledBy: null } : f
-          ),
-        });
+      let s = state;
+      for (const power of s.activePowers) {
+        const p = s.powers[power]!;
+        const hasInRegion = p.followers.some(f => f.regionId === event.regionId);
+        if (hasInRegion) {
+          s = patchPower(s, power, {
+            followers: p.followers.map(f =>
+              f.regionId === event.regionId ? { ...f, regionId: null, controlledBy: null } : f
+            ),
+          });
+        }
       }
       return s;
     }

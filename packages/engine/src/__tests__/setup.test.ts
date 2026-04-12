@@ -1,6 +1,7 @@
 import { createInitialState } from '../setup.js';
 import { FOLLOWERS, BASE_POWER_POINTS, THREAT_DIALS, UPGRADES } from '../constants.js';
-import type { Power } from '../types.js';
+import type { Power, RegionId } from '../types.js';
+import { followersInRegion } from '../helpers.js';
 
 const BASE_CONFIG = {
   gameId: 'test',
@@ -77,10 +78,10 @@ describe('createInitialState', () => {
     expect(state.phase).toBe('world');
   });
 
-  test('9 regions all exist with no placements', () => {
+  test('9 regions all exist with no followers', () => {
     expect(Object.keys(state.regions)).toHaveLength(9);
-    for (const region of Object.values(state.regions)) {
-      expect(region.placements).toHaveLength(0);
+    for (const regionId of Object.keys(state.regions) as RegionId[]) {
+      expect(followersInRegion(state, regionId)).toHaveLength(0);
     }
   });
 

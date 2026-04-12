@@ -211,19 +211,16 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
     }
 
     case 'hero_removal': {
-      const region = s.regions[action.regionId]!;
-      const figure = region.placements.find(f => f.id === action.followerId);
+      // Find figure in powers
+      let figure: import('./types.js').FollowerInstance | undefined;
+      for (const p of s.activePowers) {
+        figure = s.powers[p]!.followers.find(f => f.id === action.followerId && f.regionId === action.regionId);
+        if (figure) break;
+      }
       if (!figure) throw new Error(`Figure ${action.followerId} not in ${action.regionId}`);
       s = {
         ...s,
         pendingAction: null,
-        regions: {
-          ...s.regions,
-          [action.regionId]: {
-            ...region,
-            placements: region.placements.filter(f => f.id !== action.followerId),
-          },
-        },
         powers: {
           ...s.powers,
           [figure.power]: {

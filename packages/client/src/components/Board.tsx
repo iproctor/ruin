@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
@@ -425,11 +425,12 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         const corruptionTotal =
           (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
           (tokenCounts.get('chaos_stone') ?? 0);
-        const cultCount = region.placements.filter(f => f.class === 'cultist').length;
+        const regionFollowers = followersInRegion(state, regionId);
+        const cultCount = regionFollowers.filter(f => f.class === 'cultist').length;
         const danger = corruptionTotal + cultCount >= 12;
         // Leading ruiner: most (corruption tokens + cultists) in region
         const ruinerScore: Partial<Record<Power, number>> = { ...region.corruptionTokens };
-        for (const f of region.placements) {
+        for (const f of regionFollowers) {
           if (f.class !== 'cultist') continue;
           const pw = (f.controlledBy ?? f.power) as Power;
           ruinerScore[pw] = (ruinerScore[pw] ?? 0) + 1;
@@ -500,9 +501,9 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       )}
 
       {/* Followers */}
-      {region.placements.length > 0 && (
-        <FigureCluster figures={region.placements} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
-      )}
+      {(() => { const figures = followersInRegion(state, regionId); return figures.length > 0 && (
+        <FigureCluster figures={figures} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
+      ); })()}
 
       {/* Card slots — hidden when region is ruined */}
       {!isRuined && <g transform={`translate(${x + 4}, ${cardSlotY})`}>
@@ -583,13 +584,14 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
   const corruptionTotal =
     (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
     (tokenCounts.get('chaos_stone') ?? 0);
-  const cultCount = region.placements.filter(f => f.class === 'cultist').length;
+  const tooltipFollowers = followersInRegion(state, regionId);
+  const cultCount = tooltipFollowers.filter(f => f.class === 'cultist').length;
   const willRuin = corruptionTotal + cultCount >= 12;
   const resistance = getRegionResistance(state, regionId);
   const vp = region.conquestValue + (tokenCounts.get('noble') ?? 0);
 
   const presentPowers = new Set<Power>();
-  for (const f of region.placements) presentPowers.add((f.controlledBy ?? f.power) as Power);
+  for (const f of tooltipFollowers) presentPowers.add((f.controlledBy ?? f.power) as Power);
   for (const slot of region.chaosCards) if (slot) presentPowers.add(slot.playedBy);
   const powers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
   const domEntries = powers
@@ -805,7 +807,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               if (!region) return [];
               const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
               const RANK_ORDER: Record<string, number> = { incarnation: 0, warrior: 1, cultist: 2 };
-              const sorted = [...region.placements].sort((a, b) => {
+              const sorted = [...followersInRegion(state, regionId)].sort((a, b) => {
                 const pa = POWER_ORDER[a.power] ?? 99;
                 const pb = POWER_ORDER[b.power] ?? 99;
                 if (pa !== pb) return pa - pb;
@@ -947,7 +949,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         const pos = REGION_POSITIONS[fly.regionId];
         if (!region || !pos) return [];
 
-        const positions = layoutFigureCluster(region.placements, pos.x + 4, pos.y + 46);
+        const positions = layoutFigureCluster(followersInRegion(state, fly.regionId), pos.x + 4, pos.y + 46);
         const cultistPositions = positions
           .filter(({ figure: f }) => (f.controlledBy ?? f.power) === fly.power && f.class === 'cultist')
           .map(({ cx, cy }) => ({ x: cx, y: cy }));

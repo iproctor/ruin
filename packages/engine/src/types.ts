@@ -62,7 +62,6 @@ export interface RegionState {
   conquestValue: number;      // modified by Noble tokens, cards, etc.
   populous: boolean;
   tokens: TokenType[];
-  placements: FollowerInstance[]; // followers currently here (redundant with FollowerInstance.regionId, kept for fast lookup)
   chaosCards: (PlayedCard | null)[];  // length 2; null = empty slot
   ruinationCardIndex: number | null;  // 1-5 if ruined, else null
   corruptionTokens: Record<Power, number>;

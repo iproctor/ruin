@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerClass, TokenType } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, followersInRegion } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -234,7 +234,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       out[i++] = Math.min((region.corruptionTokens[p] ?? 0) / 8, 1);
       // Skip tipped (dead-but-not-cleared) figures — they no longer contribute
       // to combat or domination this round.
-      const figs = region.placements.filter(
+      const figs = followersInRegion(state, r).filter(
         f => !f.tipped && (f.controlledBy ?? f.power) === p,
       );
       out[i++] = Math.min(figs.length / 6, 1);
@@ -291,7 +291,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       let count = region.tokens.filter(x => x === t).length;
       if (t === 'chaos_stone' &&
           state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-          region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
+          followersInRegion(state, r).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
         count += 2;
       }
       out[i++] = Math.min(count / 3, 1);
@@ -339,7 +339,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const region = state.regions[r];
     let pCult = 0, pWar = 0, pInc = 0;
     if (region) {
-      for (const f of region.placements) {
+      for (const f of followersInRegion(state, r)) {
         if (!f.protected || f.tipped) continue;
         if (f.class === 'cultist') pCult++;
         else if (f.class === 'warrior') pWar++;
@@ -358,7 +358,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const region = state.regions[r];
     let n = 0;
     if (region) {
-      for (const f of region.placements) {
+      for (const f of followersInRegion(state, r)) {
         if (!f.protected || f.tipped) continue;
         if ((f.controlledBy ?? f.power) === 'lasha') n++;
       }
@@ -380,13 +380,14 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
       if (warCry && !changer) { out[i++] = 0; continue; }
 
-      const cultists = region.placements.filter(f =>
+      const rFigs = followersInRegion(state, r);
+      const cultists = rFigs.filter(f =>
         !f.tipped && (f.controlledBy ?? f.power) === p && f.class === 'cultist'
       ).length;
 
       let warriors = 0;
       if (p === 'lasha' && lashaRavers) {
-        warriors = region.placements.filter(f =>
+        warriors = rFigs.filter(f =>
           !f.tipped && (f.controlledBy ?? f.power) === 'lasha' && f.class === 'warrior' && f.power === 'lasha'
         ).length;
       }
@@ -409,7 +410,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
     const fatespinnerBonus =
       state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-      region.placements.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+      followersInRegion(state, r).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
     out[i++] = (corrTokens + chaosStones + fatespinnerBonus + potentialPerRegion[ri]!) >= 12 ? 1 : 0;
   }
 

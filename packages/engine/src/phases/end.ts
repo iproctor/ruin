@@ -5,7 +5,7 @@ import {
 } from '../constants.js';
 import {
   updatePower, updateRegion, scoreVP, isWorldCardActive, lowestThreatPower,
-  highestThreatPower, isRuined,
+  highestThreatPower, isRuined, followersInRegion,
 } from '../helpers.js';
 import { checkVictory } from '../victory.js';
 
@@ -180,15 +180,10 @@ function removeChaosCards(
       // Enthrallment: when discarded, release the controlled cultist
       if (slot.cardId === 'lasha_narcotic_musk') {
         // Find a lasha-controlled enemy cultist in this region and release it
-        const controlled = s.regions[regionId]!.placements.find(
+        const controlled = followersInRegion(s, regionId).find(
           f => f.controlledBy === 'lasha' && f.power !== 'lasha' && f.class === 'cultist'
         );
         if (controlled) {
-          s = updateRegion(s, regionId, {
-            placements: s.regions[regionId]!.placements.map(f =>
-              f.id === controlled.id ? { ...f, controlledBy: null } : f
-            ),
-          });
           s = updatePower(s, controlled.power as Power, {
             followers: s.powers[controlled.power as Power]!.followers.map(f =>
               f.id === controlled.id ? { ...f, controlledBy: null } : f
@@ -233,7 +228,7 @@ function resolveHeroTokens(
     for (let h = 0; h < heroCount; h++) {
       // Power with greatest Threat who has figures in this region
       const candidates = s.activePowers.filter(p =>
-        s.regions[regionId]!.placements.some(f => (f.controlledBy ?? f.power) === p)
+        followersInRegion(s, regionId, p).length > 0
       );
       if (candidates.length === 0) break;
 
@@ -241,16 +236,11 @@ function resolveHeroTokens(
         s.powers[p]!.threatValue > s.powers[maxP]!.threatValue ? p : maxP
       );
 
-      const figures = s.regions[regionId]!.placements.filter(
-        f => (f.controlledBy ?? f.power) === target
-      );
+      const figures = followersInRegion(s, regionId, target);
       if (figures.length === 0) break;
 
       // Remove weakest figure (lowest defense)
       const toRemove = figures.sort((a, b) => classRank(a.class) - classRank(b.class))[0]!;
-      s = updateRegion(s, regionId, {
-        placements: s.regions[regionId]!.placements.filter(f => f.id !== toRemove.id),
-      });
       s = updatePower(s, toRemove.power, {
         followers: s.powers[toRemove.power]!.followers.map(f =>
           f.id === toRemove.id ? { ...f, regionId: null, controlledBy: null } : f
@@ -293,9 +283,7 @@ function applyWorldCardPersistentEffect(
     case 'normagne_heir': {
       // Each player with 1+ figures on Normagne discards a chaos card
       for (const power of s.activePowers) {
-        const hasFigures = s.regions['normagne']!.placements.some(
-          f => (f.controlledBy ?? f.power) === power
-        );
+        const hasFigures = followersInRegion(s, 'normagne', power).length > 0;
         if (hasFigures && s.powers[power]!.hand.length > 0) {
           // Auto-discard: discard last card in hand (TODO: interactive)
           const card = s.powers[power]!.hand[s.powers[power]!.hand.length - 1]!;
@@ -362,11 +350,8 @@ function applyWorldCardPersistentEffect(
         s.regions[r]!.tokens.includes('event')
       );
       for (const regionId of eventRegions) {
-        const figures = [...s.regions[regionId]!.placements];
+        const figures = followersInRegion(s, regionId);
         for (const f of figures) {
-          s = updateRegion(s, regionId, {
-            placements: s.regions[regionId]!.placements.filter(x => x.id !== f.id),
-          });
           s = updatePower(s, f.power, {
             followers: s.powers[f.power]!.followers.map(x =>
               x.id === f.id ? { ...x, regionId: null, controlledBy: null } : x
@@ -453,7 +438,7 @@ function applyWorldCardPersistentEffect(
       for (const power of s.activePowers) {
         const hasChaosStoneRegion = REGION_ORDER.some(r =>
           s.regions[r]!.tokens.includes('chaos_stone') &&
-          s.regions[r]!.placements.some(f => (f.controlledBy ?? f.power) === power)
+          followersInRegion(s, r, power).length > 0
         );
         if (hasChaosStoneRegion) {
           s = drawOneCard(s, power, log, 'The Exchange');

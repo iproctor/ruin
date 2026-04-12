@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId } from '@ruin/engine';
-import { REGIONS, getRegionDomination, getRegionResistance, getPowerDomination } from '@ruin/engine';
+import { REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, followersInRegion } from '@ruin/engine';
 import { evaluateLearned, hasModel } from './learn/evaluator.js';
 
 // If a learned model has been loaded (via loadModel in a server/script entry
@@ -265,7 +265,7 @@ function evaluateLasha(
     for (const card of region.chaosCards) {
       if (card?.playedBy === 'lasha' && card.cardId === 'lasha_hollow_pact') {
         // Value disruption more if opponents have significant presence here
-        const oppFigures = region.placements.filter(
+        const oppFigures = followersInRegion(state, regionId).filter(
           f => (f.controlledBy ?? f.power) !== 'lasha'
         ).length;
         if (oppFigures > 0) {
@@ -336,8 +336,9 @@ function evaluateXarm(
     const region = state.regions[regionId];
     if (!region || region.ruinationCardIndex !== null) continue;
 
-    const myFigs = region.placements.filter(f => (f.controlledBy ?? f.power) === 'xarm');
-    const hasEnemy = region.placements.some(f => (f.controlledBy ?? f.power) !== 'xarm');
+    const figs = followersInRegion(state, regionId);
+    const myFigs = figs.filter(f => (f.controlledBy ?? f.power) === 'xarm');
+    const hasEnemy = figs.some(f => (f.controlledBy ?? f.power) !== 'xarm');
 
     if (hasEnemy) {
       for (const fig of myFigs) {
@@ -410,7 +411,7 @@ function evaluateGormen(
   // ── Cultist spread ────────────────────────────────────────────────────────
   const uniqueRegionsWithCultists = ALL_REGIONS.filter(regionId => {
     const region = state.regions[regionId];
-    return region && region.placements.some(f => f.class === 'cultist' && f.power === 'gormen');
+    return region && followersInRegion(state, regionId).some(f => f.class === 'cultist' && f.power === 'gormen');
   }).length;
   const spreadScore = Math.min(uniqueRegionsWithCultists / 6, 1.0);
 

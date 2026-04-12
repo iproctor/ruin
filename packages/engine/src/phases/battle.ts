@@ -6,7 +6,7 @@ import {
   CARD_BY_ID, REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, WORLD_CARD_BY_ID,
 } from '../constants.js';
 import {
-  updatePower, updateRegion, isWorldCardActive,
+  updatePower, updateRegion, isWorldCardActive, followersInRegion,
 } from '../helpers.js';
 import { rollWithExplosions, countHits, makeRng, shuffle } from '../dice.js';
 import { GameLog } from '../gameLog.js';
@@ -66,18 +66,17 @@ export function applyBattleHitAssignment(
   // Apply War Frenzy partial hits (don't kill, just accumulate on figure for Xarm's normal battle)
   if (warFrenzyPartialHits && warFrenzyPartialHits.length > 0) {
     for (const { followerId, hits } of warFrenzyPartialHits) {
-      s = updateRegion(s, regionId, {
-        placements: s.regions[regionId]!.placements.map(f =>
-          f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
-        ),
-      });
-      const owner = s.regions[regionId]!.placements.find(f => f.id === followerId)?.power as Power | undefined;
-      if (owner) {
-        s = updatePower(s, owner, {
-          followers: s.powers[owner]!.followers.map(f =>
-            f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
-          ),
-        });
+      // Find the owner power for this follower
+      for (const p of s.activePowers) {
+        const fig = s.powers[p]!.followers.find(f => f.id === followerId);
+        if (fig) {
+          s = updatePower(s, p, {
+            followers: s.powers[p]!.followers.map(f =>
+              f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
+            ),
+          });
+          break;
+        }
       }
       log.emit({ type: 'war_frenzy_partial', regionId, followerId, hits });
     }
@@ -91,15 +90,14 @@ export function applyBattleHitAssignment(
 
   // Apply kills for each chosen follower
   for (const fId of followerIds) {
-    const figure = s.regions[regionId]!.placements.find(f => f.id === fId);
+    // Find figure in powers
+    let figure: FollowerInstance | undefined;
+    for (const p of s.activePowers) {
+      figure = s.powers[p]!.followers.find(f => f.id === fId && f.regionId === regionId);
+      if (figure) break;
+    }
     if (!figure) continue;
 
-    // Mark as tipped in region
-    s = updateRegion(s, regionId, {
-      placements: s.regions[regionId]!.placements.map(f =>
-        f.id === fId ? { ...f, tipped: true } : f
-      ),
-    });
     // Mark as tipped in power's followers array
     const owner = figure.power as Power;
     s = updatePower(s, owner, {
@@ -117,7 +115,7 @@ export function applyBattleHitAssignment(
     // Xarm Heartrippers upgrade: place 1 corruption token per warrior kill
     if (attacker === 'xarm' &&
         s.powers['xarm']!.upgradesInPlay.includes('xarm_heartrippers_up') &&
-        s.regions[regionId]!.placements.some(f => (f.controlledBy ?? f.power) === 'xarm' && f.class === 'warrior')) {
+        followersInRegion(s, regionId, 'xarm').some(f => f.class === 'warrior')) {
       s = updateRegion(s, regionId, {
         corruptionTokens: {
           ...s.regions[regionId]!.corruptionTokens,
@@ -153,7 +151,7 @@ export function applyBattleHitAssignment(
 
   // War Frenzy (beginning-of-battle) clears tipped figures before normal battle starts
   if (nextStep.type === 'normal_battle' && nextStep.clearTipped) {
-    const tipped = s.regions[regionId]!.placements.filter(f => f.tipped);
+    const tipped = followersInRegion(s, regionId).filter(f => f.tipped);
     for (const f of tipped) {
       s = removeFigureFromBoard(s, regionId, f.id, log).state;
     }
@@ -224,8 +222,9 @@ function resolveRegion(
   const activePowers = s.activePowers;
 
   // Determine which powers have figures here (controlling = controlledBy ?? power)
+  const regionFigures = followersInRegion(s, regionId);
   const powersPresent = activePowers.filter(p =>
-    region.placements.some(f => (f.controlledBy ?? f.power) === p)
+    regionFigures.some(f => (f.controlledBy ?? f.power) === p)
   );
 
   // War Zone: no battles if event token in region
@@ -266,20 +265,16 @@ function resolveRegion(
   // Auto-control weakest enemy Cultist or Warrior until end of round
   if (!nullWeaveActive && powersPresent.includes('lasha') &&
       s.powers['lasha']!.upgradesInPlay.includes('lasha_rapture_up')) {
-    const rapture = s.regions[regionId]!.placements.find(
+    const raptureRegionFigs = followersInRegion(s, regionId);
+    const rapture = raptureRegionFigs.find(
       f => f.class === 'incarnation' && (f.controlledBy ?? f.power) === 'lasha'
     );
     if (rapture) {
-      const target = s.regions[regionId]!.placements.find(f => {
+      const target = raptureRegionFigs.find(f => {
         const ctrl = f.controlledBy ?? f.power;
         return ctrl !== 'lasha' && (f.class === 'cultist' || f.class === 'warrior');
       });
       if (target) {
-        s = updateRegion(s, regionId, {
-          placements: s.regions[regionId]!.placements.map(f =>
-            f.id === target.id ? { ...f, controlledBy: 'lasha' } : f
-          ),
-        });
         s = updatePower(s, target.power as Power, {
           followers: s.powers[target.power as Power]!.followers.map(f =>
             f.id === target.id ? { ...f, controlledBy: 'lasha' } : f
@@ -349,10 +344,10 @@ function runNormalBattle(
   }
 
   const chokepoint = isWorldCardActive(s, 'the_chokepoint') && s.regions[regionId]!.tokens.includes('event');
-  const region = s.regions[regionId]!;
   const activePowers = s.activePowers;
+  const normalFigs = followersInRegion(s, regionId);
   const powersPresent = activePowers.filter(p =>
-    region.placements.some(f => (f.controlledBy ?? f.power) === p)
+    normalFigs.some(f => (f.controlledBy ?? f.power) === p)
   );
 
   for (let i = startPowerIndex; i < activePowers.length; i++) {
@@ -377,7 +372,7 @@ function runNormalBattle(
         // Determine what to do after this choice is resolved
         const isLastPower = i === activePowers.length - 1 ||
           !activePowers.slice(i + 1).some(p => {
-            const pp = s.regions[regionId]!.placements.some(f => (f.controlledBy ?? f.power) === p);
+            const pp = followersInRegion(s, regionId, p).length > 0;
             return pp && getTotalAttack(s, regionId, p) > 0;
           });
         const nextStep: BattleNextStep = isLastPower
@@ -400,9 +395,10 @@ function runPostNormal(
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // ── Remove tipped figures ─────────────────────────────────────────────────
-  const tipped = s.regions[regionId]!.placements.filter(f => f.tipped);
+  const postNormalFigs = followersInRegion(s, regionId);
+  const tipped = postNormalFigs.filter(f => f.tipped);
   const xarmPresent = s.activePowers.includes('xarm') &&
-    s.regions[regionId]!.placements.some(f => (f.controlledBy ?? f.power) === 'xarm');
+    postNormalFigs.some(f => (f.controlledBy ?? f.power) === 'xarm');
   const enemiesKilledByXarm = xarmPresent &&
     tipped.some(f => (f.controlledBy ?? f.power) !== 'xarm') &&
     getTotalAttack(state, regionId, 'xarm') > 0;
@@ -476,33 +472,28 @@ function runPostUndying(
   const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // Remove newly tipped figures from undying fury round
-  const tipped2 = s.regions[regionId]!.placements.filter(f => f.tipped);
+  const tipped2 = followersInRegion(s, regionId).filter(f => f.tipped);
   for (const f of tipped2) {
     const r = removeFigureFromBoard(s, regionId, f.id, log);
     s = r.state;
   }
 
   // Reset warFrenzyHits on all surviving figures in this region
-  const surviving = s.regions[regionId]!.placements.filter(f => f.warFrenzyHits > 0);
-  if (surviving.length > 0) {
-    s = updateRegion(s, regionId, {
-      placements: s.regions[regionId]!.placements.map(f => ({ ...f, warFrenzyHits: 0 })),
+  const surviving = followersInRegion(s, regionId).filter(f => f.warFrenzyHits > 0);
+  for (const f of surviving) {
+    const owner = f.power as Power;
+    s = updatePower(s, owner, {
+      followers: s.powers[owner]!.followers.map(fl =>
+        fl.id === f.id ? { ...fl, warFrenzyHits: 0 } : fl
+      ),
     });
-    for (const f of surviving) {
-      const owner = f.power as Power;
-      s = updatePower(s, owner, {
-        followers: s.powers[owner]!.followers.map(fl =>
-          fl.id === f.id ? { ...fl, warFrenzyHits: 0 } : fl
-        ),
-      });
-    }
   }
 
   // ── End-of-battle: Corruption's Harvest ──────────────────────────────────
   if (!nullWeaveActive && regionCardActive(s, regionId, 'gormen_inevitable_rot')) {
     const gormenCorr = s.regions[regionId]!.corruptionTokens['gormen'] ?? 0;
     if (gormenCorr > 0) {
-      const targets = s.regions[regionId]!.placements.filter(f => {
+      const targets = followersInRegion(s, regionId).filter(f => {
         const ctrl = f.controlledBy ?? f.power;
         return ctrl !== 'gormen' && (f.class === 'cultist' || f.class === 'warrior') && !f.tipped;
       });
@@ -562,11 +553,10 @@ function getEnemyFigures(
   attacker: Power,
   nullWeaveActive: boolean,
 ): Array<{ figure: FollowerInstance; defense: number }> {
-  const region = state.regions[regionId]!;
   const hasRottingGrasp = !nullWeaveActive && regionCardActive(state, regionId, 'gormen_pestilent_touch');
   const hasBlightWard = !nullWeaveActive && regionCardActive(state, regionId, 'gormen_rain_of_bile');
 
-  return region.placements
+  return followersInRegion(state, regionId)
     .filter(f => {
       const ctrl = f.controlledBy ?? f.power;
       return ctrl !== attacker && !f.tipped && !f.protected;
@@ -618,13 +608,11 @@ function claimPeasant(
 
 function removeFigureFromBoard(
   state: GameState,
-  regionId: RegionId,
+  _regionId: RegionId,
   followerId: string,
   log: GameLog,
 ): { state: GameState; log: GameLog } {
-  let s = updateRegion(state, regionId, {
-    placements: state.regions[regionId]!.placements.filter(f => f.id !== followerId),
-  });
+  let s = state;
 
   // Find which power owns this figure and mark it in reserve
   for (const power of s.activePowers) {
@@ -650,7 +638,7 @@ function killFollower(
   killedBy: Power,
   log: GameLog,
 ): { state: GameState; log: GameLog } {
-  const figure = state.regions[regionId]!.placements.find(f => f.id === followerId);
+  const figure = followersInRegion(state, regionId).find(f => f.id === followerId);
   if (!figure) return { state, log };
   log.emit({ type: 'harvest_kill', regionId, killedBy, targetPower: figure.power as Power, targetClass: figure.class, followerId });
   return removeFigureFromBoard(state, regionId, followerId, log);
@@ -669,9 +657,7 @@ function finalizeBattle(
     for (const regionId of REGION_ORDER) {
       if (!s.regions[regionId]!.tokens.includes('event')) continue;
       for (const power of s.activePowers) {
-        const figures = s.regions[regionId]!.placements.filter(
-          f => (f.controlledBy ?? f.power) === power
-        );
+        const figures = followersInRegion(s, regionId, power);
         if (figures.length === 0) continue;
         // Auto-remove weakest figure
         const target = figures.sort((a, b) =>
@@ -697,7 +683,7 @@ function finalizeBattle(
       if (f.controlledBy === 'lasha' && f.power !== 'lasha' && lashHasRaptureUp) {
         const regionId = f.regionId;
         const raptureAlive = regionId !== null &&
-          s.regions[regionId]!.placements.some(
+          followersInRegion(s, regionId).some(
             x => x.class === 'incarnation' && (x.controlledBy ?? x.power) === 'lasha'
           );
         if (!raptureAlive) {
@@ -720,15 +706,6 @@ function finalizeBattle(
     });
     if (changed) s = updatePower(s, power, { followers: updatedFollowers });
   }
-  // Sync region placements to match follower state
-  for (const regionId of REGION_ORDER) {
-    const region = s.regions[regionId]!;
-    if (region.placements.some(f => f.protected)) {
-      s = updateRegion(s, regionId, {
-        placements: region.placements.map(f => f.protected ? { ...f, protected: false } : f),
-      });
-    }
-  }
 
   // Move to corruption phase
   s = {
@@ -744,11 +721,9 @@ function finalizeBattle(
 // ─── Attack value calculation ─────────────────────────────────────────────────
 
 function getTotalAttack(state: GameState, regionId: RegionId, power: Power): number {
-  const region = state.regions[regionId]!;
   let total = 0;
 
-  for (const f of region.placements) {
-    if ((f.controlledBy ?? f.power) !== power) continue;
+  for (const f of followersInRegion(state, regionId, power)) {
     const owner = f.power as Power;
     const def = FOLLOWERS[owner]![f.class]!;
     const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>

@@ -17,6 +17,7 @@ import {
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
 import type { Power, Action, GameEvent } from '@ruin/engine';
+import { followersInRegion } from '@ruin/engine';
 import { loadLearnedModelIfPresent } from './load-model.js';
 import * as fs from 'node:fs';
 
@@ -277,7 +278,7 @@ function runGame(seed: number): GameResult {
     ) {
       const region = state.regions[action.toRegion];
       if (region) {
-        const enemyCultists = region.placements.filter(
+        const enemyCultists = followersInRegion(state, action.toRegion).filter(
           f =>
             !f.tipped &&
             f.class === 'cultist' &&

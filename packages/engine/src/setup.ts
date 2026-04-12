@@ -37,7 +37,6 @@ export function createInitialState(config: GameConfig): GameState {
       conquestValue: def.baseValue,
       populous: def.populous,
       tokens: [],
-      placements: [],
       chaosCards: [null, null],
       ruinationCardIndex: null,
       corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },

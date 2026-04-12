@@ -11,6 +11,7 @@ import {
   makeState, placeFollower, addToken, addCorruption, setVP, setWorldCard,
   giveInDeck, autoResolveEndPhase,
 } from './helpers.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -113,7 +114,7 @@ describe('great_exorcism persistent effect (end phase)', () => {
     s = addCorruption(s, 'volensk', 'gormen', 5);
     const { state, log } = resolveEndPhase(s);
     // Figure removed from norrsund
-    expect(state.regions.norrsund!.placements.filter(f => f.power === 'xarm').length).toBe(0);
+    expect(followersInRegion(state, 'norrsund').filter(f => f.power === 'xarm').length).toBe(0);
     expect(log.entries.some(l => l.includes('Great Exorcism') && l.includes('norrsund'))).toBe(true);
     // Event token moved away from norrsund
     expect(state.regions.norrsund!.tokens).not.toContain('event');

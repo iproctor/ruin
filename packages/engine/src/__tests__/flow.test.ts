@@ -6,6 +6,7 @@ import { createInitialState } from '../setup.js';
 import { makeState, placeFollower, setWorldCard, setPP } from './helpers.js';
 import type { Power } from '../types.js';
 import { GameLog } from '../gameLog.js';
+import { followersInRegion } from '../helpers.js';
 
 // Fixed-seed state that has already passed the world phase
 function summoningState() {
@@ -132,7 +133,7 @@ describe('upgrade_choice action', () => {
 describe('hero_removal action', () => {
   test('hero_removal removes figure from region', () => {
     let s = placeFollower(makeState(), 'xarm', 'warrior', 'norrsund');
-    const followerId = s.regions.norrsund!.placements[0]!.id;
+    const followerId = followersInRegion(s, 'norrsund')[0]!.id;
     s = {
       ...s,
       pendingAction: {
@@ -147,7 +148,7 @@ describe('hero_removal action', () => {
       followerId,
       regionId: 'norrsund',
     });
-    expect(state.regions.norrsund!.placements).toHaveLength(0);
+    expect(followersInRegion(state, 'norrsund')).toHaveLength(0);
     expect(state.powers.xarm!.followers.find(f => f.id === followerId)!.regionId).toBeNull();
   });
 });

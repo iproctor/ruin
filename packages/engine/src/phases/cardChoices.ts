@@ -6,7 +6,7 @@ import type {
   GameState, Power, RegionId, TokenType, CardOnPlayChoiceAction,
 } from '../types.js';
 import { GameLog } from '../gameLog.js';
-import { updatePower, updateRegion } from '../helpers.js';
+import { updatePower, updateRegion, followersInRegion } from '../helpers.js';
 import { advanceSummoningTurn } from './summoning.js';
 
 export function applyCardOnPlayChoice(
@@ -28,16 +28,8 @@ export function applyCardOnPlayChoice(
         const fromRegion = figure.regionId;
         if (fromRegion === null || fromRegion === regionId) continue;
 
-        // Remove from old region
-        s = updateRegion(s, fromRegion, {
-          placements: s.regions[fromRegion]!.placements.filter(f => f.id !== fId),
-        });
-        // Add to target region
+        // Update follower record (move to target region)
         const moved = { ...figure, regionId, placedAt: s.actionCount };
-        s = updateRegion(s, regionId, {
-          placements: [...s.regions[regionId]!.placements, moved],
-        });
-        // Update follower record
         s = updatePower(s, power, {
           followers: s.powers[power]!.followers.map(f => f.id === fId ? moved : f),
         });
@@ -52,15 +44,9 @@ export function applyCardOnPlayChoice(
       const followerId = choices['followerId'] as string;
       const toRegion = choices['toRegion'] as RegionId;
       const carry = choices['carry'] as boolean | undefined;
-      const figure = s.regions[regionId]!.placements.find(f => f.id === followerId);
+      const figure = followersInRegion(s, regionId).find(f => f.id === followerId);
       if (figure && (figure.class === 'cultist' || figure.class === 'warrior') && toRegion !== regionId) {
-        s = updateRegion(s, regionId, {
-          placements: s.regions[regionId]!.placements.filter(f => f.id !== followerId),
-        });
         const moved = { ...figure, regionId: toRegion, placedAt: s.actionCount };
-        s = updateRegion(s, toRegion, {
-          placements: [...s.regions[toRegion]!.placements, moved],
-        });
         s = updatePower(s, figure.power as Power, {
           followers: s.powers[figure.power as Power]!.followers.map(f => f.id === followerId ? moved : f),
         });
@@ -101,13 +87,8 @@ export function applyCardOnPlayChoice(
     // Chosen figure cannot be killed in battle this round
     case 'tenzen_fate_shield': {
       const followerId = choices['followerId'] as string;
-      const figure = s.regions[regionId]!.placements.find(f => f.id === followerId);
+      const figure = followersInRegion(s, regionId).find(f => f.id === followerId);
       if (figure) {
-        s = updateRegion(s, regionId, {
-          placements: s.regions[regionId]!.placements.map(f =>
-            f.id === followerId ? { ...f, protected: true } : f
-          ),
-        });
         s = updatePower(s, figure.power as Power, {
           followers: s.powers[figure.power as Power]!.followers.map(f =>
             f.id === followerId ? { ...f, protected: true } : f
@@ -143,16 +124,11 @@ export function applyCardOnPlayChoice(
     // Choose one enemy Cultist in this region; Lasha controls it
     case 'lasha_narcotic_musk': {
       const followerId = choices['followerId'] as string;
-      const figure = s.regions[regionId]!.placements.find(f =>
+      const figure = followersInRegion(s, regionId).find(f =>
         f.id === followerId && f.class === 'cultist' &&
         (f.controlledBy ?? f.power) !== 'lasha'
       );
       if (figure) {
-        s = updateRegion(s, regionId, {
-          placements: s.regions[regionId]!.placements.map(f =>
-            f.id === followerId ? { ...f, controlledBy: 'lasha' } : f
-          ),
-        });
         s = updatePower(s, figure.power as Power, {
           followers: s.powers[figure.power as Power]!.followers.map(f =>
             f.id === followerId ? { ...f, controlledBy: 'lasha' } : f

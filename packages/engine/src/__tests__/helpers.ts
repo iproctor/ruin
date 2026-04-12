@@ -14,6 +14,7 @@ import { applyAction } from '../reducers.js';
 import { applyBattleHitAssignment } from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
 import { GameLog } from '../gameLog.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── Follower factories ───────────────────────────────────────────────────────
 
@@ -79,7 +80,6 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       conquestValue: def.baseValue,
       populous: def.populous,
       tokens: [],
-      placements: [],
       chaosCards: [null, null],
       ruinationCardIndex: null,
       corruptionTokens: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 },
@@ -143,13 +143,6 @@ export function placeFollower(
   };
   return {
     ...state,
-    regions: {
-      ...state.regions,
-      [regionId]: {
-        ...state.regions[regionId]!,
-        placements: [...state.regions[regionId]!.placements, updated],
-      },
-    },
     powers: {
       ...state.powers,
       [power]: {
@@ -374,7 +367,7 @@ export function autoResolveBattle(
     const power = s.pendingAction.waitingFor;
 
     // Greedily pick cheapest enemies up to hitsRemaining
-    const enemies = s.regions[regionId]!.placements
+    const enemies = followersInRegion(s, regionId)
       .filter(f => (f.controlledBy ?? f.power) !== power && !f.tipped && !f.protected)
       .sort((a, b) => (DEFENSE[a.class] ?? 1) - (DEFENSE[b.class] ?? 1));
 
@@ -491,7 +484,5 @@ export function followersIn(
   power: Power,
   regionId: RegionId,
 ): FollowerInstance[] {
-  return state.regions[regionId]!.placements.filter(
-    f => (f.controlledBy ?? f.power) === power,
-  );
+  return followersInRegion(state, regionId, power);
 }

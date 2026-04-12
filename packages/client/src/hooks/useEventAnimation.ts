@@ -100,14 +100,15 @@ export function useEventAnimation(
   const applyKillsToSnapshot = () => {
     setSnapshot(prev => {
       if (!prev || killedIds.size === 0) return prev;
-      const newRegions = { ...prev.regions };
-      for (const rid of Object.keys(newRegions) as RegionId[]) {
-        const region = newRegions[rid]!;
-        if (region.placements.some(f => killedIds.has(f.id))) {
-          newRegions[rid] = { ...region, placements: region.placements.filter(f => !killedIds.has(f.id)) };
+      const newPowers = { ...prev.powers };
+      for (const pw of Object.keys(newPowers) as Power[]) {
+        const ps = newPowers[pw];
+        if (!ps) continue;
+        if (ps.followers.some(f => killedIds.has(f.id))) {
+          newPowers[pw] = { ...ps, followers: ps.followers.map(f => killedIds.has(f.id) ? { ...f, regionId: null } : f) };
         }
       }
-      return { ...prev, regions: newRegions };
+      return { ...prev, powers: newPowers };
     });
     setKilledIds(new Set());
   };

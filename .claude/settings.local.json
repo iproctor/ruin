@@ -71,7 +71,9 @@
       "Bash(npx --no-install vitest run)",
       "Bash(ls /Users/iainap/code/chaos/packages/client/src/*.css)",
       "Bash(npx tsx:*)",
-      "Bash(cat /Users/iainap/code/chaos/packages/ai/data/inbox/*.jsonl /Users/iainap/code/chaos/packages/ai/data/archive/*.jsonl)"
+      "Bash(cat /Users/iainap/code/chaos/packages/ai/data/inbox/*.jsonl /Users/iainap/code/chaos/packages/ai/data/archive/*.jsonl)",
+      "Bash(pnpm exec:*)",
+      "Bash(pnpm --filter engine test)"
     ]
   }
 }

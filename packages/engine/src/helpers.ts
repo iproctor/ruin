@@ -63,11 +63,15 @@ export function magicSymbolCount(state: GameState, regionId: RegionId): number {
 // ─── Follower helpers ─────────────────────────────────────────────────────────
 
 export function followersInRegion(state: GameState, regionId: RegionId, power?: Power): FollowerInstance[] {
-  const region = state.regions[regionId]!;
-  if (power !== undefined) {
-    return region.placements.filter(f => (f.controlledBy ?? f.power) === power);
+  const result: FollowerInstance[] = [];
+  for (const p of state.activePowers) {
+    for (const f of state.powers[p]!.followers) {
+      if (f.regionId !== regionId) continue;
+      if (power !== undefined && (f.controlledBy ?? f.power) !== power) continue;
+      result.push(f);
+    }
   }
-  return region.placements;
+  return result;
 }
 
 export function followersInReserve(state: GameState, power: Power): FollowerInstance[] {
