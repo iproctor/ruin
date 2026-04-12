@@ -46,6 +46,11 @@ async function loadGameRow(gameId: string) {
   return row;
 }
 
+async function loadGameWithSeq(gameId: string): Promise<{ state: GameState; seq: number }> {
+  const [row, seq] = await Promise.all([loadGameRow(gameId), getNextSeq(gameId)]);
+  return { state: row.state as unknown as GameState, seq };
+}
+
 async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
   const players = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
   const map = new Map<string, string>();
@@ -55,41 +60,62 @@ async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
   return map;
 }
 
+/**
+ * Save game state + events in a transaction with optimistic concurrency.
+ * Verifies that the DB event seq matches `expectedSeq` before writing.
+ * Returns the new seq after the inserted events.
+ */
+async function saveGame(
+  gameId: string,
+  state: GameState,
+  newEvents: GameEvent[],
+  expectedSeq: number,
+): Promise<number> {
+  return db.transaction(async (tx) => {
+    // Verify no concurrent writes changed the event log
+    const [row] = await tx.select({ maxSeq: sql<number>`COALESCE(MAX(seq), -1)` })
+      .from(gameEvents)
+      .where(eq(gameEvents.gameId, gameId));
+    const currentSeq = (row?.maxSeq ?? -1) + 1;
+    if (currentSeq !== expectedSeq) {
+      throw new Error(`Concurrency conflict: expected seq ${expectedSeq}, DB has ${currentSeq}`);
+    }
+
+    let nextSeq = expectedSeq;
+    if (newEvents.length > 0) {
+      let seq = nextSeq;
+      await tx.insert(gameEvents).values(
+        newEvents.map((event) => ({
+          gameId,
+          seq: seq++,
+          event: event as unknown as Record<string, unknown>,
+        })),
+      );
+      nextSeq = seq;
+    }
+
+    await tx
+      .update(games)
+      .set({
+        state: state as unknown as Record<string, unknown>,
+        round: state.round,
+        phase: state.phase,
+        isComplete: state.winners !== null,
+        status: state.winners !== null ? 'complete' : 'active',
+        updatedAt: new Date(),
+      })
+      .where(eq(games.id, gameId));
+
+    return nextSeq;
+  });
+}
+
+/** Get the next event seq for a game (reads from DB). */
 async function getNextSeq(gameId: string): Promise<number> {
   const [row] = await db.select({ maxSeq: sql<number>`COALESCE(MAX(seq), -1)` })
     .from(gameEvents)
     .where(eq(gameEvents.gameId, gameId));
   return (row?.maxSeq ?? -1) + 1;
-}
-
-async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]): Promise<number> {
-  let nextSeq = 0;
-  if (newEvents.length > 0) {
-    nextSeq = await getNextSeq(gameId);
-    let seq = nextSeq;
-    await db.insert(gameEvents).values(
-      newEvents.map((event) => ({
-        gameId,
-        seq: seq++,
-        event: event as unknown as Record<string, unknown>,
-      })),
-    );
-    nextSeq = seq;
-  }
-
-  // Update game state
-  await db
-    .update(games)
-    .set({
-      state: state as unknown as Record<string, unknown>,
-      round: state.round,
-      phase: state.phase,
-      isComplete: state.winners !== null,
-      status: state.winners !== null ? 'complete' : 'active',
-      updatedAt: new Date(),
-    })
-    .where(eq(games.id, gameId));
-  return nextSeq;
 }
 
 /**
@@ -116,8 +142,9 @@ function runMctsInWorker(state: GameState, power: Power): Promise<Action> {
  * Run AI turns sequentially until a human must act. Saves and broadcasts
  * state + log after each move so clients see AI actions in real time.
  */
-async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameState> {
+async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: number): Promise<GameState> {
   let current = state;
+  let seq = currentSeq;
 
   while (current.winners === null && current.pendingAction !== null) {
     const { waitingFor } = current.pendingAction;
@@ -140,8 +167,8 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
 
     const prevRound = current.round;
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
-    const aiSeq = await saveGame(gameId, next, log.events);
-    if (log.events.length > 0) broadcastEvents(gameId, log.events, aiSeq);
+    seq = await saveGame(gameId, next, log.events, seq);
+    if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
     // Sync full state at round boundaries only
     if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
     current = next;
@@ -194,6 +221,7 @@ export async function createGame(
   });
 
   // Persist initial events
+  let initialSeq = 0;
   if (log.events.length > 0) {
     let seq = 0;
     await db.insert(gameEvents).values(
@@ -203,6 +231,7 @@ export async function createGame(
         event: event as unknown as Record<string, unknown>,
       })),
     );
+    initialSeq = seq;
   }
 
   for (const power of powers) {
@@ -215,7 +244,7 @@ export async function createGame(
     });
   }
 
-  await maybeRunAiTurns(gameId, state);
+  await maybeRunAiTurns(gameId, state, initialSeq);
   return gameId;
 }
 
@@ -229,21 +258,20 @@ export async function applyPlayerAction(
   power: Power,
   action: Action,
 ): Promise<{ state: GameState; seq: number; events: GameEvent[] }> {
-  const row = await loadGameRow(gameId);
-  const state = row.state as unknown as GameState;
+  const { state, seq: loadedSeq } = await loadGameWithSeq(gameId);
 
   if (state.winners !== null) throw new Error('Game is already complete');
 
   const prevRound = state.round;
   const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
-  const seq = await saveGame(gameId, afterAction, log.events);
+  const seq = await saveGame(gameId, afterAction, log.events, loadedSeq);
   if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
   // Sync full state at round boundaries only
   if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
 
   // Fire AI turns in the background — don't block the response
-  maybeRunAiTurns(gameId, afterAction).catch(err =>
+  maybeRunAiTurns(gameId, afterAction, seq).catch(err =>
     console.error(`[ai] background AI turns failed for ${gameId}:`, err),
   );
 
@@ -618,6 +646,7 @@ export async function startMultiplayerGame(
   }).where(eq(games.id, gameId));
 
   // Persist initial events
+  let initialSeq = 0;
   if (log.events.length > 0) {
     let seq = 0;
     await db.insert(gameEvents).values(
@@ -627,6 +656,7 @@ export async function startMultiplayerGame(
         event: event as unknown as Record<string, unknown>,
       })),
     );
+    initialSeq = seq;
   }
 
   // Populate game_players
@@ -643,7 +673,7 @@ export async function startMultiplayerGame(
   // Broadcast game started to lobby SSE listeners
   broadcast(gameId, { type: 'game_started' });
 
-  await maybeRunAiTurns(gameId, state);
+  await maybeRunAiTurns(gameId, state, initialSeq);
 }
 
 export async function revokeInvitation(gameId: string, creatorId: string, invitationId: string): Promise<void> {
