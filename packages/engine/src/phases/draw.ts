@@ -61,11 +61,16 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
 
   // Draw cards, then reset PP. Events include the new PP values so the
   // client can sync without a full state broadcast.
-  const drawResults: Array<{ power: Power; drawn: number; handSize: number }> = [];
+  const drawResults: Array<{ power: Power; drawn: number; handSize: number; drawnCardIds: string[] }> = [];
   for (const power of s.activePowers) {
     const result = drawForPower(s, power);
     s = result.state;
-    drawResults.push({ power, drawn: (result.event as any).drawn, handSize: (result.event as any).handSize });
+    drawResults.push({
+      power,
+      drawn: (result.event as any).drawn,
+      handSize: (result.event as any).handSize,
+      drawnCardIds: (result.event as any).drawnCardIds,
+    });
   }
 
   // Reset power points and sync basePowerPoints so the UI reflects upgrades
@@ -75,9 +80,9 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   }
 
   // Emit draw events with the reset PP values
-  for (const { power, drawn, handSize } of drawResults) {
+  for (const { power, drawn, handSize, drawnCardIds } of drawResults) {
     const ps = s.powers[power]!;
-    log.emit({ type: 'power_draw', power, drawn, handSize, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints });
+    log.emit({ type: 'power_draw', power, drawn, handSize, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints, drawnCardIds });
   }
 
   const firstSummoner = s.summoningOrder[0]!;
@@ -140,7 +145,7 @@ function drawForPower(state: GameState, power: Power): { state: GameState; event
   hand = [...hand, ...drawn];
   s = updatePower(s, power, { hand, deckIds, discardIds });
   // PP fields are placeholders — filled in by resolveAllDraws after the PP reset
-  return { state: s, event: { type: 'power_draw' as const, power, drawn: drawn.length, handSize: hand.length, powerPoints: 0, basePowerPoints: 0 } };
+  return { state: s, event: { type: 'power_draw' as const, power, drawn: drawn.length, handSize: hand.length, powerPoints: 0, basePowerPoints: 0, drawnCardIds: drawn } };
 }
 
 function getTenzenDrawTarget(state: GameState): number {

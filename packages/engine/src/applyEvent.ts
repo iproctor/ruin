@@ -30,12 +30,13 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       };
 
     // ── Summoning ─────────────────────────────────────────────────────────
+    // Turn advancement is handled by awaiting_action events, not here.
     case 'summon_figure':
-      return advanceSummoning(moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost), event.power);
+      return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost);
     case 'play_card':
-      return advanceSummoning(playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost), event.power);
+      return playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
     case 'summoning_pass':
-      return advanceSummoning(patchPower(state, event.power, { passedSummoning: true }), event.power);
+      return patchPower(state, event.power, { passedSummoning: true });
     case 'apprentice_choice':
       return applyApprenticeChoice(state, event);
 
@@ -102,9 +103,14 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return drawCard(state, event.power, event.cardId);
 
     // ── Reducers ──────────────────────────────────────────────────────────
-    case 'forced_discard':
-      // Actual card IDs are in the action, not the event — client gets state sync
-      return state;
+    case 'forced_discard': {
+      const fd = state.powers[event.power]!;
+      return patchPower(state, event.power, {
+        hand: fd.hand.filter(id => !event.cardIds.includes(id)),
+        discardIds: [...fd.discardIds, ...event.cardIds],
+        pendingForcedDiscards: 0,
+      });
+    }
     case 'upgrade_taken':
       return applyUpgrade(state, event.power, event.upgradeCardId);
     case 'dial_place_token':
@@ -130,21 +136,32 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       }
       return state;
     case 'power_draw': {
-      // Reset PP to the values from the draw phase. Card draws depend on deck
-      // state (hidden info), but PP must be synced so the client doesn't go negative.
+      // Reset PP and add drawn cards to hand.
       const dp = state.powers[event.power];
       if (!dp) return state;
+      // drawnCardIds carries actual IDs (masked to '?' for opponents via maskEvent)
+      const newHand = [...dp.hand, ...event.drawnCardIds];
       return {
         ...state,
         powers: {
           ...state.powers,
-          [event.power]: { ...dp, powerPoints: event.powerPoints, basePowerPoints: event.basePowerPoints, passedSummoning: false },
+          [event.power]: { ...dp, hand: newHand, powerPoints: event.powerPoints, basePowerPoints: event.basePowerPoints, passedSummoning: false },
         },
       };
     }
 
+    // ── Token placement/removal (world phase, etc.) ────────────────────────
+    case 'token_placed':
+      return addToken(state, event.regionId, event.tokenType);
+    case 'token_removed':
+      return removeToken(state, event.regionId, event.tokenType);
+
     // ── Informational (no state change) ───────────────────────────────────
+    case 'world_track_update':
+      return { ...state, worldTrack: { ...state.worldTrack, slot1: event.slot1, slot2: event.slot2 } };
+
     case 'summoning_banner':
+      return { ...state, phase: 'summoning' };
     case 'world_card_drawn':
     case 'comet_removed':
     case 'world_card_choice':

@@ -62,6 +62,12 @@ export function renderText(event: GameEvent): string | null {
       return `${event.cardName}: ${event.description}`;
     case 'token_supply_exhausted':
       return `${tokenName(event.tokenType)} supply exhausted.`;
+    case 'token_placed':
+      return null; // shown via world_card_choice or other context
+    case 'token_removed':
+      return null;
+    case 'world_track_update':
+      return null;
 
     // ── Draw ──────────────────────────────────────────────────────────────
     case 'tenzen_discard':

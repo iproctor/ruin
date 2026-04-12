@@ -92,7 +92,7 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
     const isPairCard = cardId === 'northern_heir' || cardId === 'heroes_of_order';
     if (!isPairCard && choiceRegions.length === 0) {
       // No valid regions — skip choice, place card and move on
-      s = placeOnTrackOrDiscard(s, cardId!);
+      s = placeOnTrackOrDiscard(s, cardId!, log);
       s = advanceToDrawPhase(s);
       return { state: s, log };
     }
@@ -112,7 +112,7 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
   }
 
   // Place card on track (or discard)
-  s = placeOnTrackOrDiscard(s, cardId!);
+  s = placeOnTrackOrDiscard(s, cardId!, log);
   s = advanceToDrawPhase(s);
   return { state: s, log };
 }
@@ -126,24 +126,23 @@ export function applyWorldChoice(state: GameState, action: WorldChoiceAction): {
   const result = applyWorldCardChoice(s, cardId, choices, log);
   s = result.state;
 
-  s = placeOnTrackOrDiscard(s, cardId);
+  s = placeOnTrackOrDiscard(s, cardId, log);
   s = advanceToDrawPhase(s);
   return { state: s, log };
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-function placeOnTrackOrDiscard(state: GameState, cardId: string): GameState {
+function placeOnTrackOrDiscard(state: GameState, cardId: string, log: GameLog): GameState {
   const def = WORLD_CARD_BY_ID[cardId];
   if (!def || def.timing === 'discard') {
     return { ...state, worldTrack: { ...state.worldTrack, discardCard: cardId } };
   }
 
   // Shift slot1 → slot2, new card → slot1
-  return {
-    ...state,
-    worldTrack: { ...state.worldTrack, slot1: cardId, slot2: state.worldTrack.slot1 },
-  };
+  const newTrack = { ...state.worldTrack, slot1: cardId, slot2: state.worldTrack.slot1 };
+  log.emit({ type: 'world_track_update', slot1: newTrack.slot1, slot2: newTrack.slot2 });
+  return { ...state, worldTrack: newTrack };
 }
 
 function advanceToDrawPhase(state: GameState): GameState {
@@ -174,8 +173,7 @@ function applyWorldCardImmediate(
       const peasantRegions = REGION_ORDER.filter(r => s.regions[r]!.tokens.includes('peasant'));
       if (peasantRegions.length === 0) return { state: s, needsChoice: false };
       if (peasantRegions.length === 1) {
-        s = removeTokenFromRegion(s, peasantRegions[0]!, 'peasant');
-        s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
+        s = removeTokenWithEvent(s, peasantRegions[0]!, 'peasant', log);
         s = addTokenIfAvailable(s, peasantRegions[0]!, 'noble', log);
         return { state: s, needsChoice: false };
       }
@@ -340,8 +338,7 @@ function applyWorldCardChoice(
     case 'purchased_title': {
       const regionId = choices['regionId'] as RegionId;
       logChoice(`replace Peasant with Noble in ${rname(regionId)}`);
-      s = removeTokenFromRegion(s, regionId, 'peasant');
-      s = { ...s, tokenSupply: { ...s.tokenSupply, peasant: s.tokenSupply.peasant + 1 } };
+      s = removeTokenWithEvent(s, regionId, 'peasant', log);
       s = addTokenIfAvailable(s, regionId, 'noble', log);
       break;
     }
@@ -440,11 +437,18 @@ function applyWorldCardChoice(
   return { state: s };
 }
 
+function removeTokenWithEvent(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
+  log.emit({ type: 'token_removed', regionId, tokenType: token });
+  const s = removeTokenFromRegion(state, regionId, token);
+  return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] + 1 } };
+}
+
 function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
   if (state.tokenSupply[token] <= 0) {
     log.emit({ type: 'token_supply_exhausted', tokenType: token });
     return state;
   }
+  log.emit({ type: 'token_placed', regionId, tokenType: token });
   const s = addTokenToRegion(state, regionId, token);
   return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] - 1 } };
 }

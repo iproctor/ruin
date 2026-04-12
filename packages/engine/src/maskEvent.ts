@@ -36,9 +36,16 @@ export function maskEvent(event: GameEvent, viewerPower: Power | null): GameEven
       }
       return event;
 
-    // Power draw: the number of cards drawn is public, but the cards themselves
-    // are hidden. The event only has count + hand size, no card IDs, so no masking needed.
+    // Power draw: mask drawn card IDs for non-owner
     case 'power_draw':
+      if (!isOwn(event.power)) {
+        return { ...event, drawnCardIds: event.drawnCardIds.map(() => '?') };
+      }
+      return event;
+
+    // Forced discard: mask card IDs for non-owner
+    case 'forced_discard':
+      if (!isOwn(event.power)) return { ...event, cardIds: event.cardIds.map(() => '?') };
       return event;
 
     // Everything else: no hidden info

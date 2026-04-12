@@ -208,10 +208,14 @@ export type GameEvent =
   | { type: 'comet_removed'; cardIds: string[] }
   | { type: 'world_card_choice'; cardId: string; cardName: string; description: string }
   | { type: 'token_supply_exhausted'; tokenType: TokenType }
+  | { type: 'token_placed'; regionId: RegionId; tokenType: TokenType }
+  | { type: 'token_removed'; regionId: RegionId; tokenType: TokenType }
+  | { type: 'world_track_update'; slot1: string | null; slot2: string | null }
+  | { type: 'end_cleanup'; clearedCards: Record<string, [string | null, string | null]>; clearedProtected: string[] }
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
   | { type: 'tenzen_discard'; cardId: string | null }
-  | { type: 'power_draw'; power: Power; drawn: number; handSize: number; powerPoints: number; basePowerPoints: number }
+  | { type: 'power_draw'; power: Power; drawn: number; handSize: number; powerPoints: number; basePowerPoints: number; drawnCardIds: string[] }
   | { type: 'summoning_banner'; round: number }
 
   // ── Summoning ────────────────────────────────────────────────────────────────
@@ -275,7 +279,7 @@ export type GameEvent =
   | { type: 'card_drawn'; power: Power; cardId: string; source: string }
 
   // ── Reducers (interactive action results) ────────────────────────────────────
-  | { type: 'forced_discard'; power: Power; count: number }
+  | { type: 'forced_discard'; power: Power; count: number; cardIds: string[] }
   | { type: 'upgrade_taken'; power: Power; upgradeCardId: string }
   | { type: 'dial_place_token'; power: Power; regionId: RegionId; tokenType: 'noble' | 'chaos_stone' }
   | { type: 'dial_remove_corruption'; power: Power; regionId: RegionId; targetPower: Power }
