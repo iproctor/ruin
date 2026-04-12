@@ -106,10 +106,7 @@ function statesEqual(a: GameState, b: GameState): string | null {
   return null;
 }
 
-let passed = 0;
-let failed = 0;
-
-for (let game = 0; game < NUM_GAMES; game++) {
+function runEventSourcingGame(game: number): string | null {
   const seed = game * 1000 + 42;
   const powers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
   const playerTypes = Object.fromEntries(powers.map(p => [p, 'ai' as const])) as Record<Power, 'ai'>;
@@ -121,7 +118,6 @@ for (let game = 0; game < NUM_GAMES; game++) {
   let state = startState;
   const allEvents: GameEvent[] = [...startLog.events];
   let actionCount = 0;
-  let gameFailed = false;
 
   while (state.winners === null && state.pendingAction !== null && actionCount < MAX_ACTIONS) {
     const { waitingFor } = state.pendingAction;
@@ -133,7 +129,6 @@ for (let game = 0; game < NUM_GAMES; game++) {
     try {
       result = autoAdvance(applyAction(state, action));
     } catch (err) {
-      // Some random actions may be invalid — skip
       continue;
     }
     allEvents.push(...result.log.events);
@@ -143,34 +138,18 @@ for (let game = 0; game < NUM_GAMES; game++) {
     const replayed = replayEvents(initialState, allEvents);
     const diff = statesEqual(state, replayed);
     if (diff) {
-      // Find which event caused the mismatch by replaying one-by-one from last-known-good
-      const prevEventCount = allEvents.length - result.log.events.length;
-      let probe = replayEvents(initialState, allEvents.slice(0, prevEventCount));
-      let causingEvent = '?';
-      for (let ei = 0; ei < result.log.events.length; ei++) {
-        probe = applyEvent(probe, result.log.events[ei]!);
-        const probeDiff = statesEqual(state, probe);
-        // Can't compare intermediate state to final state.
-        // Instead compare probe to full replay at same point.
-        const fullAtPoint = replayEvents(initialState, allEvents.slice(0, prevEventCount + ei + 1));
-        const prevFull = ei > 0 ? replayEvents(initialState, allEvents.slice(0, prevEventCount + ei)) : replayEvents(initialState, allEvents.slice(0, prevEventCount));
-        const eventDiff = statesEqual(prevFull, probe);
-        // ^ this should be null if applyEvent is consistent with itself
-      }
-      // Just show: at what point in the action's events does the replay diverge from engine?
-      console.error(`FAIL game ${game + 1}, action ${actionCount} (${action.kind}): ${diff}`);
-      gameFailed = true;
-      failed++;
-      break;
+      return `game ${game + 1}, action ${actionCount} (${action.kind}): ${diff}`;
     }
   }
 
-  if (!gameFailed) {
-    passed++;
-    const winner = state.winners ? state.winners.join(',') : 'incomplete';
-    console.log(`  game ${game + 1}: ✓ ${actionCount} actions, round ${state.round}, ${winner}\n`);
-  }
+  return null;
 }
 
-console.log(`\n${passed}/${NUM_GAMES} games passed, ${failed} failed`);
-if (failed > 0) throw new Error(`${failed} games failed`);
+describe('event sourcing integrity', () => {
+  for (let game = 0; game < NUM_GAMES; game++) {
+    test(`game ${game + 1}: engine state matches event replay`, () => {
+      const err = runEventSourcingGame(game);
+      expect(err).toBeNull();
+    });
+  }
+});

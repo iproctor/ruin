@@ -21,8 +21,8 @@ export function getRegionDominationLeader(state: GameState, regionId: RegionId):
 
 /** Returns the true current resistance for a region, accounting for all card/world-card effects. */
 export function getRegionResistance(state: GameState, regionId: RegionId): number {
-  const nullWeave = state.regions[regionId]!.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
-  return calcResistance(state, regionId, nullWeave);
+  const changerOfFateActive = state.regions[regionId]!.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+  return calcResistance(state, regionId, changerOfFateActive);
 }
 
 /**
@@ -32,8 +32,8 @@ export function getRegionResistance(state: GameState, regionId: RegionId): numbe
 export function getPowerDomination(state: GameState, regionId: RegionId, power: Power): number {
   const region = state.regions[regionId]!;
   if (region.ruinationCardIndex !== null) return 0;
-  const nullWeave = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
-  return calcDomination(state, regionId, power, nullWeave);
+  const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  return calcDomination(state, regionId, power, changerOfFateActive);
 }
 
 /** Returns the leading power and their domination value, or null if ruined/tied/zero. */
@@ -43,7 +43,7 @@ export function getRegionDomination(
 ): { leader: Power | null; value: number } {
   const region = state.regions[regionId]!;
   if (region.ruinationCardIndex !== null) return { leader: null, value: 0 };
-  const nullWeave = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
   const domValues = new Map<Power, number>();
   // Compute for all active powers, plus any power with a presence in the region
   // that might not be in activePowers (e.g. figures from card effects)
@@ -56,12 +56,12 @@ export function getRegionDomination(
     if (slot && state.powers[slot.playedBy]) powersToCheck.add(slot.playedBy);
   }
   for (const power of powersToCheck) {
-    domValues.set(power, calcDomination(state, regionId, power, nullWeave));
+    domValues.set(power, calcDomination(state, regionId, power, changerOfFateActive));
   }
   const vals = Array.from(domValues.values());
   const maxDom = vals.length ? Math.max(...vals) : 0;
   if (maxDom === 0) return { leader: null, value: 0 };
-  const resistance = calcResistance(state, regionId, nullWeave);
+  const resistance = calcResistance(state, regionId, changerOfFateActive);
   if (maxDom <= resistance) return { leader: null, value: 0 };
   const leaders = Array.from(powersToCheck).filter(p => domValues.get(p) === maxDom);
   return { leader: leaders.length === 1 ? leaders[0]! : null, value: maxDom };
@@ -108,12 +108,12 @@ function resolveDomination(
     // Ruined regions skip domination
     if (isRuined(region)) continue;
 
-    const nullWeave = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+    const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     // Calculate domination value per power
     const domValues = new Map<Power, number>();
     for (const power of s.activePowers) {
-      const val = calcDomination(s, regionId, power, nullWeave);
+      const val = calcDomination(s, regionId, power, changerOfFateActive);
       domValues.set(power, val);
     }
 
@@ -123,20 +123,20 @@ function resolveDomination(
 
     const leaders = s.activePowers.filter(p => domValues.get(p) === maxDom);
     if (leaders.length > 1) {
-      const resistance = calcResistance(s, regionId, nullWeave);
+      const resistance = calcResistance(s, regionId, changerOfFateActive);
       log.emit({ type: 'domination_result', regionId, power: null, value: maxDom, resistance, conquered: false, vp: 0 });
       continue;
     }
 
     const winner = leaders[0]!;
-    const resistance = calcResistance(s, regionId, nullWeave);
+    const resistance = calcResistance(s, regionId, changerOfFateActive);
 
     if (maxDom > resistance) {
       const conquestValue = calcConquestValue(s, regionId);
       s = log.apply(s, { type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
 
       // Gormen Death's Perfume: place 2 corruption tokens on domination
-      if (!nullWeave && winner === 'gormen' &&
+      if (!changerOfFateActive && winner === 'gormen' &&
           regionCardActive(s, regionId, 'gormen_deaths_perfume')) {
         s = log.apply(s, { type: 'deaths_perfume', regionId, tokens: 2 });
       }
@@ -152,12 +152,12 @@ function calcDomination(
   state: GameState,
   regionId: RegionId,
   power: Power,
-  nullWeave: boolean,
+  changerOfFateActive: boolean,
 ): number {
   const region = state.regions[regionId]!;
 
   // Lasha Hollow Pact: enemy figures contribute 0 domination
-  const hollowPact = !nullWeave && regionCardActive(state, regionId, 'lasha_hollow_pact');
+  const hollowPact = !changerOfFateActive && regionCardActive(state, regionId, 'lasha_hollow_pact');
 
   // Sum of chaos card costs for this power
   let cardCostSum = 0;
@@ -180,7 +180,7 @@ function calcDomination(
   let figureValue: number;
 
   // Xarm Altar: use sum of attack values instead of count
-  const altarActive = !nullWeave && regionCardActive(state, regionId, 'xarm_the_red_throne');
+  const altarActive = !changerOfFateActive && regionCardActive(state, regionId, 'xarm_the_red_throne');
   if (altarActive && power === 'xarm') {
     figureValue = figures.reduce((sum, f) => {
       const def = FOLLOWERS[f.power as Power]![f.class]!;
@@ -213,12 +213,12 @@ function calcDomination(
 
   // Gormen Pestilent Aura: +1 per own corruption token
   let bonus = 0;
-  if (!nullWeave && power === 'gormen' && regionCardActive(state, regionId, 'gormen_pestilent_aura')) {
+  if (!changerOfFateActive && power === 'gormen' && regionCardActive(state, regionId, 'gormen_pestilent_aura')) {
     bonus += region.corruptionTokens['gormen'] ?? 0;
   }
 
   // Lasha Sweet Deceit: +2 per Noble and Hero token
-  if (!nullWeave && power === 'lasha' && regionCardActive(state, regionId, 'lasha_sweet_lies')) {
+  if (!changerOfFateActive && power === 'lasha' && regionCardActive(state, regionId, 'lasha_sweet_lies')) {
     const nobles = region.tokens.filter(t => t === 'noble').length;
     const heroes = region.tokens.filter(t => t === 'hero').length;
     bonus += (nobles + heroes) * 2;
@@ -230,7 +230,7 @@ function calcDomination(
 function calcResistance(
   state: GameState,
   regionId: RegionId,
-  nullWeave: boolean,
+  changerOfFateActive: boolean,
 ): number {
   const region = state.regions[regionId]!;
   let resistance = region.baseValue;
@@ -240,7 +240,7 @@ function calcResistance(
   resistance -= ratmen;
 
   // Gormen Epidemic: -2
-  if (!nullWeave && regionCardActive(state, regionId, 'gormen_pandemic')) {
+  if (!changerOfFateActive && regionCardActive(state, regionId, 'gormen_pandemic')) {
     resistance -= 2;
   }
 
@@ -283,21 +283,21 @@ function resolveCorruption(
       continue;
     }
 
-    const nullWeave = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+    const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     for (const power of s.activePowers) {
-      const tokensToPlace = corruptionTokensToPlace(s, regionId, power, nullWeave);
+      const tokensToPlace = corruptionTokensToPlace(s, regionId, power, changerOfFateActive);
       if (tokensToPlace === 0) continue;
 
       s = log.apply(s, { type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
 
       // Dial advancement counters
-      s = checkDialAdvancement(s, regionId, power, tokensToPlace, nullWeave, log);
+      s = checkDialAdvancement(s, regionId, power, tokensToPlace, changerOfFateActive, log);
     }
 
     // Gormen Plague Bloom: after corruption placement, remove Gormen figures and
     // place 1 corruption token per 2 figures removed (before ruination check).
-    if (!nullWeave && regionCardActive(s, regionId, 'gormen_vile_consumption')) {
+    if (!changerOfFateActive && regionCardActive(s, regionId, 'gormen_vile_consumption')) {
       const gormenFigures = followersInRegion(s, regionId).filter(f => f.power === 'gormen');
       if (gormenFigures.length > 0) {
         const tokensToPlace = Math.floor(gormenFigures.length / 2);
@@ -329,7 +329,7 @@ function corruptionTokensToPlace(
   state: GameState,
   regionId: RegionId,
   power: Power,
-  nullWeave: boolean,
+  changerOfFateActive: boolean,
 ): number {
   // Count cultists (and Lasha warriors if Ravers upgrade active)
   const powerFigs = followersInRegion(state, regionId, power);
@@ -342,7 +342,7 @@ function corruptionTokensToPlace(
 
   // Tenzen Kaleidoscope: one cultist per opponent doesn't count
   let reduction = 0;
-  if (!nullWeave && regionCardActive(state, regionId, 'tenzen_shimmer') && power !== 'tenzen') {
+  if (!changerOfFateActive && regionCardActive(state, regionId, 'tenzen_shimmer') && power !== 'tenzen') {
     reduction = 1;
   }
 
@@ -355,7 +355,7 @@ function checkDialAdvancement(
   regionId: RegionId,
   power: Power,
   tokensPlaced: number,
-  _nullWeave: boolean,
+  _changerOfFateActive: boolean,
   log: GameLog,
 ): GameState {
   let s = state;

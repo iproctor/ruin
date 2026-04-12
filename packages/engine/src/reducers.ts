@@ -216,8 +216,10 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
 
     // Emit a phase-change banner on fresh entry to each phase.
     // Skip for end-phase re-entries while draining dial rewards (banner was already emitted).
+    // Skip for mid-battle resume (battleState exists from prior pause).
     const isEndReEntry = s.phase === 'end' && s.pendingDialRewards !== null;
-    if (s.phase !== lastBannerPhase && !isEndReEntry) {
+    const isBattleResume = s.phase === 'battle' && s.battleState !== null;
+    if (s.phase !== lastBannerPhase && !isEndReEntry && !isBattleResume) {
       log.emit({ type: 'phase_start', phase: s.phase, round: s.round });
       lastBannerPhase = s.phase;
     }

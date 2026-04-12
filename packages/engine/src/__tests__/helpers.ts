@@ -10,7 +10,7 @@ import {
   REGIONS, REGION_ORDER, FOLLOWERS, BASE_POWER_POINTS,
   UPGRADES, THREAT_DIALS,
 } from '../constants.js';
-import { applyAction } from '../reducers.js';
+import { applyAction, autoAdvance } from '../reducers.js';
 import { applyBattleHitAssignment } from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
 import { GameLog } from '../gameLog.js';
@@ -377,9 +377,10 @@ export function autoResolveBattle(
       if (def <= remaining) { chosen.push(f.id); remaining -= def; }
     }
 
-    const next = applyBattleHitAssignment(s, {
+    const hitResult = applyBattleHitAssignment(s, {
       kind: 'battle_hit_assignment', power, regionId, followerIds: chosen,
     });
+    const next = autoAdvance(hitResult);
     s = next.state;
     log.absorb(next.log);
     iters++;

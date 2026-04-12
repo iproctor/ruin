@@ -17,6 +17,12 @@ import type { ApplyResult } from '../reducers.js';
 export function resolveBattlePhase(
   state: GameState,
 ): { state: GameState; log: GameLog } {
+  // Mid-battle resume: battleState already exists after a hit assignment or harvest choice
+  if (state.battleState) {
+    return resumeBattle(state);
+  }
+
+  // Fresh entry: create new battleState
   const s: GameState = {
     ...state,
     phase: 'battle',
@@ -29,6 +35,56 @@ export function resolveBattlePhase(
   };
   const log = new GameLog();
   return resolveFromRegion(s, 0, log);
+}
+
+/** Resume battle after a hit assignment or corruption harvest choice. */
+function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  let s = state;
+  const nextStep = s.battleState!.nextStep;
+  const regionIdx = s.battleState!.currentRegionIndex;
+  const regionId = REGION_ORDER[regionIdx]!;
+
+  // After corruption harvest choice: nextStep is null, advance to next region
+  if (nextStep === null) {
+    return resolveFromRegion(s, regionIdx + 1, log);
+  }
+
+  // After hit assignment: resume from nextStep
+  s = { ...s, battleState: { ...s.battleState!, nextStep: null } };
+
+  // War Frenzy clears tipped figures before normal battle starts
+  if (nextStep.type === 'normal_battle' && nextStep.clearTipped) {
+    const tipped = followersInRegion(s, regionId).filter(f => f.tipped);
+    for (const f of tipped) {
+      s = removeFigureFromBoard(s, regionId, f.id, log).state;
+    }
+  }
+
+  let inner: { state: GameState; log: GameLog };
+  switch (nextStep.type) {
+    case 'normal_battle':
+      inner = runNormalBattle(s, regionId, nextStep.powerIndex, log);
+      break;
+    case 'undying_fury':
+      inner = runUndyingFury(s, regionId, nextStep.powerIndex, log);
+      break;
+    case 'post_normal':
+      inner = runPostNormal(s, regionId, log);
+      break;
+    case 'post_undying':
+      inner = runPostUndying(s, regionId, log);
+      break;
+  }
+
+  // If the step paused for another choice, return
+  if (inner.state.pendingAction) {
+    return { state: inner.state, log };
+  }
+
+  // Otherwise advance to the next region
+  const nextIdx = inner.state.battleState!.currentRegionIndex + 1;
+  return resolveFromRegion(inner.state, nextIdx, log);
 }
 
 /** Resume after a Corruption's Harvest choice has been submitted. */
@@ -46,9 +102,7 @@ export function applyCorruptionHarvestChoice(
     s = r.state;
   }
 
-  // Advance past this region
-  const idx = s.battleState!.currentRegionIndex;
-  return resolveFromRegion(s, idx + 1, log);
+  return { state: s, log };
 }
 
 /** Resume after a battle hit assignment choice has been submitted. */
@@ -61,7 +115,7 @@ export function applyBattleHitAssignment(
 
   const { regionId, followerIds, peasantsToTake = 0, power: attacker, warFrenzyPartialHits } = action;
   const ctx = state.pendingAction!.context;
-  const nullWeaveActive = ctx['nullWeaveActive'] as boolean;
+  const changerOfFateActive = ctx['changerOfFateActive'] as boolean;
 
   // Apply War Frenzy partial hits (don't kill, just accumulate on figure for Xarm's normal battle)
   if (warFrenzyPartialHits && warFrenzyPartialHits.length > 0) {
@@ -90,7 +144,7 @@ export function applyBattleHitAssignment(
     s = log.apply(s, { type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
 
     // Xarm Heart Offering: draw a chaos card per kill
-    if (!nullWeaveActive && regionCardActive(s, regionId, 'xarm_ritual_death') && attacker === 'xarm') {
+    if (!changerOfFateActive && regionCardActive(s, regionId, 'xarm_ritual_death') && attacker === 'xarm') {
       s = drawCardForPower(s, 'xarm', log);
     }
 
@@ -101,8 +155,8 @@ export function applyBattleHitAssignment(
       s = log.apply(s, { type: 'heartrippers_corruption', regionId, tokens: 1 });
     }
 
-    // Tenzen Recursive Pattern: mark for persistence if Tenzen killed a figure
-    if (attacker === 'tenzen' && !nullWeaveActive) {
+    // Tenzen Persistence Matrix: mark for persistence if Tenzen killed a figure
+    if (attacker === 'tenzen' && !changerOfFateActive) {
       const slots = s.regions[regionId]!.chaosCards;
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
@@ -115,48 +169,7 @@ export function applyBattleHitAssignment(
     }
   }
 
-  // Get and clear nextStep from battleState
-  const nextStep = s.battleState!.nextStep;
-  s = { ...s, battleState: { ...s.battleState!, nextStep: null } };
-
-  // Resume based on next step type — internal functions mutate the shared
-  // GameLog by reference, so we just need the final state.
-  if (nextStep === null) {
-    return { state: runPostNormal(s, regionId, log).state, log };
-  }
-
-  // War Frenzy (beginning-of-battle) clears tipped figures before normal battle starts
-  if (nextStep.type === 'normal_battle' && nextStep.clearTipped) {
-    const tipped = followersInRegion(s, regionId).filter(f => f.tipped);
-    for (const f of tipped) {
-      s = removeFigureFromBoard(s, regionId, f.id, log).state;
-    }
-  }
-
-  let inner: { state: GameState; log: GameLog };
-  switch (nextStep.type) {
-    case 'normal_battle':
-      inner = runNormalBattle(s, regionId, nextStep.powerIndex, log);
-      break;
-    case 'undying_fury':
-      inner = runUndyingFury(s, regionId, nextStep.powerIndex, log);
-      break;
-    case 'post_normal':
-      inner = runPostNormal(s, regionId, log);
-      break;
-    case 'post_undying':
-      inner = runPostUndying(s, regionId, log);
-      break;
-  }
-
-  // If the current region finished without a new pause, advance to the next region
-  if (!inner.state.pendingAction && inner.state.phase === 'battle') {
-    const nextIdx = inner.state.battleState!.currentRegionIndex + 1;
-    const fromRegion = resolveFromRegion(inner.state, nextIdx, inner.log);
-    return { state: fromRegion.state, log };
-  }
-
-  return { state: inner.state, log };
+  return { state: s, log };
 }
 
 // ─── Region iteration ─────────────────────────────────────────────────────────
@@ -235,11 +248,11 @@ function resolveRegion(
   log.emit({ type: 'battle_region_start', regionId });
 
   // Detect card effects (Null Weave cancels all other card text)
-  const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // ── Beginning-of-battle: Rapture upgrade (Lasha) ─────────────────────────
   // Auto-control weakest enemy Cultist or Warrior until end of round
-  if (!nullWeaveActive && powersPresent.includes('lasha') &&
+  if (!changerOfFateActive && powersPresent.includes('lasha') &&
       s.powers['lasha']!.upgradesInPlay.includes('lasha_rapture_up')) {
     const raptureRegionFigs = followersInRegion(s, regionId);
     const rapture = raptureRegionFigs.find(
@@ -259,7 +272,7 @@ function resolveRegion(
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
   // War Frenzy fires even when xarm has no figures present — the card itself
   // rolls dice targeting enemies/peasants in the region.
-  if (!nullWeaveActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
+  if (!changerOfFateActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
     const rng = makeBattleRng(s);
     const rolls = rollWithExplosions(2, rng);
     const hits = countHits(rolls);
@@ -267,10 +280,10 @@ function resolveRegion(
     log.emit({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
     if (hits > 0) {
       const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
-      const enemiesWF = getEnemyFigures(s, regionId, 'xarm', nullWeaveActive);
+      const enemiesWF = getEnemyFigures(s, regionId, 'xarm', changerOfFateActive);
       if (peasantsAvailableWF > 0 || enemiesWF.length > 0) {
         return pauseForHitChoice(
-          s, regionId, 'xarm', hits, nullWeaveActive,
+          s, regionId, 'xarm', hits, changerOfFateActive,
           { type: 'normal_battle', powerIndex: 0, clearTipped: true },
           log,
           { isWarFrenzy: true },
@@ -280,7 +293,7 @@ function resolveRegion(
   }
 
   // ── Euphoric Haze: no dice rolled ────────────────────────────────────────
-  const euphoricHaze = !nullWeaveActive && regionCardActive(s, regionId, 'lasha_ecstasy');
+  const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
 
   // ── Normal battle dice ────────────────────────────────────────────────────
   if (!euphoricHaze) {
@@ -308,8 +321,8 @@ function runNormalBattle(
   log: GameLog,
 ): { state: GameState; log: GameLog } {
   let s = state;
-  const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
-  const euphoricHaze = !nullWeaveActive && regionCardActive(s, regionId, 'lasha_ecstasy');
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
   if (euphoricHaze) {
     return runPostNormal(s, regionId, log);
   }
@@ -337,7 +350,7 @@ function runNormalBattle(
 
     if (hits > 0) {
       const peasantsAvailable = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
-      const enemies = getEnemyFigures(s, regionId, power, nullWeaveActive);
+      const enemies = getEnemyFigures(s, regionId, power, changerOfFateActive);
 
       if (peasantsAvailable > 0 || enemies.length > 0) {
         // Determine what to do after this choice is resolved
@@ -349,7 +362,7 @@ function runNormalBattle(
         const nextStep: BattleNextStep = isLastPower
           ? { type: 'post_normal' }
           : { type: 'normal_battle', powerIndex: i + 1 };
-        return pauseForHitChoice(s, regionId, power, hits, nullWeaveActive, nextStep, log);
+        return pauseForHitChoice(s, regionId, power, hits, changerOfFateActive, nextStep, log);
       }
     }
   }
@@ -363,7 +376,7 @@ function runPostNormal(
   log: GameLog,
 ): { state: GameState; log: GameLog } {
   let s = state;
-  const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // ── Remove tipped figures ─────────────────────────────────────────────────
   const postNormalFigs = followersInRegion(s, regionId);
@@ -385,8 +398,8 @@ function runPostNormal(
   }
 
   // ── Undying Fury ─────────────────────────────────────────────────────────
-  const euphoricHaze = !nullWeaveActive && regionCardActive(s, regionId, 'lasha_ecstasy');
-  if (!nullWeaveActive && regionCardActive(s, regionId, 'xarm_bloody_rebirth') && !euphoricHaze) {
+  const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
+  if (!changerOfFateActive && regionCardActive(s, regionId, 'xarm_bloody_rebirth') && !euphoricHaze) {
     return runUndyingFury(s, regionId, 0, log);
   }
 
@@ -400,7 +413,7 @@ function runUndyingFury(
   log: GameLog,
 ): { state: GameState; log: GameLog } {
   let s = state;
-  const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
   const chokepoint = isWorldCardActive(s, 'the_chokepoint') && s.regions[regionId]!.tokens.includes('event');
   const activePowers = s.activePowers;
 
@@ -418,14 +431,14 @@ function runUndyingFury(
 
     if (hits > 0) {
       const peasantsAvailableUF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
-      const enemiesUF = getEnemyFigures(s, regionId, power, nullWeaveActive);
+      const enemiesUF = getEnemyFigures(s, regionId, power, changerOfFateActive);
       if (peasantsAvailableUF > 0 || enemiesUF.length > 0) {
         const isLastPower = i === activePowers.length - 1 ||
           !activePowers.slice(i + 1).some(p => getTotalAttack(s, regionId, p) > 0);
         const nextStep: BattleNextStep = isLastPower
           ? { type: 'post_undying' }
           : { type: 'undying_fury', powerIndex: i + 1 };
-        return pauseForHitChoice(s, regionId, power, hits, nullWeaveActive, nextStep, log);
+        return pauseForHitChoice(s, regionId, power, hits, changerOfFateActive, nextStep, log);
       }
     }
   }
@@ -439,7 +452,7 @@ function runPostUndying(
   log: GameLog,
 ): { state: GameState; log: GameLog } {
   let s = state;
-  const nullWeaveActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // Remove newly tipped figures from undying fury round
   const tipped2 = followersInRegion(s, regionId).filter(f => f.tipped);
@@ -456,7 +469,7 @@ function runPostUndying(
   }
 
   // ── End-of-battle: Corruption's Harvest ──────────────────────────────────
-  if (!nullWeaveActive && regionCardActive(s, regionId, 'gormen_inevitable_rot')) {
+  if (!changerOfFateActive && regionCardActive(s, regionId, 'gormen_inevitable_rot')) {
     const gormenCorr = s.regions[regionId]!.corruptionTokens['gormen'] ?? 0;
     if (gormenCorr > 0) {
       const targets = followersInRegion(s, regionId).filter(f => {
@@ -489,7 +502,7 @@ function pauseForHitChoice(
   regionId: RegionId,
   attacker: Power,
   hitsRemaining: number,
-  nullWeaveActive: boolean,
+  changerOfFateActive: boolean,
   nextStep: BattleNextStep,
   log: GameLog,
   extraContext: Record<string, unknown> = {},
@@ -504,7 +517,7 @@ function pauseForHitChoice(
     pendingAction: {
       waitingFor: attacker,
       actionKind: 'battle_hit_assignment',
-      context: { regionId, hitsRemaining, nullWeaveActive, peasantsAvailable, ...extraContext },
+      context: { regionId, hitsRemaining, changerOfFateActive, peasantsAvailable, ...extraContext },
     },
   };
   log.emit({ type: 'awaiting_action', power: attacker, actionKind: 'battle_hit_assignment', context: { regionId, hitsRemaining }, description: `${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.` });
@@ -517,10 +530,10 @@ function getEnemyFigures(
   state: GameState,
   regionId: RegionId,
   attacker: Power,
-  nullWeaveActive: boolean,
+  changerOfFateActive: boolean,
 ): Array<{ figure: FollowerInstance; defense: number }> {
-  const hasRottingGrasp = !nullWeaveActive && regionCardActive(state, regionId, 'gormen_pestilent_touch');
-  const hasBlightWard = !nullWeaveActive && regionCardActive(state, regionId, 'gormen_rain_of_bile');
+  const hasRottingGrasp = !changerOfFateActive && regionCardActive(state, regionId, 'gormen_pestilent_touch');
+  const hasBlightWard = !changerOfFateActive && regionCardActive(state, regionId, 'gormen_rain_of_bile');
 
   return followersInRegion(state, regionId)
     .filter(f => {

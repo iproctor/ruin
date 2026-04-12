@@ -150,10 +150,10 @@ describe('interactive hit assignment', () => {
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     for (let i = 1; i <= 3; i++) s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
     const { state, log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(state.phase).toBe('corruption');
+    expect(state.phase).not.toBe('battle');
     // Both powers had attack dice, so both should appear in roll logs
-    const xarmRolls = log.entries.filter(l => l.includes('norrsund: xarm rolls'));
-    const gormenRolls = log.entries.filter(l => l.includes('norrsund: gormen rolls'));
+    const xarmRolls = log.entries.filter(l => l.includes('Norrsund: Xarm rolls'));
+    const gormenRolls = log.entries.filter(l => l.includes('Norrsund: Gormen rolls'));
     expect(xarmRolls.length).toBeGreaterThan(0);
     expect(gormenRolls.length).toBeGreaterThan(0);
   });
@@ -208,7 +208,7 @@ describe('War Zone (no battle if event token)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'mittelreich');
     s = placeFollower(s, 'gormen', 'cultist', 'mittelreich');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Mittelreich: Xarm rolls'))).toBe(true);
   });
 
   test('event token + great_exorcism does not suppress battle (only mittelreich_diplomacy does)', () => {
@@ -219,7 +219,7 @@ describe('War Zone (no battle if event token)', () => {
     s = addToken(s, 'mittelreich', 'event');
     s = setWorldCard(s, 'great_exorcism');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('mittelreich: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Mittelreich: Xarm rolls'))).toBe(true);
   });
 });
 
@@ -293,7 +293,7 @@ describe('Undying Fury (second battle round)', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('Bloody Rebirth extra battle'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Bloody Rebirth') && l.includes('rolls'))).toBe(true);
   });
 
   test('Undying Fury resolves out of battle phase', () => {
@@ -407,15 +407,18 @@ describe("Gormen Corruption's Harvest (kill enemies after battle)", () => {
       .filter(f => (f.controlledBy ?? f.power) !== 'gormen')
       .map(f => f.id)
       .slice(0, 2);
-    const { state } = applyCorruptionHarvestChoice(withPending, {
+    const hitResult = applyCorruptionHarvestChoice(withPending, {
       kind: 'corruption_harvest_choice',
       power: 'gormen',
       regionId: 'norrsund',
       followerIds: targets,
     });
+    // Immediate result: figures are killed but battle hasn't advanced yet
     for (const id of targets) {
-      expect(followersInRegion(state, 'norrsund').find(f => f.id === id)).toBeUndefined();
+      expect(followersInRegion(hitResult.state, 'norrsund').find(f => f.id === id)).toBeUndefined();
     }
+    // resolveBattlePhase resumes and finishes battle → corruption
+    const { state } = resolveBattlePhase(hitResult.state);
     expect(state.phase).toBe('corruption');
   });
 
@@ -490,7 +493,7 @@ describe('Xarm Heartseekers upgrade (cultists gain attack 1)', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'peasant');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
-    expect(log.entries.some(l => l.includes('norrsund: xarm rolls'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Norrsund: Xarm rolls'))).toBe(true);
   });
 });
 
@@ -548,7 +551,7 @@ describe('War Frenzy partial hit carry-over', () => {
       pendingAction: {
         waitingFor: 'xarm',
         actionKind: 'battle_hit_assignment',
-        context: { regionId: 'norrsund', hitsRemaining: hits, nullWeaveActive: false, peasantsAvailable: 0, isWarFrenzy: true },
+        context: { regionId: 'norrsund', hitsRemaining: hits, changerOfFateActive: false, peasantsAvailable: 0, isWarFrenzy: true },
       },
     };
     return { state: s, tenzenIncarnationId };
@@ -590,32 +593,35 @@ describe('War Frenzy partial hit carry-over', () => {
       pendingAction: {
         waitingFor: 'xarm',
         actionKind: 'battle_hit_assignment',
-        context: { regionId: 'norrsund', hitsRemaining: 1, nullWeaveActive: false, peasantsAvailable: 0 },
+        context: { regionId: 'norrsund', hitsRemaining: 1, changerOfFateActive: false, peasantsAvailable: 0 },
       },
     };
-    const { state } = applyBattleHitAssignment(s2, {
+    const hitResult = applyBattleHitAssignment(s2, {
       kind: 'battle_hit_assignment',
       power: 'xarm',
       regionId: 'norrsund',
       followerIds: [tenzenIncarnationId],
     });
-    // Figure should have been killed and removed (post_normal runs after the assignment)
+    // Immediate result: figure is tipped but not yet removed
+    const tipped = followersInRegion(hitResult.state, 'norrsund').find(f => f.id === tenzenIncarnationId);
+    expect(tipped?.tipped).toBe(true);
+    // resolveBattlePhase resumes — post_normal removes tipped figures
+    const { state } = resolveBattlePhase(hitResult.state);
     const figure = followersInRegion(state, 'norrsund').find(f => f.id === tenzenIncarnationId);
     expect(figure).toBeUndefined();
   });
 
   test('warFrenzyHits are cleared after region battle resolves', () => {
     const { state: paused, tenzenIncarnationId } = makeWarFrenzyPause(1);
-    const { state: afterWF } = applyBattleHitAssignment(paused, {
+    const hitResult = applyBattleHitAssignment(paused, {
       kind: 'battle_hit_assignment',
       power: 'xarm',
       regionId: 'norrsund',
       followerIds: [],
       warFrenzyPartialHits: [{ followerId: tenzenIncarnationId, hits: 1 }],
     });
-    // Let normal battle finish with no more hits (xarm warrior has attack 2, but may roll 0)
-    // Drive to completion and check warFrenzyHits reset
-    const { state } = autoResolveBattle({ state: afterWF, log: new GameLog() });
+    // resolveBattlePhase resumes; autoResolveBattle handles any further hit choices
+    const { state } = autoResolveBattle(resolveBattlePhase(hitResult.state));
     // After the region resolves, any surviving figure should have warFrenzyHits = 0
     for (const regionId of Object.keys(state.regions) as import('../types.js').RegionId[]) {
       for (const f of followersInRegion(state, regionId)) {

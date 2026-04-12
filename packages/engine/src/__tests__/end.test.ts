@@ -56,7 +56,7 @@ describe('Enthrallment release', () => {
     s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
     const { state, log } = resolveEndPhase(s);
     // Controlled gormen cultist should be released
-    expect(log.entries.some(l => l.includes('Narcotic Musk discarded'))).toBe(true);
+    expect(log.events.some(e => e.type === 'chaos_card_discarded' && e.cardId === 'lasha_narcotic_musk')).toBe(true);
     const cultist = state.powers.gormen!.followers.find(f => f.class === 'cultist')!;
     expect(cultist.controlledBy).toBeNull();
   });
@@ -71,7 +71,7 @@ describe('Hero token resolution', () => {
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = addToken(s, 'norrsund', 'hero');
     const { state, log } = resolveEndPhase(s);
-    expect(log.entries.some(l => l.includes('Hero token') && l.includes('xarm'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Hero removes') && l.includes('Xarm'))).toBe(true);
     expect(followersInRegion(state, 'norrsund', 'xarm')).toHaveLength(0);
   });
 
@@ -162,7 +162,7 @@ describe('ruined region scoring', () => {
     expect(xarmGain).toBeGreaterThan(gormenGain);
     // And the end-phase scoring log line must be present.
     const allLog = [...corr.log.entries, ...end.log.entries];
-    expect(allLog.some(l => l.includes('Ruination scoring') && l.includes('xarm'))).toBe(true);
+    expect(allLog.some(l => l.includes('Ruination scoring') && l.includes('Xarm'))).toBe(true);
   });
 });
 

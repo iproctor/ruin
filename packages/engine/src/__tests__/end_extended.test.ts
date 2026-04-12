@@ -115,7 +115,7 @@ describe('great_exorcism persistent effect (end phase)', () => {
     const { state, log } = resolveEndPhase(s);
     // Figure removed from norrsund
     expect(followersInRegion(state, 'norrsund').filter(f => f.power === 'xarm').length).toBe(0);
-    expect(log.entries.some(l => l.includes('Great Exorcism') && l.includes('norrsund'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Great Exorcism') && l.includes('Norrsund'))).toBe(true);
     // Event token moved away from norrsund
     expect(state.regions.norrsund!.tokens).not.toContain('event');
     // Event now in most-corrupt region
@@ -198,7 +198,7 @@ describe('dial instruction: place_nobles (Lasha pos 3, threat 16)', () => {
       .flatMap(r => r.tokens)
       .filter(t => t === 'noble').length;
     expect(noblePlacements).toBeGreaterThanOrEqual(2);
-    expect(log.entries.some(l => l.includes('lasha') && l.includes('noble'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Lasha') && l.includes('Noble'))).toBe(true);
   });
 });
 
@@ -212,7 +212,7 @@ describe('dial instruction: place_chaos_stone (Tenzen pos 1, threat 7)', () => {
       .flatMap(r => r.tokens)
       .filter(t => t === 'chaos_stone').length;
     expect(stones).toBeGreaterThanOrEqual(1);
-    expect(log.entries.some(l => l.includes('tenzen') && l.includes('chaos_stone'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Tenzen') && l.includes('Chaos Stone'))).toBe(true);
   });
 });
 
@@ -225,7 +225,7 @@ describe('dial instruction: remove_corruption (Gormen pos 2, threat 10)', () => 
     const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
     const remaining = state.regions.norrsund!.corruptionTokens.gormen;
     expect(remaining).toBeLessThan(3);
-    expect(log.entries.some(l => l.includes('gormen') && l.includes('corruption'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Gormen') && l.includes('corruption'))).toBe(true);
   });
 });
 
@@ -246,7 +246,7 @@ describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () =>
       .filter(t => t !== 'chaos_stone').length;
     // Before: 2 tokens added; after: should have fewer
     expect(totalTokens).toBeLessThanOrEqual(1);
-    expect(log.entries.some(l => l.includes('lasha') && l.includes('removes'))).toBe(true);
+    expect(log.entries.some(l => l.includes('Lasha') && l.includes('removes'))).toBe(true);
   });
 
   test('chaos_stone tokens are not removed', () => {
