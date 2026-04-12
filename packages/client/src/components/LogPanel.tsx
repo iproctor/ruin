@@ -135,8 +135,6 @@ function renderEvent(event: GameEvent): ReactNode | null {
         : <><Pw power="tenzen" /> keeps hand.</>;
     case 'power_draw':
       return <><Pw power={event.power} /> <T>draws {event.drawn} card(s)</T></>;
-    case 'summoning_banner':
-      return <div style={{ color: '#6b7a8a', fontSize: '0.65rem', letterSpacing: '0.05em', marginTop: 4, textTransform: 'uppercase' }}>— summoning —</div>;
 
     case 'summon_figure': {
       if (event.fromRegion !== null) {
@@ -314,7 +312,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected 
   // Merge events and chat into a single timeline
   type Entry = { kind: 'event'; node: ReactNode; idx: number } | { kind: 'chat'; msg: ChatMessage };
   const evEntries: Entry[] = logEntries
-    .filter(e => e.node !== null)
+    .filter(e => e.node != null)
     .map((e) => ({ kind: 'event', node: e.node, idx: e.idx }));
   const chats: Entry[]  = chat.map((msg) => ({ kind: 'chat', msg }));
   const merged = [...evEntries, ...chats].sort((a, b) => {

@@ -13,6 +13,7 @@ const DEBUG_MULTIPLIER = 1;
 const BATTLE_EVENTS = new Set([
   'battle_region_start', 'battle_roll', 'battle_kill', 'peasant_claimed',
   'rapture_control', 'heartrippers_corruption', 'war_frenzy_partial',
+  'figure_removed', 'battle_cleanup', 'protected_cleared', 'control_released',
 ]);
 const CORRUPTION_EVENTS = new Set([
   'domination_result', 'domination_failed', 'corruption_placement',
