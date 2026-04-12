@@ -5,6 +5,7 @@ import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
 import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion, isFeedingXarmDac, isRetreatFromXarm, isTenzenDefensivePlay } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
+import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
 import { policyForState } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
@@ -116,6 +117,10 @@ export function runMcts(
   forPower: Power,
   options?: MctsOptions,
 ): Action {
+  // Obviously-good plays that don't need search
+  const auto = getAutoPlay(state, forPower);
+  if (auto) return auto;
+
   const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
   const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
   const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
@@ -137,7 +142,11 @@ export function runMcts(
   // Strip out card plays whose preconditions can't fire (Hollow Pact in empty
   // region, Ritual Death without own figures, etc). Always keeps at least pass
   // and any non-card actions.
-  const legalRoot = filterPointlessActions(state, legalRootRaw);
+  let legalRoot = filterPointlessActions(state, legalRootRaw);
+
+  // Tenzen: force 0-cost card plays when PP is low to cycle the hand
+  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
+
   if (legalRoot.length === 1) {
     return legalRoot[0]!;
   }
@@ -195,6 +204,10 @@ export function runMctsWithStats(
   forPower: Power,
   options?: MctsOptions,
 ): MctsStats {
+  // Obviously-good plays that don't need search
+  const auto = getAutoPlay(state, forPower);
+  if (auto) return { action: auto, visitCounts: [{ action: auto, visits: 1 }] };
+
   const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
   const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
   const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
@@ -208,7 +221,8 @@ export function runMctsWithStats(
   if (legalRootRaw.length === 0) {
     throw new Error(`runMctsWithStats: no legal actions for ${forPower}`);
   }
-  const legalRoot = filterPointlessActions(state, legalRootRaw);
+  let legalRoot = filterPointlessActions(state, legalRootRaw);
+  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
   if (legalRoot.length === 1) {
     return {
       action: legalRoot[0]!,

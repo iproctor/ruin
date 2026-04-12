@@ -318,7 +318,7 @@ def main() -> int:
     inv_freq = 1.0 / (4.0 * class_freq)
     # Extra boost for tenzen (index 2) — its indirect strategy needs more
     # gradient signal to learn. 3× on top of the inverse-frequency weight.
-    TENZEN_BOOST = 5.0
+    TENZEN_BOOST = 2.0
     inv_freq[2] *= TENZEN_BOOST
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)
