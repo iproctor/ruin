@@ -166,7 +166,7 @@ async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: num
     }
 
     const prevRound = current.round;
-    const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
+    const { state: next, log } = applyAction(current, action);
     seq = await saveGame(gameId, next, log.events, seq);
     if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
     // Sync full state at round boundaries only
@@ -175,24 +175,6 @@ async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: num
   }
 
   return current;
-}
-
-/**
- * Apply an action, broadcasting the intermediate state at the start of
- * the battle phase so clients can snapshot it before battle resolution.
- */
-function applyActionWithBattleBroadcast(
-  gameId: string,
-  state: GameState,
-  action: Action,
-): { state: GameState; log: GameLog } {
-  const preResult = applyActionForPreview(state, action);
-  // If this action transitioned us from summoning into battle, broadcast
-  // the clean post-summoning state so clients can snapshot it for animation.
-  if (state.phase === 'summoning' && preResult.state.phase === 'battle') {
-    broadcast(gameId, { type: 'state', state: preResult.state });
-  }
-  return autoAdvance(preResult);
 }
 
 // ---------------------------------------------------------------------------
@@ -262,20 +244,42 @@ export async function applyPlayerAction(
 
   if (state.winners !== null) throw new Error('Game is already complete');
 
-  const prevRound = state.round;
-  const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
+  // Apply just the player's action (no autoAdvance) so the response is instant.
+  const actionResult = applyActionForPreview(state, action);
 
-  const seq = await saveGame(gameId, afterAction, log.events, loadedSeq);
-  if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
-  // Sync full state at round boundaries only
-  if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
+  // Save the immediate result
+  const seq = await saveGame(gameId, actionResult.state, actionResult.log.events, loadedSeq);
+  if (actionResult.log.events.length > 0) broadcastEvents(gameId, actionResult.log.events, seq);
 
-  // Fire AI turns in the background — don't block the response
-  maybeRunAiTurns(gameId, afterAction, seq).catch(err =>
-    console.error(`[ai] background AI turns failed for ${gameId}:`, err),
-  );
+  // Continue advancing (autonomous phases + AI turns) in the background
+  continueInBackground(gameId, actionResult.state, seq);
 
-  return { state: afterAction, seq, events: log.events };
+  return { state: actionResult.state, seq, events: actionResult.log.events };
+}
+
+/**
+ * Run autoAdvance + AI turns in the background. Saves and broadcasts
+ * after each step so clients see progress in real time via SSE.
+ */
+async function continueInBackground(gameId: string, state: GameState, currentSeq: number): Promise<void> {
+  try {
+    // autoAdvance runs autonomous phases (battle resolution, corruption, end, world, draw)
+    if (state.pendingAction === null && state.winners === null) {
+      const { state: advanced, log } = autoAdvance({ state, log: new GameLog() });
+      if (log.events.length > 0) {
+        const prevRound = state.round;
+        currentSeq = await saveGame(gameId, advanced, log.events, currentSeq);
+        broadcastEvents(gameId, log.events, currentSeq);
+        if (advanced.round !== prevRound) broadcast(gameId, { type: 'sync', state: advanced });
+      }
+      state = advanced;
+    }
+
+    // Then run AI turns
+    await maybeRunAiTurns(gameId, state, currentSeq);
+  } catch (err) {
+    console.error(`[bg] background advance failed for ${gameId}:`, err);
+  }
 }
 
 export async function getGameState(

@@ -136,12 +136,15 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
   return (
     <g>
       {positions.map(({ figure: fig, cx: fx, cy: fy }) => {
-        const color = POWER_COLORS[fig.controlledBy ?? fig.power];
+        const color = POWER_COLORS[fig.power];
         const isAnimKilled = animationKilledIds?.has(fig.id) ?? false;
         const op = (fig.tipped || isAnimKilled) ? 0.3 : 0.9;
         const isNew = highlightSince !== null && fig.placedAt > highlightSince
           && (fig.controlledBy ?? fig.power) !== myPower;
-        const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : undefined;
+        const controlledColor = fig.controlledBy ? POWER_COLORS[fig.controlledBy] : undefined;
+        const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : controlledColor;
+        // When both controlled and has a glow (protected/killed), show controlled border as outer ring
+        const needsOuterRing = !!controlledColor && glowStroke !== controlledColor;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
         const isAppearing = summoningAnim?.appearingFigures.has(fig.id) ?? false;
         const isMoving = summoningAnim?.movingFigures.has(fig.id) ?? false;
@@ -165,6 +168,9 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
               onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
               onMouseLeave={() => setHovered(null)}
             >
+              {needsOuterRing && fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={10} fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
+              {needsOuterRing && fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={8}  fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
+              {needsOuterRing && fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy}    fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
               {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
               {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
               {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}

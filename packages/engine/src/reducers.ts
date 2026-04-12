@@ -196,16 +196,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
  * Increments actionCount on every call for RNG determinism.
  */
 export function applyAction(state: GameState, action: Action): ApplyResult {
-  let s = { ...state, actionCount: state.actionCount + 1 };
-
-  // Validate that the action is from the right power
-  if (s.pendingAction && s.pendingAction.waitingFor !== action.power) {
-    throw new Error(
-      `Action from ${action.power} but waiting for ${s.pendingAction.waitingFor}`
-    );
-  }
-
-  const result = applyActionSwitch(s, action);
+  const result = applyActionForPreview(state, action);
   return autoAdvance(result);
 }
 

@@ -122,7 +122,7 @@ export function applyCardOnPlayChoice(
     }
   }
 
-  return { state: advanceSummoningTurn(s, power), log };
+  return { state: advanceSummoningTurn(s, power, log), log };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
