@@ -51,11 +51,25 @@ function makeRootPriors(
   }
   // Normalize within the legal-action set
   if (totalForLegal <= 0) return null;
+
+  // Boost zero-cost card priors: the policy head systematically undervalues
+  // free cards because their effects are indirect. Give them a minimum prior
+  // floor so MCTS explores them enough to learn their value.
+  const FREE_CARD_PRIOR_FLOOR = 0.06;
+  const zeroCostSlots = new Set<number>();
+  for (const a of rootActions) {
+    if (isZeroCostCardPlay(state, a)) {
+      const idx = canonicalActionIndex(a, state);
+      if (idx >= 0) zeroCostSlots.add(idx);
+    }
+  }
+
   return (action: Action) => {
     const idx = canonicalActionIndex(action, state);
     if (idx < 0) return 1 / rootActions.length;
-    const raw = slotPriors.get(idx) ?? 0;
-    return raw / totalForLegal;
+    let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
+    if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
+    return p;
   };
 }
 

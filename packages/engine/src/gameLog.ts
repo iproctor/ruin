@@ -9,8 +9,8 @@ import {
 
 // ─── Standalone render ──────────────────────────────────────────────────────
 
-/** Produce a human-readable log string for any GameEvent. */
-export function renderText(event: GameEvent): string {
+/** Produce a human-readable log string for any GameEvent, or null to suppress. */
+export function renderText(event: GameEvent): string | null {
   switch (event.type) {
     // ── Lifecycle ──────────────────────────────────────────────────────────
     case 'phase_start':
@@ -20,7 +20,7 @@ export function renderText(event: GameEvent): string {
     case 'game_over':
       return `Game over! Winners: ${event.winners.join(', ')} (${event.condition}).`;
     case 'awaiting_action':
-      return event.description;
+      return null;
 
     // ── World ─────────────────────────────────────────────────────────────
     case 'world_card_drawn':
@@ -237,7 +237,8 @@ export class GameLog {
   /** Emit a structured event: stores it and auto-generates a text entry. */
   emit(event: GameEvent): void {
     this.events.push(event);
-    this.entries.push(renderText(event));
+    const text = renderText(event);
+    if (text !== null) this.entries.push(text);
   }
 
   /** Legacy: log a plain text message without a structured event. */
