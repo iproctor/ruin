@@ -12,8 +12,9 @@ SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 
 # All boxes to push to. First is the coordinator, rest are workers.
 HOSTS=(
-  78.46.79.158     # hetz1 — coordinator
-  188.40.109.160   # hetz2 — worker
+#  78.46.79.158     # hetz1 — coordinator
+#  188.40.109.160   # hetz2 — worker
+  65.21.15.12 # hetz3 - worker
 )
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)

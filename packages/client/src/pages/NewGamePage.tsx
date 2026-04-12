@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import type { Power, PlayerType } from '@ruin/engine';
 import { createGame } from '../api/client.js';
+import { POWER_COLORS } from '../lib/display.js';
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 const POWER_LABELS: Record<Power, string> = {
@@ -126,7 +127,7 @@ export default function NewGamePage() {
                   style={{
                     border: `2px solid`,
                     borderColor: cfg.enabled
-                      ? `var(--power-${power}-color, #7c3aed)`
+                      ? POWER_COLORS[power]
                       : '#2d2d5e',
                     borderRadius: 6,
                     padding: '0.75rem',
@@ -134,10 +135,10 @@ export default function NewGamePage() {
                     opacity: (!cfg.enabled && !canEnable) ? 0.4 : 1,
                     background: cfg.enabled ? '#1e1e3a' : '#16213e',
                   }}
-                  className={cfg.enabled ? `power-border-${power}` : ''}
+                  className=""
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className={cfg.enabled ? `power-${power}` : ''} style={{ fontWeight: 700 }}>
+                    <span style={{ fontWeight: 700, color: cfg.enabled ? POWER_COLORS[power] : undefined }}>
                       {POWER_LABELS[power]}
                     </span>
                     <span style={{ fontSize: '1rem' }}>{cfg.enabled ? '✓' : ''}</span>
@@ -159,7 +160,7 @@ export default function NewGamePage() {
                 const cfg = config[power]!;
                 return (
                   <div key={power}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.4rem' }} className={`power-${power}`}>
+                    <div style={{ fontWeight: 600, marginBottom: '0.4rem', color: POWER_COLORS[power] }}>
                       {POWER_LABELS[power]}
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>

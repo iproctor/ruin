@@ -2,13 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listGames, type GameSummary } from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.js';
-
-const POWER_LABELS: Record<string, string> = {
-  xarm: 'Xarm',
-  gormen: 'Gormen',
-  tenzen: 'Tenzen',
-  lasha: 'Lasha',
-};
+import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
 function formatDate(dateStr: string): string {
   try {
@@ -49,18 +43,17 @@ function GameRow({ game, userId }: { game: GameSummary; userId: string | null })
             {powers.map((p) => (
               <span
                 key={p}
-                className={`power-${p}`}
-                style={{ fontWeight: 600, fontSize: '0.9rem' }}
+                style={{ fontWeight: 600, fontSize: '0.9rem', color: POWER_COLORS[p as keyof typeof POWER_COLORS] }}
               >
-                {POWER_LABELS[p] ?? p}
+                {POWER_LABELS[p as keyof typeof POWER_LABELS] ?? p}
               </span>
             ))}
           </div>
           <div style={{ fontSize: '0.8rem', color: '#888' }}>
             Round {game.round} &bull; Phase: {game.phase}
             {myPowerEntry && (
-              <span className={`power-${myPowerEntry.power}`} style={{ marginLeft: '0.5rem', fontWeight: 600 }}>
-                (You: {POWER_LABELS[myPowerEntry.power] ?? myPowerEntry.power})
+              <span style={{ marginLeft: '0.5rem', fontWeight: 600, color: POWER_COLORS[myPowerEntry.power as keyof typeof POWER_COLORS] }}>
+                (You: {POWER_LABELS[myPowerEntry.power as keyof typeof POWER_LABELS] ?? myPowerEntry.power})
               </span>
             )}
           </div>
