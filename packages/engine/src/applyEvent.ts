@@ -13,8 +13,46 @@ import type { GameState, GameEvent, Power, RegionId } from './types.js';
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     // ── Lifecycle ─────────────────────────────────────────────────────────
-    case 'phase_start':
-      return { ...state, phase: event.phase };
+    case 'phase_start': {
+      let s = { ...state, phase: event.phase };
+
+      // Phase-transition cleanup (mirrors engine logic that runs without events)
+      if (event.phase === 'world') {
+        // End-of-round cleanup runs AFTER all end-phase events have been processed.
+        // We do it on phase_start:'world' (the next phase) so narcotic_release,
+        // hero_removal, dial events etc. can reference the cards before they're cleared.
+        for (const rid of Object.keys(s.regions) as RegionId[]) {
+          const region = s.regions[rid]!;
+          const newSlots: [typeof region.chaosCards[0], typeof region.chaosCards[0]] = [null, null];
+          for (const [i, slot] of region.chaosCards.entries()) {
+            if (!slot) continue;
+            // Persistence Matrix: keep if marked
+            if (slot.cardId === 'tenzen_persistence_matrix' && slot.persistNextRound) {
+              newSlots[i as 0 | 1] = { ...slot, persistNextRound: false };
+              continue;
+            }
+            // Discard the card
+            const owner = slot.playedBy;
+            const p = s.powers[owner];
+            if (p) {
+              s = patchPower(s, owner, { discardIds: [...p.discardIds, slot.cardId] });
+            }
+          }
+          s = { ...s, regions: { ...s.regions, [rid]: { ...s.regions[rid]!, chaosCards: newSlots } } };
+        }
+        // Clear protected flags
+        for (const power of s.activePowers) {
+          const p = s.powers[power]!;
+          if (p.followers.some(f => f.protected)) {
+            s = patchPower(s, power, {
+              followers: p.followers.map(f => f.protected ? { ...f, protected: false } : f),
+            });
+          }
+        }
+      }
+
+      return s;
+    }
     case 'round_start':
       return { ...state, round: event.round };
     case 'game_over':
@@ -112,7 +150,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       });
     }
     case 'upgrade_taken':
-      return applyUpgrade(state, event.power, event.upgradeCardId);
+      return applyUpgrade(state, event.power, event.upgradeCardId, event.powerPoints, event.basePowerPoints);
     case 'dial_place_token':
       return addToken(state, event.regionId, event.tokenType);
     case 'dial_remove_corruption':
@@ -350,11 +388,13 @@ function drawCard(state: GameState, power: Power, cardId: string): GameState {
   });
 }
 
-function applyUpgrade(state: GameState, power: Power, upgradeCardId: string): GameState {
+function applyUpgrade(state: GameState, power: Power, upgradeCardId: string, pp: number, basePP: number): GameState {
   const p = state.powers[power]!;
   return patchPower(state, power, {
     upgradesInPlay: [...p.upgradesInPlay, upgradeCardId],
     availableUpgradeIds: p.availableUpgradeIds.filter(id => id !== upgradeCardId),
+    powerPoints: pp,
+    basePowerPoints: basePP,
   });
 }
 
@@ -419,10 +459,14 @@ function applyCardEffect(
       return setControlledBy(state, event.followerId, 'lasha');
     case 'decay':
       return removeCorruption(state, event.regionId, event.power, 1);
-    case 'siphon_power':
-      return patchPower(state, 'tenzen', {
-        powerPoints: state.powers['tenzen']!.powerPoints + 1,
-      });
+    case 'siphon_power': {
+      let s2 = state;
+      for (const victim of event.stolenFrom) {
+        s2 = patchPower(s2, victim, { powerPoints: Math.max(0, s2.powers[victim]!.powerPoints - 1) });
+      }
+      s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
+      return s2;
+    }
     case 'depraved_infiltration':
       return addCorruption(state, event.regionId, 'lasha', 1);
   }

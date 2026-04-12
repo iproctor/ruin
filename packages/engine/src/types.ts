@@ -211,7 +211,6 @@ export type GameEvent =
   | { type: 'token_placed'; regionId: RegionId; tokenType: TokenType }
   | { type: 'token_removed'; regionId: RegionId; tokenType: TokenType }
   | { type: 'world_track_update'; slot1: string | null; slot2: string | null }
-  | { type: 'end_cleanup'; clearedCards: Record<string, [string | null, string | null]>; clearedProtected: string[] }
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
   | { type: 'tenzen_discard'; cardId: string | null }
@@ -232,7 +231,7 @@ export type GameEvent =
   | { type: 'card_effect'; subtype: 'hidden_influence'; tokenType: TokenType; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'narcotic_musk'; power: Power; followerId: string }
   | { type: 'card_effect'; subtype: 'decay'; power: Power; regionId: RegionId }
-  | { type: 'card_effect'; subtype: 'siphon_power'; power: Power }
+  | { type: 'card_effect'; subtype: 'siphon_power'; power: Power; stolenFrom: Power[] }
   | { type: 'card_effect'; subtype: 'depraved_infiltration'; regionId: RegionId }
 
   // ── Battle ───────────────────────────────────────────────────────────────────
@@ -280,7 +279,7 @@ export type GameEvent =
 
   // ── Reducers (interactive action results) ────────────────────────────────────
   | { type: 'forced_discard'; power: Power; count: number; cardIds: string[] }
-  | { type: 'upgrade_taken'; power: Power; upgradeCardId: string }
+  | { type: 'upgrade_taken'; power: Power; upgradeCardId: string; powerPoints: number; basePowerPoints: number }
   | { type: 'dial_place_token'; power: Power; regionId: RegionId; tokenType: 'noble' | 'chaos_stone' }
   | { type: 'dial_remove_corruption'; power: Power; regionId: RegionId; targetPower: Power }
   | { type: 'dial_remove_world_token'; power: Power; regionId: RegionId; tokenType: TokenType }

@@ -471,18 +471,20 @@ function applyOnPlayEffect(
       // placement, before ruination check) — handled in resolveCorruption.
       break;
     case 'tenzen_siphon_power': {
-      let gained = 0;
+      const stolenFrom: Power[] = [];
       for (const p of s.activePowers) {
         if (p === power) continue;
         if (followersInRegion(s, regionId, p).some(f => f.class === 'cultist')) {
           const pp = s.powers[p]!.powerPoints;
-          s = updatePower(s, p, { powerPoints: Math.max(0, pp - 1) });
-          gained = 1;
+          if (pp > 0) {
+            s = updatePower(s, p, { powerPoints: pp - 1 });
+            stolenFrom.push(p);
+          }
         }
       }
-      if (gained) {
+      if (stolenFrom.length > 0) {
         s = updatePower(s, power, { powerPoints: s.powers[power]!.powerPoints + 1 });
-        log.emit({ type: 'card_effect', subtype: 'siphon_power', power });
+        log.emit({ type: 'card_effect', subtype: 'siphon_power', power, stolenFrom });
       }
       break;
     }

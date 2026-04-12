@@ -13,8 +13,19 @@ import type { GameState, Power, GameEvent } from '../types.js';
 const NUM_GAMES = 50;
 const MAX_ACTIONS = 500;
 
-function pickRandom<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)]!;
+// Simple deterministic PRNG (mulberry32)
+function makePrng(seed: number) {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function pickRandom<T>(arr: T[], rand: () => number): T {
+  return arr[Math.floor(rand() * arr.length)]!;
 }
 
 function replayEvents(initialState: GameState, events: GameEvent[]): GameState {
@@ -99,6 +110,7 @@ for (let game = 0; game < NUM_GAMES; game++) {
 
   const initialState = createInitialState({ gameId: `test-${game}`, activePowers: powers, playerTypes, seed });
   const { state: startState, log: startLog } = autoAdvance({ state: initialState, log: new GameLog() });
+  const rand = makePrng(seed);
 
   let state = startState;
   const allEvents: GameEvent[] = [...startLog.events];
@@ -110,7 +122,7 @@ for (let game = 0; game < NUM_GAMES; game++) {
     const legal = getLegalActions(state, waitingFor);
     if (legal.length === 0) break;
 
-    const action = pickRandom(legal);
+    const action = pickRandom(legal, rand);
     let result;
     try {
       result = autoAdvance(applyAction(state, action));
