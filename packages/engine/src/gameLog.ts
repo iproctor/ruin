@@ -63,10 +63,18 @@ export function renderText(event: GameEvent): string | null {
     case 'token_supply_exhausted':
       return `${tokenName(event.tokenType)} supply exhausted.`;
     case 'token_placed':
-      return null; // shown via world_card_choice or other context
+      return null;
     case 'token_removed':
       return null;
     case 'world_track_update':
+      return null;
+    case 'figure_removed':
+      return null;
+    case 'protected_cleared':
+      return null;
+    case 'control_released':
+      return null;
+    case 'chaos_card_discarded':
       return null;
 
     // ── Draw ──────────────────────────────────────────────────────────────

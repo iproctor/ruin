@@ -193,6 +193,7 @@ function removeChaosCards(
         }
       }
 
+      log.emit({ type: 'chaos_card_discarded', regionId, slotIndex: i, cardId: slot.cardId, playedBy: slot.playedBy });
       discarded[slot.playedBy]!.push(slot.cardId);
     }
 

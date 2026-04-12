@@ -13,46 +13,8 @@ import type { GameState, GameEvent, Power, RegionId } from './types.js';
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     // ── Lifecycle ─────────────────────────────────────────────────────────
-    case 'phase_start': {
-      let s = { ...state, phase: event.phase };
-
-      // Phase-transition cleanup (mirrors engine logic that runs without events)
-      if (event.phase === 'world') {
-        // End-of-round cleanup runs AFTER all end-phase events have been processed.
-        // We do it on phase_start:'world' (the next phase) so narcotic_release,
-        // hero_removal, dial events etc. can reference the cards before they're cleared.
-        for (const rid of Object.keys(s.regions) as RegionId[]) {
-          const region = s.regions[rid]!;
-          const newSlots: [typeof region.chaosCards[0], typeof region.chaosCards[0]] = [null, null];
-          for (const [i, slot] of region.chaosCards.entries()) {
-            if (!slot) continue;
-            // Persistence Matrix: keep if marked
-            if (slot.cardId === 'tenzen_persistence_matrix' && slot.persistNextRound) {
-              newSlots[i as 0 | 1] = { ...slot, persistNextRound: false };
-              continue;
-            }
-            // Discard the card
-            const owner = slot.playedBy;
-            const p = s.powers[owner];
-            if (p) {
-              s = patchPower(s, owner, { discardIds: [...p.discardIds, slot.cardId] });
-            }
-          }
-          s = { ...s, regions: { ...s.regions, [rid]: { ...s.regions[rid]!, chaosCards: newSlots } } };
-        }
-        // Clear protected flags
-        for (const power of s.activePowers) {
-          const p = s.powers[power]!;
-          if (p.followers.some(f => f.protected)) {
-            s = patchPower(s, power, {
-              followers: p.followers.map(f => f.protected ? { ...f, protected: false } : f),
-            });
-          }
-        }
-      }
-
-      return s;
-    }
+    case 'phase_start':
+      return { ...state, phase: event.phase };
     case 'round_start':
       return { ...state, round: event.round };
     case 'game_over':
@@ -74,7 +36,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'play_card':
       return playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
     case 'summoning_pass':
-      return patchPower(state, event.power, { passedSummoning: true });
+      return patchPower(state, event.power, { passedSummoning: true, powerPoints: 0 });
     case 'apprentice_choice':
       return applyApprenticeChoice(state, event);
 
@@ -84,7 +46,36 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
 
     // ── Battle ────────────────────────────────────────────────────────────
     case 'battle_kill':
-      return killFigure(state, event.regionId, event.targetId);
+      // During battle, figures are tipped first. They're actually removed by
+      // figure_removed events emitted when finalizeBattle runs.
+      return tipFigure(state, event.targetId);
+    case 'figure_removed':
+      return killFigure(state, event.regionId, event.followerId);
+    case 'protected_cleared': {
+      let pc = state;
+      for (const power of pc.activePowers) {
+        const p = pc.powers[power]!;
+        if (p.followers.some(f => event.followerIds.includes(f.id))) {
+          pc = patchPower(pc, power, {
+            followers: p.followers.map(f => event.followerIds.includes(f.id) ? { ...f, protected: false } : f),
+          });
+        }
+      }
+      return pc;
+    }
+    case 'control_released':
+      return setControlledBy(state, event.followerId, null);
+    case 'chaos_card_discarded': {
+      const cdr = state.regions[event.regionId]!;
+      const newSlots = [...cdr.chaosCards] as typeof cdr.chaosCards;
+      newSlots[event.slotIndex as 0 | 1] = null;
+      const owner = state.powers[event.playedBy];
+      let s2 = { ...state, regions: { ...state.regions, [event.regionId]: { ...cdr, chaosCards: newSlots } } };
+      if (owner) {
+        s2 = patchPower(s2, event.playedBy, { discardIds: [...owner.discardIds, event.cardId] });
+      }
+      return s2;
+    }
     case 'harvest_kill':
       return killFigure(state, event.regionId, event.followerId);
     case 'peasant_claimed':
@@ -205,6 +196,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'world_card_choice':
     case 'token_supply_exhausted':
     case 'battle_region_start':
+      return state;
     case 'battle_roll':
     case 'war_frenzy_partial':
       return state;
@@ -346,6 +338,18 @@ function killFigure(state: GameState, _regionId: RegionId, followerId: string): 
   return state;
 }
 
+function tipFigure(state: GameState, followerId: string): GameState {
+  for (const power of state.activePowers) {
+    const p = state.powers[power]!;
+    if (p.followers.some(f => f.id === followerId)) {
+      return patchPower(state, power, {
+        followers: p.followers.map(f => f.id === followerId ? { ...f, tipped: true } : f),
+      });
+    }
+  }
+  return state;
+}
+
 function removeFigure(state: GameState, regionId: RegionId, followerId: string): GameState {
   return killFigure(state, regionId, followerId);
 }
@@ -422,17 +426,13 @@ function applyCardEffect(
     case 'call_to_war':
       return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, 0);
     case 'teleport': {
-      // Move figure from fromRegion to toRegion — find in powers
-      let fig: { power: Power; id: string } | null = null;
+      // Find the figure's owner power
       for (const p of state.activePowers) {
-        const f = state.powers[p]!.followers.find(f =>
-          f.regionId === event.fromRegion &&
-          (f.controlledBy ?? f.power) === event.power && f.class === event.followerClass
-        );
-        if (f) { fig = { power: f.power, id: f.id }; break; }
+        if (state.powers[p]!.followers.some(f => f.id === event.followerId)) {
+          return moveFigure(state, p, event.followerId, event.toRegion, event.fromRegion, 0);
+        }
       }
-      if (!fig) return state;
-      return moveFigure(state, fig.power, fig.id, event.toRegion, event.fromRegion, 0);
+      return state;
     }
     case 'meddling_of_rats':
       return patchPower(state, event.targetPower, {

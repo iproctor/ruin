@@ -137,6 +137,21 @@ for (let game = 0; game < NUM_GAMES; game++) {
     const replayed = replayEvents(initialState, allEvents);
     const diff = statesEqual(state, replayed);
     if (diff) {
+      // Find which event caused the mismatch by replaying one-by-one from last-known-good
+      const prevEventCount = allEvents.length - result.log.events.length;
+      let probe = replayEvents(initialState, allEvents.slice(0, prevEventCount));
+      let causingEvent = '?';
+      for (let ei = 0; ei < result.log.events.length; ei++) {
+        probe = applyEvent(probe, result.log.events[ei]!);
+        const probeDiff = statesEqual(state, probe);
+        // Can't compare intermediate state to final state.
+        // Instead compare probe to full replay at same point.
+        const fullAtPoint = replayEvents(initialState, allEvents.slice(0, prevEventCount + ei + 1));
+        const prevFull = ei > 0 ? replayEvents(initialState, allEvents.slice(0, prevEventCount + ei)) : replayEvents(initialState, allEvents.slice(0, prevEventCount));
+        const eventDiff = statesEqual(prevFull, probe);
+        // ^ this should be null if applyEvent is consistent with itself
+      }
+      // Just show: at what point in the action's events does the replay diverge from engine?
       console.error(`FAIL game ${game + 1}, action ${actionCount} (${action.kind}): ${diff}`);
       gameFailed = true;
       failed++;

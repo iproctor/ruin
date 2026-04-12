@@ -608,7 +608,7 @@ function claimPeasant(
 
 function removeFigureFromBoard(
   state: GameState,
-  _regionId: RegionId,
+  regionId: RegionId,
   followerId: string,
   log: GameLog,
 ): { state: GameState; log: GameLog } {
@@ -618,6 +618,7 @@ function removeFigureFromBoard(
   for (const power of s.activePowers) {
     const follower = s.powers[power]!.followers.find(f => f.id === followerId);
     if (follower) {
+      log.emit({ type: 'figure_removed', regionId, power, followerId });
       s = updatePower(s, power, {
         followers: s.powers[power]!.followers.map(f =>
           f.id === followerId ? { ...f, regionId: null, tipped: false, controlledBy: null, warFrenzyHits: 0 } : f
@@ -704,7 +705,18 @@ function finalizeBattle(
       }
       return upd;
     });
-    if (changed) s = updatePower(s, power, { followers: updatedFollowers });
+    if (changed) {
+      // Emit events for cleared flags
+      const clearedProtected = updatedFollowers
+        .filter((f, i) => p.followers[i]!.protected && !f.protected)
+        .map(f => f.id);
+      if (clearedProtected.length > 0) log.emit({ type: 'protected_cleared', followerIds: clearedProtected });
+      const released = updatedFollowers
+        .filter((f, i) => p.followers[i]!.controlledBy !== null && f.controlledBy === null && p.followers[i]!.power !== 'lasha')
+        .map(f => f);
+      for (const f of released) log.emit({ type: 'control_released', followerId: f.id, power: f.power as Power });
+      s = updatePower(s, power, { followers: updatedFollowers });
+    }
   }
 
   // Move to corruption phase

@@ -225,7 +225,7 @@ export type GameEvent =
   | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }
   | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerName: string }
   | { type: 'card_effect'; subtype: 'call_to_war'; power: Power; followerId: string; fromRegion: RegionId; toRegion: RegionId }
-  | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
+  | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerId: string; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'meddling_of_rats'; targetPower: Power }
   | { type: 'card_effect'; subtype: 'fate_shield'; followerId: string }
   | { type: 'card_effect'; subtype: 'hidden_influence'; tokenType: TokenType; fromRegion: RegionId; toRegion: RegionId }
@@ -238,6 +238,10 @@ export type GameEvent =
   | { type: 'battle_region_start'; regionId: RegionId }
   | { type: 'battle_roll'; regionId: RegionId; power: Power; dice: number[]; hits: number; kind: 'normal' | 'war_frenzy' | 'undying_fury' }
   | { type: 'battle_kill'; regionId: RegionId; attacker: Power; targetPower: Power; targetClass: FollowerClass; targetId: string }
+  | { type: 'figure_removed'; regionId: RegionId; power: Power; followerId: string }
+  | { type: 'protected_cleared'; followerIds: string[] }
+  | { type: 'control_released'; followerId: string; power: Power }
+  | { type: 'chaos_card_discarded'; regionId: RegionId; slotIndex: number; cardId: string; playedBy: Power }
   | { type: 'peasant_claimed'; regionId: RegionId; power: Power; total: number }
   | { type: 'rapture_control'; regionId: RegionId; targetPower: Power; targetClass: FollowerClass; targetId: string }
   | { type: 'heartrippers_corruption'; regionId: RegionId; tokens: number }
