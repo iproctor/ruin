@@ -65,6 +65,10 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
 
   if (action.kind !== 'summoning_play_card') return false;
 
+  // 0-cost cards are never pointless — even if preconditions aren't ideal,
+  // they cycle the hand for free and occupy a card slot.
+  if (ZERO_COST_CARDS.has(action.cardId)) return false;
+
   const region = state.regions[action.toRegion];
   if (!region) return false;
 
