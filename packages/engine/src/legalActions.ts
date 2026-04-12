@@ -265,6 +265,12 @@ function getBattleHitAssignmentActions(state: GameState, power: Power): BattleHi
     add(countKills, peasants);
   }
 
+  // If no enemy figures can be killed but peasants are available, must take peasants
+  if (actions.length === 0 && peasantsAvailable > 0) {
+    const peasants = Math.min(hitsRemaining, peasantsAvailable);
+    add([], peasants);
+  }
+
   if (actions.length === 0) {
     actions.push({ kind: 'battle_hit_assignment', power, regionId, followerIds: [] });
   }

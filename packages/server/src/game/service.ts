@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import { eq, and, asc, inArray } from 'drizzle-orm';
+import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, GameLog, maskEvents } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
@@ -55,13 +55,18 @@ async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
   return map;
 }
 
-// Track next event seq per game in memory (avoids a query per save)
-const eventSeqs = new Map<string, number>();
+async function getNextSeq(gameId: string): Promise<number> {
+  const [row] = await db.select({ maxSeq: sql<number>`COALESCE(MAX(seq), -1)` })
+    .from(gameEvents)
+    .where(eq(gameEvents.gameId, gameId));
+  return (row?.maxSeq ?? -1) + 1;
+}
 
-async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]): Promise<void> {
-  // Insert new events
+async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]): Promise<number> {
+  let nextSeq = 0;
   if (newEvents.length > 0) {
-    let seq = eventSeqs.get(gameId) ?? 0;
+    nextSeq = await getNextSeq(gameId);
+    let seq = nextSeq;
     await db.insert(gameEvents).values(
       newEvents.map((event) => ({
         gameId,
@@ -69,7 +74,7 @@ async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]
         event: event as unknown as Record<string, unknown>,
       })),
     );
-    eventSeqs.set(gameId, seq);
+    nextSeq = seq;
   }
 
   // Update game state
@@ -84,6 +89,7 @@ async function saveGame(gameId: string, state: GameState, newEvents: GameEvent[]
       updatedAt: new Date(),
     })
     .where(eq(games.id, gameId));
+  return nextSeq;
 }
 
 /**
@@ -134,8 +140,7 @@ async function maybeRunAiTurns(gameId: string, state: GameState): Promise<GameSt
 
     const prevRound = current.round;
     const { state: next, log } = applyActionWithBattleBroadcast(gameId, current, action);
-    await saveGame(gameId, next, log.events);
-    const aiSeq = eventSeqs.get(gameId) ?? 0;
+    const aiSeq = await saveGame(gameId, next, log.events);
     if (log.events.length > 0) broadcastEvents(gameId, log.events, aiSeq);
     // Sync full state at round boundaries only
     if (next.round !== prevRound) broadcast(gameId, { type: 'sync', state: next });
@@ -198,7 +203,6 @@ export async function createGame(
         event: event as unknown as Record<string, unknown>,
       })),
     );
-    eventSeqs.set(gameId, seq);
   }
 
   for (const power of powers) {
@@ -224,7 +228,7 @@ export async function applyPlayerAction(
   gameId: string,
   power: Power,
   action: Action,
-): Promise<{ state: GameState; seq: number }> {
+): Promise<{ state: GameState; seq: number; events: GameEvent[] }> {
   const row = await loadGameRow(gameId);
   const state = row.state as unknown as GameState;
 
@@ -233,8 +237,7 @@ export async function applyPlayerAction(
   const prevRound = state.round;
   const { state: afterAction, log } = applyActionWithBattleBroadcast(gameId, state, action);
 
-  await saveGame(gameId, afterAction, log.events);
-  const seq = eventSeqs.get(gameId) ?? 0;
+  const seq = await saveGame(gameId, afterAction, log.events);
   if (log.events.length > 0) broadcastEvents(gameId, log.events, seq);
   // Sync full state at round boundaries only
   if (afterAction.round !== prevRound) broadcast(gameId, { type: 'sync', state: afterAction });
@@ -244,7 +247,7 @@ export async function applyPlayerAction(
     console.error(`[ai] background AI turns failed for ${gameId}:`, err),
   );
 
-  return { state: afterAction, seq };
+  return { state: afterAction, seq, events: log.events };
 }
 
 export async function getGameState(
@@ -270,11 +273,6 @@ export async function getGameHistory(gameId: string): Promise<{
       .where(eq(chatMessages.gameId, gameId))
       .orderBy(asc(chatMessages.createdAt)),
   ]);
-
-  // Track seq for future saves
-  if (eventRows.length > 0) {
-    eventSeqs.set(gameId, Math.max(...eventRows.map(r => r.seq)) + 1);
-  }
 
   return {
     events: eventRows.map(r => r.event as unknown as GameEvent),
@@ -629,7 +627,6 @@ export async function startMultiplayerGame(
         event: event as unknown as Record<string, unknown>,
       })),
     );
-    eventSeqs.set(gameId, seq);
   }
 
   // Populate game_players

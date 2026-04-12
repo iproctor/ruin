@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { eq, inArray, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Power, PlayerType, Action } from '@ruin/engine';
+import { maskEvents } from '@ruin/engine';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import {
   createGame,
@@ -198,8 +199,10 @@ router.post('/:id/action', requireAuth, async (req, res) => {
   }
 
   try {
-    const { state: newState, seq } = await applyPlayerAction(id, actionPower as Power, action);
-    res.json({ state: newState, seq });
+    const { state: newState, seq, events: actionEvents } = await applyPlayerAction(id, actionPower as Power, action);
+    const viewerPower = actionPower as import('@ruin/engine').Power;
+    const maskedEvents = maskEvents(actionEvents, viewerPower);
+    res.json({ state: newState, seq, events: maskedEvents });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(400).json({ error: msg });

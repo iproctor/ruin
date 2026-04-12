@@ -125,7 +125,7 @@ interface GameInnerProps {
 
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, events, lastEvent, chat, connected, paused, resume } = useGameStream(gameId);
+  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume } = useGameStream(gameId);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -308,14 +308,18 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     setSubmitError('');
     setSubmitting(true);
     try {
-      await submitAction(gameId, action);
+      const { state: newState, seq, events: actionEvents } = await submitAction(gameId, action);
       setSelectedCardId(null);
+      // Use the returned state + events directly. The game was blocked on
+      // this player so there are no pending events. SSE duplicates are
+      // skipped via knownSeq.
+      syncAfterAction(newState, seq, actionEvents);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setSubmitting(false);
     }
-  }, [gameId]);
+  }, [gameId, syncAfterAction]);
 
   const handleChatSend = useCallback(async (message: string) => {
     await sendChat(gameId, message);

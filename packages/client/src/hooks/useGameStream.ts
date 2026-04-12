@@ -62,7 +62,7 @@ export interface GameStreamResult {
   chat: ChatMessage[];
   connected: boolean;
   /** Call after submitting an action — syncs state and skips redundant SSE events. */
-  syncAfterAction: (state: GameState, seq: number) => void;
+  syncAfterAction: (state: GameState, seq: number, events?: GameEvent[]) => void;
   /** True when the queue is paused at a phase transition (battle → corruption). */
   paused: boolean;
   /** Resume the queue after a pause. */
@@ -181,7 +181,7 @@ export function useGameStream(gameId: string): GameStreamResult {
 
   /** Called by GamePage after a successful action POST.
    *  Syncs to the returned state and skips SSE events up to `seq`. */
-  const syncAfterAction = useCallback((actionState: GameState, seq: number) => {
+  const syncAfterAction = useCallback((actionState: GameState, seq: number, actionEvents?: GameEvent[]) => {
     // Drain remaining queued events into the log before syncing
     if (queue.current.length > 0) {
       const remaining = queue.current.splice(0);
@@ -194,6 +194,12 @@ export function useGameStream(gameId: string): GameStreamResult {
     setState(actionState);
     stateRef.current = actionState;
     knownSeq.current = seq;
+
+    // Add the action's events directly to the log (no animation delay)
+    if (actionEvents && actionEvents.length > 0) {
+      setEvents(prev => [...prev, ...actionEvents]);
+      setLastEvent(actionEvents[actionEvents.length - 1]!);
+    }
   }, []);
 
   useEffect(() => {

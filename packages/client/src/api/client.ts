@@ -118,8 +118,8 @@ export async function getGame(gameId: string): Promise<{ state: GameState; myPow
   return request<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[] }>(`/games/${gameId}`);
 }
 
-export async function submitAction(gameId: string, action: Action): Promise<{ state: GameState; seq: number }> {
-  return request<{ state: GameState; seq: number }>(`/games/${gameId}/action`, {
+export async function submitAction(gameId: string, action: Action): Promise<{ state: GameState; seq: number; events: import('@ruin/engine').GameEvent[] }> {
+  return request<{ state: GameState; seq: number; events: import('@ruin/engine').GameEvent[] }>(`/games/${gameId}/action`, {
     method: 'POST',
     body: JSON.stringify({ action }),
   });
