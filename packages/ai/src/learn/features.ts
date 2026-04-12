@@ -250,10 +250,15 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     // Persistent strategically-significant effect flags. Each is 1 if any
     // chaos card in this region matches the cardId, else 0. Order is fixed
     // by PERSISTENT_EFFECT_IDS.
+    // Changer of Fate cancels all other card text in the region,
+    // so zero out everything except the changer flag itself when it's present.
+    const changerActive = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
     for (const effectId of PERSISTENT_EFFECT_IDS) {
       let active = 0;
-      for (const card of region.chaosCards) {
-        if (card && card.cardId === effectId) { active = 1; break; }
+      if (!changerActive || effectId === 'tenzen_changer_of_fate') {
+        for (const card of region.chaosCards) {
+          if (card && card.cardId === effectId) { active = 1; break; }
+        }
       }
       out[i++] = active;
     }
