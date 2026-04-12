@@ -41,12 +41,8 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
     const tenzen = s.powers['tenzen']!;
     const idx = tenzen.hand.indexOf(action.cardId);
     if (idx === -1) throw new Error(`Card ${action.cardId} not in Tenzen's hand`);
-    s = updatePower(s, 'tenzen', {
-      hand: [...tenzen.hand.slice(0, idx), ...tenzen.hand.slice(idx + 1)],
-      discardIds: [...tenzen.discardIds, action.cardId],
-    });
   }
-  log.emit({ type: 'tenzen_discard', cardId: action.cardId });
+  s = log.apply(s, { type: 'tenzen_discard', cardId: action.cardId });
 
   return resolveAllDraws(s, log);
 }
@@ -56,13 +52,15 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
 function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; log: GameLog } {
   let s = state;
 
-  // Draw cards, then reset PP. Events include the new PP values so the
-  // client can sync without a full state broadcast.
+  // Draw cards using drawForPower (which modifies state internally for deck reshuffles).
+  // Collect the results, then apply via power_draw events which carry all final state.
   const drawResults: Array<{ power: Power; drawn: number; handSize: number; drawnCardIds: string[]; deckIds: string[]; discardIds: string[] }> = [];
+  // Use a temporary state for computing draws (deck reshuffles need sequential state)
+  let tempS = s;
   for (const power of s.activePowers) {
-    const result = drawForPower(s, power);
-    s = result.state;
-    const ps = s.powers[power]!;
+    const result = drawForPower(tempS, power);
+    tempS = result.state;
+    const ps = tempS.powers[power]!;
     drawResults.push({
       power,
       drawn: (result.event as any).drawn,
@@ -73,16 +71,17 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
     });
   }
 
-  // Reset power points and sync basePowerPoints so the UI reflects upgrades
+  // Compute the reset PP values from the post-draw state (upgrades may affect basePP)
+  const ppValues: Record<Power, number> = {} as Record<Power, number>;
   for (const power of s.activePowers) {
-    const pp = getBasePP(s, power);
-    s = updatePower(s, power, { powerPoints: pp, basePowerPoints: pp, passedSummoning: false });
+    ppValues[power] = getBasePP(tempS, power);
   }
 
-  // Emit draw events with the reset PP values
+  // Apply power_draw events to the ORIGINAL state (not tempS) — the event handler
+  // adds drawn cards to hand, sets PP, syncs deck/discard, and resets passedSummoning.
   for (const { power, drawn, handSize, drawnCardIds, deckIds, discardIds } of drawResults) {
-    const ps = s.powers[power]!;
-    log.emit({ type: 'power_draw', power, drawn, handSize, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints, drawnCardIds, deckIds, discardIds });
+    const pp = ppValues[power]!;
+    s = log.apply(s, { type: 'power_draw', power, drawn, handSize, powerPoints: pp, basePowerPoints: pp, drawnCardIds, deckIds, discardIds });
   }
 
   const firstSummoner = s.summoningOrder[0]!;
@@ -96,11 +95,6 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
     },
     summoningIndex: 0,
   };
-  // Reset passed flags
-  for (const power of s.activePowers) {
-    s = updatePower(s, power, { passedSummoning: false });
-  }
-
   // Emit phase_start here because autoAdvance can't — the phase transition +
   // pendingAction set happen in the same step, so autoAdvance breaks before
   // reaching its banner-emit branch.

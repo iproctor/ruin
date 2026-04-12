@@ -2,8 +2,7 @@ import type { GameEvent, GameState, RegionId, TokenType, WorldChoiceAction } fro
 import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
-  lowestThreatPower, addTokenToRegion, removeTokenFromRegion,
-  isWorldCardActive, updateRegion, updatePower, scoreVP,
+  lowestThreatPower,
 } from '../helpers.js';
 
 /**
@@ -140,9 +139,9 @@ function placeOnTrackOrDiscard(state: GameState, cardId: string, log: GameLog): 
   }
 
   // Shift slot1 → slot2, new card → slot1
-  const newTrack = { ...state.worldTrack, slot1: cardId, slot2: state.worldTrack.slot1 };
-  log.emit({ type: 'world_track_update', slot1: newTrack.slot1, slot2: newTrack.slot2 });
-  return { ...state, worldTrack: newTrack };
+  const newTrack = { slot1: cardId, slot2: state.worldTrack.slot1, discardCard: state.worldTrack.discardCard };
+  const s = log.apply(state, { type: 'world_track_update', slot1: newTrack.slot1, slot2: newTrack.slot2 });
+  return s;
 }
 
 function advanceToDrawPhase(state: GameState): GameState {
@@ -222,8 +221,9 @@ function applyWorldCardImmediate(
         const claimed = s.powers[p]!.claimedPeasants;
         let vp = claimed;
         if (claimed === maxClaimed && maxClaimed > 0) vp += 3;
-        s = scoreVP(s, p, vp);
-        if (vp > 0) log.emit({ type: 'world_card_effect', subtype: 'peasant_harvest', power: p, vp, claimed });
+        if (vp > 0) {
+          s = log.apply(s, { type: 'world_card_effect', subtype: 'peasant_harvest', power: p, vp, claimed });
+        }
       }
       return { state: s, needsChoice: false };
     }
@@ -438,8 +438,7 @@ function applyWorldCardChoice(
 }
 
 function removeTokenWithEvent(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
-  log.emit({ type: 'token_removed', regionId, tokenType: token });
-  const s = removeTokenFromRegion(state, regionId, token);
+  let s = log.apply(state, { type: 'token_removed', regionId, tokenType: token });
   return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] + 1 } };
 }
 
@@ -448,7 +447,6 @@ function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenT
     log.emit({ type: 'token_supply_exhausted', tokenType: token });
     return state;
   }
-  log.emit({ type: 'token_placed', regionId, tokenType: token });
-  const s = addTokenToRegion(state, regionId, token);
+  let s = log.apply(state, { type: 'token_placed', regionId, tokenType: token });
   return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] - 1 } };
 }

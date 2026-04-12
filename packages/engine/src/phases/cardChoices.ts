@@ -6,7 +6,7 @@ import type {
   GameState, Power, RegionId, TokenType, CardOnPlayChoiceAction,
 } from '../types.js';
 import { GameLog } from '../gameLog.js';
-import { updatePower, updateRegion, followersInRegion } from '../helpers.js';
+import { followersInRegion } from '../helpers.js';
 import { advanceSummoningTurn } from './summoning.js';
 
 export function applyCardOnPlayChoice(
@@ -28,12 +28,7 @@ export function applyCardOnPlayChoice(
         const fromRegion = figure.regionId;
         if (fromRegion === null || fromRegion === regionId) continue;
 
-        // Update follower record (move to target region)
-        const moved = { ...figure, regionId, placedAt: s.actionCount };
-        s = updatePower(s, power, {
-          followers: s.powers[power]!.followers.map(f => f.id === fId ? moved : f),
-        });
-        log.emit({ type: 'card_effect', subtype: 'call_to_war', power, followerId: fId, fromRegion, toRegion: regionId });
+        s = log.apply(s, { type: 'card_effect', subtype: 'call_to_war', power, followerId: fId, fromRegion, toRegion: regionId });
       }
       break;
     }
@@ -46,28 +41,13 @@ export function applyCardOnPlayChoice(
       const carry = choices['carry'] as boolean | undefined;
       const figure = followersInRegion(s, regionId).find(f => f.id === followerId);
       if (figure && (figure.class === 'cultist' || figure.class === 'warrior') && toRegion !== regionId) {
-        const moved = { ...figure, regionId: toRegion, placedAt: s.actionCount };
-        s = updatePower(s, figure.power as Power, {
-          followers: s.powers[figure.power as Power]!.followers.map(f => f.id === followerId ? moved : f),
-        });
-        log.emit({ type: 'card_effect', subtype: 'teleport', power: figure.power as Power, followerId, followerClass: figure.class, fromRegion: regionId, toRegion });
+        s = log.apply(s, { type: 'card_effect', subtype: 'teleport', power: figure.power as Power, followerId, followerClass: figure.class, fromRegion: regionId, toRegion });
 
         // Tenzen Apprentice upgrade: carry chaos stone when teleporting a cultist
         if (carry !== undefined && figure.power === 'tenzen' && figure.class === 'cultist' &&
             s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
             s.regions[regionId]!.tokens.includes('chaos_stone')) {
-          if (carry) {
-            const tokens = [...s.regions[regionId]!.tokens];
-            const stoneIdx = tokens.indexOf('chaos_stone');
-            if (stoneIdx !== -1) {
-              tokens.splice(stoneIdx, 1);
-              s = updateRegion(s, regionId, { tokens });
-              s = updateRegion(s, toRegion, { tokens: [...s.regions[toRegion]!.tokens, 'chaos_stone'] });
-              log.emit({ type: 'apprentice_choice', followerId, fromRegion: regionId, toRegion, carry: true });
-            }
-          } else {
-            log.emit({ type: 'apprentice_choice', followerId, fromRegion: regionId, toRegion, carry: false });
-          }
+          s = log.apply(s, { type: 'apprentice_choice', followerId, fromRegion: regionId, toRegion, carry });
         }
       }
       break;
@@ -96,11 +76,7 @@ export function applyCardOnPlayChoice(
       } else if (required > 0) {
         // Auto-discard (hand <= required)
         const toDiscard = targetPs.hand.slice(0, required);
-        s = updatePower(s, targetPower, {
-          hand: targetPs.hand.slice(required),
-          discardIds: [...targetPs.discardIds, ...toDiscard],
-        });
-        log.emit({ type: 'forced_discard', power: targetPower, count: toDiscard.length, cardIds: toDiscard });
+        s = log.apply(s, { type: 'forced_discard', power: targetPower, count: toDiscard.length, cardIds: toDiscard });
       }
       break;
     }
@@ -111,12 +87,7 @@ export function applyCardOnPlayChoice(
       const followerId = choices['followerId'] as string;
       const figure = followersInRegion(s, regionId).find(f => f.id === followerId);
       if (figure) {
-        s = updatePower(s, figure.power as Power, {
-          followers: s.powers[figure.power as Power]!.followers.map(f =>
-            f.id === followerId ? { ...f, protected: true } : f
-          ),
-        });
-        log.emit({ type: 'card_effect', subtype: 'fate_shield', followerId });
+        s = log.apply(s, { type: 'card_effect', subtype: 'fate_shield', followerId });
       }
       break;
     }
@@ -128,15 +99,9 @@ export function applyCardOnPlayChoice(
       const fromRegion = (choices['fromRegion'] as RegionId | undefined) ?? regionId;
       const toRegion = choices['toRegion'] as RegionId;
       if (['peasant', 'hero', 'noble'].includes(token) && fromRegion !== toRegion) {
-        const srcTokens = [...s.regions[fromRegion]!.tokens];
-        const idx = srcTokens.indexOf(token);
-        if (idx !== -1) {
-          srcTokens.splice(idx, 1);
-          s = updateRegion(s, fromRegion, { tokens: srcTokens });
-          s = updateRegion(s, toRegion, {
-            tokens: [...s.regions[toRegion]!.tokens, token],
-          });
-          log.emit({ type: 'card_effect', subtype: 'hidden_influence', tokenType: token, fromRegion, toRegion });
+        const srcTokens = s.regions[fromRegion]!.tokens;
+        if (srcTokens.includes(token)) {
+          s = log.apply(s, { type: 'card_effect', subtype: 'hidden_influence', tokenType: token, fromRegion, toRegion });
         }
       }
       break;
@@ -151,12 +116,7 @@ export function applyCardOnPlayChoice(
         (f.controlledBy ?? f.power) !== 'lasha'
       );
       if (figure) {
-        s = updatePower(s, figure.power as Power, {
-          followers: s.powers[figure.power as Power]!.followers.map(f =>
-            f.id === followerId ? { ...f, controlledBy: 'lasha' } : f
-          ),
-        });
-        log.emit({ type: 'card_effect', subtype: 'narcotic_musk', power: figure.power as Power, followerId });
+        s = log.apply(s, { type: 'card_effect', subtype: 'narcotic_musk', power: figure.power as Power, followerId });
       }
       break;
     }

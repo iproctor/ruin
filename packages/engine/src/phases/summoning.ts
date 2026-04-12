@@ -6,9 +6,9 @@ import type {
 import { CARD_BY_ID, FOLLOWERS, UPGRADES, UPGRADE_BY_ID } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
-  updatePower, updateRegion, legalPlacementRegions,
+  updatePower, legalPlacementRegions,
   cardSlotsAvailable, isRuined, followersInRegion, isWorldCardActive,
-  scoreVP, addTokenToRegion,
+  addTokenToRegion,
 } from '../helpers.js';
 
 // ─── Summon a figure ──────────────────────────────────────────────────────────
@@ -54,32 +54,9 @@ export function applySummonFigure(
     }
   }
 
-  // Update follower
-  const updatedFollower = { ...follower, regionId: toRegion, placedAt: s.actionCount };
-
-  // Update the follower in its owner's array (may differ from acting power for controlled figures)
-  s = updatePower(s, ownerPower, {
-    followers: s.powers[ownerPower]!.followers.map(f => f.id === followerId ? updatedFollower : f),
-  });
-
-  // Deduct power points from the acting power
-  s = updatePower(s, power, {
-    powerPoints: s.powers[power]!.powerPoints - cost,
-  });
-
   // Gormen Plaguefather upgrade: place 2 corruption tokens on summon
-  if (power === 'gormen' && follower.class === 'incarnation' &&
-      s.powers['gormen']!.upgradesInPlay.includes('gormen_plaguefather_up')) {
-    for (let i = 0; i < 2; i++) {
-      s = updateRegion(s, toRegion, {
-        corruptionTokens: {
-          ...s.regions[toRegion]!.corruptionTokens,
-          gormen: (s.regions[toRegion]!.corruptionTokens.gormen) + 1,
-        },
-      });
-    }
-    log.emit({ type: 'card_effect', subtype: 'plaguefather_corruption', power, regionId: toRegion, tokens: 2 });
-  }
+  const plaguefatherActive = power === 'gormen' && follower.class === 'incarnation' &&
+      s.powers['gormen']!.upgradesInPlay.includes('gormen_plaguefather_up');
 
   // Reject carry: true if conditions aren't met
   if (action.carry === true) {
@@ -90,28 +67,25 @@ export function applySummonFigure(
     if (!canCarry) throw new Error('Cannot carry: no chaos stone in source region or conditions not met');
   }
 
+  // Capture fromRegion before the summon event moves the figure
+  const fromRegion = follower.regionId;
+
+  // Apply summon via event
+  s = log.apply(s, { type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion, cost });
+
+  // Plaguefather corruption after summon
+  if (plaguefatherActive) {
+    s = log.apply(s, { type: 'card_effect', subtype: 'plaguefather_corruption', power, regionId: toRegion, tokens: 2 });
+  }
+
   // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board.
-  // If `carry` is provided in the action, apply it inline. If not (legacy/AI
-  // without the field), fall back to pausing with a pending action.
   if (power === 'tenzen' && follower.class === 'cultist' &&
       s.powers['tenzen']!.upgradesInPlay.includes('tenzen_apprentices_up') &&
-      follower.regionId !== null) {
-    const from = follower.regionId;
-    if (s.regions[from]!.tokens.includes('chaos_stone')) {
-      log.emit({ type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion: follower.regionId, cost });
-
+      fromRegion !== null) {
+    if (s.regions[fromRegion]!.tokens.includes('chaos_stone')) {
       if (action.carry !== undefined) {
         // Carry decision bundled into the summon action
-        if (action.carry) {
-          s = updateRegion(s, from, {
-            tokens: removeFirst(s.regions[from]!.tokens, 'chaos_stone'),
-          });
-          s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
-          s = addTokenIfAvailable(s, toRegion, 'chaos_stone');
-          log.emit({ type: 'apprentice_choice', followerId, fromRegion: from, toRegion, carry: true });
-        } else {
-          log.emit({ type: 'apprentice_choice', followerId, fromRegion: from, toRegion, carry: false });
-        }
+        s = log.apply(s, { type: 'apprentice_choice', followerId, fromRegion, toRegion, carry: action.carry });
         return { state: advanceSummoningTurn(s, power, log), log };
       }
 
@@ -121,15 +95,14 @@ export function applySummonFigure(
         pendingAction: {
           waitingFor: 'tenzen',
           actionKind: 'tenzen_apprentice_choice',
-          context: { followerId, fromRegion: from, toRegion },
+          context: { followerId, fromRegion, toRegion },
         },
       };
-      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion: from, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${from}?` });
+      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${fromRegion}?` });
       return { state: s, log };
     }
   }
 
-  log.emit({ type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion: follower.regionId, cost });
   return { state: advanceSummoningTurn(s, power, log), log };
 }
 
@@ -154,20 +127,12 @@ export function applyPlayCard(
   const cost = getCardCost(s, power, cardId, toRegion);
   if (p.powerPoints < cost) throw new Error(`Not enough power points`);
 
-  // Remove one copy from hand
+  // Remove one copy from hand (validation only — actual mutation via play_card event)
   const handIdx = p.hand.indexOf(cardId);
   if (handIdx === -1) throw new Error(`Card ${cardId} not in ${power}'s hand`);
-  const newHand = [...p.hand.slice(0, handIdx), ...p.hand.slice(handIdx + 1)];
-  s = updatePower(s, power, {
-    hand: newHand,
-    powerPoints: p.powerPoints - cost,
-  });
 
-  // Place on board
-  const playedCard = { cardId, playedBy: power, slotIndex, persistNextRound: false, placedAt: s.actionCount };
-  const newSlots = [...s.regions[toRegion]!.chaosCards] as [typeof playedCard | null, typeof playedCard | null];
-  newSlots[slotIndex] = playedCard;
-  s = updateRegion(s, toRegion, { chaosCards: newSlots });
+  // Apply play_card event (removes from hand, places on board, deducts PP)
+  s = log.apply(s, { type: 'play_card', power, cardId, cardName: cardDef.name, toRegion, slotIndex, cost });
 
   // Apply on_play effects
   s = applyOnPlayEffect(s, cardId, power, toRegion, log);
@@ -179,15 +144,9 @@ export function applyPlayCard(
       f => f.class === 'warrior' && f.regionId === null
     );
     if (reserve) {
-      const updated = { ...reserve, regionId: toRegion, placedAt: s.actionCount };
-      s = updatePower(s, 'tenzen', {
-        followers: s.powers['tenzen']!.followers.map(f => f.id === reserve.id ? updated : f),
-      });
-      log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
+      s = log.apply(s, { type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, ''), followerId: reserve.id });
     }
   }
-
-  log.emit({ type: 'play_card', power, cardId, cardName: cardDef.name, toRegion, slotIndex, cost });
 
   // Cards that require a follow-up choice pause summoning turn advancement
   if (needsOnPlayChoice(cardId)) {
@@ -243,9 +202,8 @@ export function applySummoningPass(
   action: SummoningPassAction,
 ): { state: GameState; log: GameLog } {
   const { power } = action;
-  let s = updatePower(state, power, { powerPoints: 0, passedSummoning: true });
   const log = new GameLog();
-  log.emit({ type: 'summoning_pass', power });
+  let s = log.apply(state, { type: 'summoning_pass', power });
   return { state: advanceSummoningTurn(s, power, log), log };
 }
 
@@ -255,25 +213,9 @@ export function applyTenzenApprenticeChoice(
   state: GameState,
   action: TenzenApprenticeChoiceAction,
 ): { state: GameState; log: GameLog } {
-  let s = state;
   const log = new GameLog();
-  if (action.carry) {
-    const fromRegion = s.regions[action.fromRegion];
-    if (fromRegion && fromRegion.tokens.includes('chaos_stone') && s.tokenSupply.chaos_stone >= 0) {
-      // Move the chaos stone from origin to destination.
-      s = updateRegion(s, action.fromRegion, {
-        tokens: removeFirst(fromRegion.tokens, 'chaos_stone'),
-      });
-      // Return to supply briefly so addTokenIfAvailable will use it.
-      s = { ...s, tokenSupply: { ...s.tokenSupply, chaos_stone: s.tokenSupply.chaos_stone + 1 } };
-      s = addTokenIfAvailable(s, action.toRegion, 'chaos_stone');
-      log.emit({ type: 'apprentice_choice', followerId: action.followerId, fromRegion: action.fromRegion, toRegion: action.toRegion, carry: true });
-    }
-  } else {
-    log.emit({ type: 'apprentice_choice', followerId: action.followerId, fromRegion: action.fromRegion, toRegion: action.toRegion, carry: false });
-  }
-  // Clear the pending action and resume the summoning turn order.
-  s = { ...s, pendingAction: null };
+  let s: GameState = { ...state, pendingAction: null };
+  s = log.apply(s, { type: 'apprentice_choice', followerId: action.followerId, fromRegion: action.fromRegion, toRegion: action.toRegion, carry: action.carry });
   return { state: advanceSummoningTurn(s, 'tenzen', log), log };
 }
 
@@ -416,10 +358,7 @@ function applyOnPlayEffect(
       const region = s.regions[regionId]!;
       for (const p of s.activePowers) {
         if (region.corruptionTokens[p] > 0) {
-          s = updateRegion(s, regionId, {
-            corruptionTokens: { ...region.corruptionTokens, [p]: region.corruptionTokens[p] - 1 },
-          });
-          log.emit({ type: 'card_effect', subtype: 'decay', power: p, regionId });
+          s = log.apply(s, { type: 'card_effect', subtype: 'decay', power: p, regionId });
           break;
         }
       }
@@ -430,31 +369,22 @@ function applyOnPlayEffect(
       // placement, before ruination check) — handled in resolveCorruption.
       break;
     case 'tenzen_siphon_power': {
-      let gained = false;
+      const stolenFrom: Power[] = [];
       for (const p of s.activePowers) {
         if (p === power) continue;
         if (followersInRegion(s, regionId, p).some(f => f.class === 'cultist')) {
-          const pp = s.powers[p]!.powerPoints;
-          if (pp > 0) {
-            s = updatePower(s, p, { powerPoints: pp - 1 });
-            gained = true;
+          if (s.powers[p]!.powerPoints > 0) {
+            stolenFrom.push(p);
           }
         }
       }
-      if (gained) {
-        s = updatePower(s, power, { powerPoints: s.powers[power]!.powerPoints + 1 });
-        log.emit({ type: 'card_effect', subtype: 'siphon_power', power, regionId });
+      if (stolenFrom.length > 0) {
+        s = log.apply(s, { type: 'card_effect', subtype: 'siphon_power', power, regionId, stolenFrom });
       }
       break;
     }
     case 'lasha_depraved_infiltration': {
-      s = updateRegion(s, regionId, {
-        corruptionTokens: {
-          ...s.regions[regionId]!.corruptionTokens,
-          lasha: s.regions[regionId]!.corruptionTokens.lasha + 1,
-        },
-      });
-      log.emit({ type: 'card_effect', subtype: 'depraved_infiltration', regionId });
+      s = log.apply(s, { type: 'card_effect', subtype: 'depraved_infiltration', regionId });
       break;
     }
     case 'lasha_debauched_royalty': {

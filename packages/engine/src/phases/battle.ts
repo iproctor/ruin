@@ -66,19 +66,7 @@ export function applyBattleHitAssignment(
   // Apply War Frenzy partial hits (don't kill, just accumulate on figure for Xarm's normal battle)
   if (warFrenzyPartialHits && warFrenzyPartialHits.length > 0) {
     for (const { followerId, hits } of warFrenzyPartialHits) {
-      // Find the owner power for this follower
-      for (const p of s.activePowers) {
-        const fig = s.powers[p]!.followers.find(f => f.id === followerId);
-        if (fig) {
-          s = updatePower(s, p, {
-            followers: s.powers[p]!.followers.map(f =>
-              f.id === followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + hits } : f
-            ),
-          });
-          break;
-        }
-      }
-      log.emit({ type: 'war_frenzy_partial', regionId, followerId, hits });
+      s = log.apply(s, { type: 'war_frenzy_partial', regionId, followerId, hits });
     }
   }
 
@@ -98,14 +86,8 @@ export function applyBattleHitAssignment(
     }
     if (!figure) continue;
 
-    // Mark as tipped in power's followers array
-    const owner = figure.power as Power;
-    s = updatePower(s, owner, {
-      followers: s.powers[owner]!.followers.map(f =>
-        f.id === fId ? { ...f, tipped: true } : f
-      ),
-    });
-    log.emit({ type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
+    // Mark as tipped (battle_kill event sets tipped=true in applyEvent)
+    s = log.apply(s, { type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
 
     // Xarm Heart Offering: draw a chaos card per kill
     if (!nullWeaveActive && regionCardActive(s, regionId, 'xarm_ritual_death') && attacker === 'xarm') {
@@ -116,13 +98,7 @@ export function applyBattleHitAssignment(
     if (attacker === 'xarm' &&
         s.powers['xarm']!.upgradesInPlay.includes('xarm_heartrippers_up') &&
         followersInRegion(s, regionId, 'xarm').some(f => f.class === 'warrior')) {
-      s = updateRegion(s, regionId, {
-        corruptionTokens: {
-          ...s.regions[regionId]!.corruptionTokens,
-          xarm: s.regions[regionId]!.corruptionTokens.xarm + 1,
-        },
-      });
-      log.emit({ type: 'heartrippers_corruption', regionId, tokens: 1 });
+      s = log.apply(s, { type: 'heartrippers_corruption', regionId, tokens: 1 });
     }
 
     // Tenzen Recursive Pattern: mark for persistence if Tenzen killed a figure
@@ -275,12 +251,7 @@ function resolveRegion(
         return ctrl !== 'lasha' && (f.class === 'cultist' || f.class === 'warrior');
       });
       if (target) {
-        s = updatePower(s, target.power as Power, {
-          followers: s.powers[target.power as Power]!.followers.map(f =>
-            f.id === target.id ? { ...f, controlledBy: 'lasha' } : f
-          ),
-        });
-        log.emit({ type: 'rapture_control', regionId, targetPower: target.power as Power, targetClass: target.class, targetId: target.id });
+        s = log.apply(s, { type: 'rapture_control', regionId, targetPower: target.power as Power, targetClass: target.class, targetId: target.id });
       }
     }
   }
@@ -410,8 +381,7 @@ function runPostNormal(
 
   // Xarm dial advancement
   if (enemiesKilledByXarm) {
-    s = updatePower(s, 'xarm', { dialCounters: s.powers['xarm']!.dialCounters + 1 });
-    log.emit({ type: 'dial_counter', regionId, power: 'xarm' as Power });
+    s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
   }
 
   // ── Undying Fury ─────────────────────────────────────────────────────────
@@ -480,18 +450,9 @@ function runPostUndying(
 
   // Reset warFrenzyHits on all surviving figures in this region
   const surviving = followersInRegion(s, regionId).filter(f => f.warFrenzyHits > 0);
-  const clearedIds: string[] = [];
-  for (const f of surviving) {
-    const owner = f.power as Power;
-    s = updatePower(s, owner, {
-      followers: s.powers[owner]!.followers.map(fl =>
-        fl.id === f.id ? { ...fl, warFrenzyHits: 0 } : fl
-      ),
-    });
-    clearedIds.push(f.id);
-  }
+  const clearedIds: string[] = surviving.map(f => f.id);
   if (clearedIds.length > 0) {
-    log.emit({ type: 'battle_cleanup', clearedWarFrenzyHits: clearedIds, resetDialCounters: false });
+    s = log.apply(s, { type: 'battle_cleanup', clearedWarFrenzyHits: clearedIds, resetDialCounters: false });
   }
 
   // ── End-of-battle: Corruption's Harvest ──────────────────────────────────
@@ -596,17 +557,9 @@ function claimPeasant(
   claimedBy: Power,
   log: GameLog,
 ): GameState {
-  const tokens = [...state.regions[regionId]!.tokens];
-  const idx = tokens.indexOf('peasant');
-  if (idx === -1) return state;
-  tokens.splice(idx, 1);
-
-  let s = updateRegion(state, regionId, { tokens });
-  s = updatePower(s, claimedBy, {
-    claimedPeasants: s.powers[claimedBy]!.claimedPeasants + 1,
-  });
-  log.emit({ type: 'peasant_claimed', regionId, power: claimedBy, total: s.powers[claimedBy]!.claimedPeasants });
-  return s;
+  if (!state.regions[regionId]!.tokens.includes('peasant')) return state;
+  const total = state.powers[claimedBy]!.claimedPeasants + 1;
+  return log.apply(state, { type: 'peasant_claimed', regionId, power: claimedBy, total });
 }
 
 // ─── Remove figure from board ─────────────────────────────────────────────────
@@ -623,12 +576,7 @@ function removeFigureFromBoard(
   for (const power of s.activePowers) {
     const follower = s.powers[power]!.followers.find(f => f.id === followerId);
     if (follower) {
-      log.emit({ type: 'figure_removed', regionId, power, followerId });
-      s = updatePower(s, power, {
-        followers: s.powers[power]!.followers.map(f =>
-          f.id === followerId ? { ...f, regionId: null, tipped: false, controlledBy: null, warFrenzyHits: 0 } : f
-        ),
-      });
+      s = log.apply(s, { type: 'figure_removed', regionId, power, followerId });
       break;
     }
   }
@@ -646,8 +594,10 @@ function killFollower(
 ): { state: GameState; log: GameLog } {
   const figure = followersInRegion(state, regionId).find(f => f.id === followerId);
   if (!figure) return { state, log };
-  log.emit({ type: 'harvest_kill', regionId, killedBy, targetPower: figure.power as Power, targetClass: figure.class, followerId });
-  return removeFigureFromBoard(state, regionId, followerId, log);
+  let s = log.apply(state, { type: 'harvest_kill', regionId, killedBy, targetPower: figure.power as Power, targetClass: figure.class, followerId });
+  // figure_removed is emitted for informational purposes; harvest_kill already removed the figure
+  log.emit({ type: 'figure_removed', regionId, power: figure.power as Power, followerId });
+  return { state: s, log };
 }
 
 // ─── Post-all-regions: end-of-battle effects ──────────────────────────────────
@@ -669,9 +619,7 @@ function finalizeBattle(
         const target = figures.sort((a, b) =>
           classRank(a.class) - classRank(b.class)
         )[0]!;
-        const r = removeFigureFromBoard(s, regionId, target.id, log);
-        s = r.state;
-        log.emit({ type: 'world_card_effect', subtype: 'eastern_armistice', regionId, power, followerClass: target.class, followerId: target.id });
+        s = log.apply(s, { type: 'world_card_effect', subtype: 'eastern_armistice', power, regionId, followerClass: target.class, followerId: target.id });
       }
     }
   }
@@ -681,46 +629,23 @@ function finalizeBattle(
 
   for (const power of s.activePowers) {
     const p = s.powers[power]!;
-    let changed = false;
-    const updatedFollowers = p.followers.map(f => {
-      let upd = f;
-      if (f.protected) { upd = { ...upd, protected: false }; changed = true; }
-      // Clear Rapture control at end of battle round
+
+    // Collect protected follower IDs to clear
+    const protectedIds = p.followers.filter(f => f.protected).map(f => f.id);
+    if (protectedIds.length > 0) {
+      s = log.apply(s, { type: 'protected_cleared', followerIds: protectedIds });
+    }
+
+    // Collect controlled followers to release
+    for (const f of s.powers[power]!.followers) {
       if (f.controlledBy === 'lasha' && f.power !== 'lasha' && lashHasRaptureUp) {
         const regionId = f.regionId;
-        const raptureAlive = regionId !== null &&
-          followersInRegion(s, regionId).some(
-            x => x.class === 'incarnation' && (x.controlledBy ?? x.power) === 'lasha'
-          );
-        if (!raptureAlive) {
-          const hasEnthrallment = regionId !== null &&
-            s.regions[regionId]!.chaosCards.some(c => c?.cardId === 'lasha_narcotic_musk' && c.playedBy === 'lasha');
-          if (!hasEnthrallment) {
-            upd = { ...upd, controlledBy: null };
-            changed = true;
-          }
-        } else if (raptureAlive) {
-          const hasEnthrallment = regionId !== null &&
-            s.regions[regionId]!.chaosCards.some(c => c?.cardId === 'lasha_narcotic_musk' && c.playedBy === 'lasha');
-          if (!hasEnthrallment) {
-            upd = { ...upd, controlledBy: null };
-            changed = true;
-          }
+        const hasEnthrallment = regionId !== null &&
+          s.regions[regionId]!.chaosCards.some(c => c?.cardId === 'lasha_narcotic_musk' && c.playedBy === 'lasha');
+        if (!hasEnthrallment) {
+          s = log.apply(s, { type: 'control_released', followerId: f.id, power: f.power as Power });
         }
       }
-      return upd;
-    });
-    if (changed) {
-      // Emit events for cleared flags
-      const clearedProtected = updatedFollowers
-        .filter((f, i) => p.followers[i]!.protected && !f.protected)
-        .map(f => f.id);
-      if (clearedProtected.length > 0) log.emit({ type: 'protected_cleared', followerIds: clearedProtected });
-      const released = updatedFollowers
-        .filter((f, i) => p.followers[i]!.controlledBy !== null && f.controlledBy === null && p.followers[i]!.power !== 'lasha')
-        .map(f => f);
-      for (const f of released) log.emit({ type: 'control_released', followerId: f.id, power: f.power as Power });
-      s = updatePower(s, power, { followers: updatedFollowers });
     }
   }
 
@@ -763,7 +688,7 @@ function regionCardActive(state: GameState, regionId: RegionId, cardId: string):
 
 function drawCardForPower(state: GameState, power: Power, log: GameLog): GameState {
   const p = state.powers[power]!;
-  let { deckIds, discardIds, hand } = p;
+  let { deckIds, discardIds } = p;
 
   if (deckIds.length === 0 && discardIds.length === 0) return state;
 
@@ -771,15 +696,12 @@ function drawCardForPower(state: GameState, power: Power, log: GameLog): GameSta
     const rng = makeBattleRng(state);
     deckIds = shuffle([...discardIds], rng);
     discardIds = [];
+    // Update state with reshuffled deck before drawing
+    state = updatePower(state, power, { deckIds, discardIds });
   }
 
   const drawn = deckIds[0]!;
-  log.emit({ type: 'card_drawn', power, cardId: drawn, source: CARD_BY_ID['xarm_ritual_death']!.name });
-  return updatePower(state, power, {
-    hand: [...hand, drawn],
-    deckIds: deckIds.slice(1),
-    discardIds,
-  });
+  return log.apply(state, { type: 'card_drawn', power, cardId: drawn, source: CARD_BY_ID['xarm_ritual_death']!.name });
 }
 
 // ─── RNG ─────────────────────────────────────────────────────────────────────

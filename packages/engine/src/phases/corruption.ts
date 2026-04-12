@@ -4,7 +4,7 @@ import {
   CORRUPTION_RUIN_THRESHOLD, MAX_RUINATION_CARDS,
 } from '../constants.js';
 import {
-  updatePower, updateRegion, scoreVP, isWorldCardActive, isRuined,
+  isWorldCardActive, isRuined,
   magicSymbolCount, totalCorruption, followersInRegion,
 } from '../helpers.js';
 import { GameLog } from '../gameLog.js';
@@ -133,22 +133,12 @@ function resolveDomination(
 
     if (maxDom > resistance) {
       const conquestValue = calcConquestValue(s, regionId);
-      s = scoreVP(s, winner, conquestValue);
-      s = { ...s, events: [...s.events, { type: 'domination_result' as const, regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue }] };
-      log.emit({ type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
+      s = log.apply(s, { type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
 
       // Gormen Death's Perfume: place 2 corruption tokens on domination
       if (!nullWeave && winner === 'gormen' &&
           regionCardActive(s, regionId, 'gormen_deaths_perfume')) {
-        for (let i = 0; i < 2; i++) {
-          s = updateRegion(s, regionId, {
-            corruptionTokens: {
-              ...s.regions[regionId]!.corruptionTokens,
-              gormen: s.regions[regionId]!.corruptionTokens.gormen + 1,
-            },
-          });
-        }
-        log.emit({ type: 'deaths_perfume', regionId, tokens: 2 });
+        s = log.apply(s, { type: 'deaths_perfume', regionId, tokens: 2 });
       }
     } else {
       log.emit({ type: 'domination_failed', regionId, power: winner, value: maxDom, resistance });
@@ -299,13 +289,7 @@ function resolveCorruption(
       const tokensToPlace = corruptionTokensToPlace(s, regionId, power, nullWeave);
       if (tokensToPlace === 0) continue;
 
-      s = updateRegion(s, regionId, {
-        corruptionTokens: {
-          ...s.regions[regionId]!.corruptionTokens,
-          [power]: s.regions[regionId]!.corruptionTokens[power] + tokensToPlace,
-        },
-      });
-      log.emit({ type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
+      s = log.apply(s, { type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
 
       // Dial advancement counters
       s = checkDialAdvancement(s, regionId, power, tokensToPlace, nullWeave, log);
@@ -317,22 +301,7 @@ function resolveCorruption(
       const gormenFigures = followersInRegion(s, regionId).filter(f => f.power === 'gormen');
       if (gormenFigures.length > 0) {
         const tokensToPlace = Math.floor(gormenFigures.length / 2);
-        // Remove gormen figures from this region
-        s = updatePower(s, 'gormen', {
-          followers: s.powers['gormen']!.followers.map(f =>
-            gormenFigures.some(gf => gf.id === f.id) ? { ...f, regionId: null } : f
-          ),
-        });
-        // Place corruption tokens
-        if (tokensToPlace > 0) {
-          s = updateRegion(s, regionId, {
-            corruptionTokens: {
-              ...s.regions[regionId]!.corruptionTokens,
-              gormen: s.regions[regionId]!.corruptionTokens.gormen + tokensToPlace,
-            },
-          });
-        }
-        log.emit({ type: 'vile_consumption', regionId, figuresRemoved: gormenFigures.length, tokensPlaced: tokensToPlace });
+        s = log.apply(s, { type: 'vile_consumption', regionId, figuresRemoved: gormenFigures.length, tokensPlaced: tokensToPlace });
       }
     }
 
@@ -424,8 +393,7 @@ function checkDialAdvancement(
   }
 
   if (earnedCounter) {
-    s = updatePower(s, power, { dialCounters: s.powers[power]!.dialCounters + 1 });
-    log.emit({ type: 'dial_counter', regionId, power });
+    s = log.apply(s, { type: 'dial_counter', regionId, power });
   }
 
   return s;
@@ -448,21 +416,12 @@ function applyRuination(
   }
 
   const card = RUINATION_CARDS[nextCardIndex - 1]!;
-  s = { ...s, ruinationCardsUsed: nextCardIndex };
-  s = updateRegion(s, regionId, { ruinationCardIndex: nextCardIndex });
-
-  // Score ruiners VP
-  for (const power of placedBy) {
-    s = scoreVP(s, power, card.ruinersScore);
-  }
-  s = { ...s, events: [...s.events, { type: 'ruination' as const, regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore }] };
-  log.emit({ type: 'ruination', regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore });
+  s = log.apply(s, { type: 'ruination', regionId, cardIndex: nextCardIndex, ruiners: [...placedBy], ruinerVP: card.ruinersScore });
 
   // Gormen Provender of Ruin upgrade: +3 VP on any ruination
   for (const power of s.activePowers) {
     if (s.powers[power]!.upgradesInPlay.includes('gormen_provender_of_rot')) {
-      s = scoreVP(s, power, 3);
-      log.emit({ type: 'provender_score', power, vp: 3 });
+      s = log.apply(s, { type: 'provender_score', power, vp: 3 });
     }
   }
 

@@ -9,7 +9,6 @@
  */
 
 import type { GameState, GameEvent, Power, RegionId } from './types.js';
-import { getBasePP } from './helpers.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
@@ -162,8 +161,15 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
         discardIds: [...fd.discardIds, ...event.cardIds],
       });
     }
-    case 'upgrade_taken':
-      return applyUpgrade(state, event.power, event.upgradeCardId);
+    case 'upgrade_taken': {
+      const p = state.powers[event.power]!;
+      return patchPower(state, event.power, {
+        upgradesInPlay: [...p.upgradesInPlay, event.upgradeCardId],
+        availableUpgradeIds: p.availableUpgradeIds.filter(id => id !== event.upgradeCardId),
+        powerPoints: event.powerPoints,
+        basePowerPoints: event.basePowerPoints,
+      });
+    }
     case 'dial_place_token':
       return addToken(state, event.regionId, event.tokenType);
     case 'dial_remove_corruption':
@@ -225,8 +231,21 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     case 'battle_region_start':
       return state;
     case 'battle_roll':
-    case 'war_frenzy_partial':
       return state;
+    case 'war_frenzy_partial': {
+      // Accumulate partial hits on the figure
+      for (const power of state.activePowers) {
+        const p = state.powers[power]!;
+        if (p.followers.some(f => f.id === event.followerId)) {
+          return patchPower(state, power, {
+            followers: p.followers.map(f =>
+              f.id === event.followerId ? { ...f, warFrenzyHits: f.warFrenzyHits + event.hits } : f
+            ),
+          });
+        }
+      }
+      return state;
+    }
   }
 }
 
@@ -366,7 +385,7 @@ function killFigure(state: GameState, _regionId: RegionId, followerId: string): 
     if (fig) {
       return patchPower(state, power, {
         followers: state.powers[power]!.followers.map(f =>
-          f.id === followerId ? { ...f, regionId: null, controlledBy: null, tipped: false } : f
+          f.id === followerId ? { ...f, regionId: null, controlledBy: null, tipped: false, warFrenzyHits: 0 } : f
         ),
       });
     }
@@ -429,19 +448,6 @@ function drawCard(state: GameState, power: Power, cardId: string): GameState {
   });
 }
 
-function applyUpgrade(state: GameState, power: Power, upgradeCardId: string): GameState {
-  const p = state.powers[power]!;
-  let s = patchPower(state, power, {
-    upgradesInPlay: [...p.upgradesInPlay, upgradeCardId],
-    availableUpgradeIds: p.availableUpgradeIds.filter(id => id !== upgradeCardId),
-  });
-  // Recalculate PP if the upgrade changed basePP
-  const newBase = getBasePP(s, power);
-  if (newBase !== s.powers[power]!.basePowerPoints) {
-    s = patchPower(s, power, { basePowerPoints: newBase, powerPoints: newBase });
-  }
-  return s;
-}
 
 function applyApprenticeChoice(
   state: GameState,
@@ -462,13 +468,10 @@ function applyCardEffect(
     case 'plaguefather_corruption':
       return addCorruption(state, event.regionId, 'gormen', event.tokens);
     case 'fractals_summon': {
-      // Free warrior summon — find first reserve warrior deterministically
       const tp = state.powers['tenzen'];
       if (!tp) return state;
-      const reserve = tp.followers.find(f => f.class === 'warrior' && f.regionId === null);
-      if (!reserve) return state;
       return patchPower(state, 'tenzen', {
-        followers: tp.followers.map(f => f.id === reserve.id ? { ...f, regionId: event.regionId } : f),
+        followers: tp.followers.map(f => f.id === event.followerId ? { ...f, regionId: event.regionId } : f),
       });
     }
     case 'call_to_war':
@@ -507,18 +510,13 @@ function applyCardEffect(
     case 'decay':
       return removeCorruption(state, event.regionId, event.power, 1);
     case 'siphon_power': {
-      // Derive victims: opponents with cultists in the region and PP > 0
       let s2 = state;
-      for (const p of s2.activePowers) {
-        if (p === 'tenzen') continue;
-        const hasCultist = s2.powers[p]!.followers.some(f =>
-          f.regionId === event.regionId && f.class === 'cultist' && (f.controlledBy ?? f.power) === p
-        );
-        if (hasCultist && s2.powers[p]!.powerPoints > 0) {
-          s2 = patchPower(s2, p, { powerPoints: s2.powers[p]!.powerPoints - 1 });
-        }
+      for (const p of event.stolenFrom) {
+        s2 = patchPower(s2, p, { powerPoints: s2.powers[p]!.powerPoints - 1 });
       }
-      s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
+      if (event.stolenFrom.length > 0) {
+        s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
+      }
       return s2;
     }
     case 'depraved_infiltration':

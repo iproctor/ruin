@@ -81,19 +81,8 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       const toDiscard = action.cardIds.filter(id => p.hand.includes(id)).slice(0, required);
       // Return to the power that played Meddling of Rats (stored in context)
       const returnTo = (ctx['returnTo'] as Power) ?? action.power as Power;
-      s = {
-        ...s,
-        powers: {
-          ...s.powers,
-          [action.power]: {
-            ...p,
-            hand: p.hand.filter(id => !toDiscard.includes(id)),
-            discardIds: [...p.discardIds, ...toDiscard],
-          },
-        },
-      };
       const log = new GameLog();
-      log.emit({ type: 'forced_discard', power: action.power as Power, count: toDiscard.length, cardIds: toDiscard });
+      s = log.apply(s, { type: 'forced_discard', power: action.power as Power, count: toDiscard.length, cardIds: toDiscard });
       s = advanceSummoningTurn(s, returnTo, log);
       result = { state: s, log };
       break;
@@ -104,26 +93,14 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       if (!p.availableUpgradeIds.includes(action.upgradeCardId)) {
         throw new Error(`Upgrade ${action.upgradeCardId} not available for ${action.power}`);
       }
-      s = {
-        ...s,
-        pendingAction: null,
-        pendingDialRewards: popDialReward(s.pendingDialRewards),
-        powers: {
-          ...s.powers,
-          [action.power]: {
-            ...p,
-            upgradesInPlay: [...p.upgradesInPlay, action.upgradeCardId],
-            availableUpgradeIds: p.availableUpgradeIds.filter(id => id !== action.upgradeCardId),
-          },
-        },
-      };
-      const newBase = getBasePP(s, action.power);
-      if (newBase !== p.basePowerPoints) {
-        s = { ...s, powers: { ...s.powers, [action.power]: { ...s.powers[action.power]!, basePowerPoints: newBase, powerPoints: newBase } } };
-      }
+      s = { ...s, pendingAction: null, pendingDialRewards: popDialReward(s.pendingDialRewards) };
+      // Compute new PP values before emitting the fat event
+      // Temporarily apply the upgrade to compute basePP
+      const tempUpgrades = [...p.upgradesInPlay, action.upgradeCardId];
+      const tempState = { ...s, powers: { ...s.powers, [action.power]: { ...p, upgradesInPlay: tempUpgrades } } };
+      const newBase = getBasePP(tempState, action.power);
       const log = new GameLog();
-      const ps = s.powers[action.power]!;
-      log.emit({ type: 'upgrade_taken', power: action.power, upgradeCardId: action.upgradeCardId });
+      s = log.apply(s, { type: 'upgrade_taken', power: action.power, upgradeCardId: action.upgradeCardId, powerPoints: newBase, basePowerPoints: newBase });
       result = { state: s, log };
       break;
     }
@@ -137,19 +114,12 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       s = {
         ...s,
         pendingAction: null,
-        regions: {
-          ...s.regions,
-          [action.regionId]: {
-            ...region,
-            tokens: [...region.tokens, reward.tokenType],
-          },
-        },
         pendingDialRewards: reward.remaining <= 1
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const log = new GameLog();
-      log.emit({ type: 'dial_place_token', power: action.power as Power, regionId: action.regionId, tokenType: reward.tokenType });
+      s = log.apply(s, { type: 'dial_place_token', power: action.power as Power, regionId: action.regionId, tokenType: reward.tokenType });
       result = { state: s, log };
       break;
     }
@@ -165,19 +135,12 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       s = {
         ...s,
         pendingAction: null,
-        regions: {
-          ...s.regions,
-          [action.regionId]: {
-            ...region,
-            corruptionTokens: { ...region.corruptionTokens, [target]: curr - 1 },
-          },
-        },
         pendingDialRewards: reward.remaining <= 1
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const log = new GameLog();
-      log.emit({ type: 'dial_remove_corruption', power: action.power as Power, regionId: action.regionId, targetPower: target });
+      s = log.apply(s, { type: 'dial_remove_corruption', power: action.power as Power, regionId: action.regionId, targetPower: target });
       result = { state: s, log };
       break;
     }
@@ -189,21 +152,15 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       const region = s.regions[action.regionId]!;
       const idx = region.tokens.lastIndexOf(action.tokenType);
       if (idx === -1 || action.tokenType === 'chaos_stone') throw new Error(`No removable ${action.tokenType} in ${action.regionId}`);
-      const tokens = [...region.tokens];
-      tokens.splice(idx, 1);
       s = {
         ...s,
         pendingAction: null,
-        regions: {
-          ...s.regions,
-          [action.regionId]: { ...region, tokens },
-        },
         pendingDialRewards: reward.remaining <= 1
           ? popDialReward(queue)
           : [{ ...reward, remaining: reward.remaining - 1 }, ...queue.slice(1)],
       };
       const log = new GameLog();
-      log.emit({ type: 'dial_remove_world_token', power: action.power as Power, regionId: action.regionId, tokenType: action.tokenType });
+      s = log.apply(s, { type: 'dial_remove_world_token', power: action.power as Power, regionId: action.regionId, tokenType: action.tokenType });
       result = { state: s, log };
       break;
     }
@@ -216,21 +173,9 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
         if (figure) break;
       }
       if (!figure) throw new Error(`Figure ${action.followerId} not in ${action.regionId}`);
-      s = {
-        ...s,
-        pendingAction: null,
-        powers: {
-          ...s.powers,
-          [figure.power]: {
-            ...s.powers[figure.power]!,
-            followers: s.powers[figure.power]!.followers.map(f =>
-              f.id === action.followerId ? { ...f, regionId: null, controlledBy: null } : f
-            ),
-          },
-        },
-      };
+      s = { ...s, pendingAction: null };
       const log = new GameLog();
-      log.emit({ type: 'hero_forced_removal', power: action.power as Power, regionId: action.regionId, followerClass: figure.class, followerId: action.followerId });
+      s = log.apply(s, { type: 'hero_forced_removal', power: action.power as Power, regionId: action.regionId, followerClass: figure.class, followerId: action.followerId });
       result = { state: s, log };
       break;
     }
