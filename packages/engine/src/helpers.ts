@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerInstance, RegionState } from './types.js';
-import { POWER_ORDER, ADJACENCY, CARD_BY_ID } from './constants.js';
+import { POWER_ORDER, ADJACENCY, CARD_BY_ID, BASE_POWER_POINTS, UPGRADES } from './constants.js';
 
 // ─── Power helpers ────────────────────────────────────────────────────────────
 
@@ -183,6 +183,26 @@ export function removeTokenFromRegion(state: GameState, regionId: RegionId, toke
   const newTokens = [...region.tokens];
   newTokens.splice(idx, 1);
   return updateRegion(state, regionId, { tokens: newTokens });
+}
+
+// ─── Power point helpers ────────────────────────────────────────────────────
+
+export function getBasePP(state: GameState, power: Power): number {
+  let base = BASE_POWER_POINTS[power]!;
+  for (const upId of state.powers[power]!.upgradesInPlay) {
+    const up = UPGRADES.find(u => u.id === upId);
+    if (!up?.powerBonus?.extraPowerPoints) continue;
+    if (power === 'lasha' && (upId === 'lasha_power_of_pain' || upId === 'lasha_power_of_pleasure')) {
+      const hasBoth = state.powers['lasha']!.upgradesInPlay.includes('lasha_power_of_pain')
+        && state.powers['lasha']!.upgradesInPlay.includes('lasha_power_of_pleasure');
+      if (hasBoth) {
+        if (upId === 'lasha_power_of_pain') base += 3;
+        continue;
+      }
+    }
+    base += up.powerBonus.extraPowerPoints;
+  }
+  return base;
 }
 
 export function addLog(entry: string, log: string[]): string[] {

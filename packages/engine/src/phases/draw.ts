@@ -1,7 +1,7 @@
 import type { GameEvent, GameState, Power, TenzenDiscardAction } from '../types.js';
 import { BASE_DRAW_AMOUNT, BASE_POWER_POINTS, UPGRADES, TENZEN_DRAW_TO } from '../constants.js';
 import { GameLog } from '../gameLog.js';
-import { updatePower } from '../helpers.js';
+import { updatePower, getBasePP } from '../helpers.js';
 import { shuffle, makeRng } from '../dice.js';
 
 /** Begin the draw phase. Sets pendingAction for Tenzen if needed, else resolves all draws. */
@@ -169,26 +169,8 @@ function getExtraDraw(state: GameState, power: Power): number {
   return extra;
 }
 
-export function getBasePP(state: GameState, power: Power): number {
-  let base = BASE_POWER_POINTS[power]!;
-  for (const upId of state.powers[power]!.upgradesInPlay) {
-    const up = UPGRADES.find(u => u.id === upId);
-    if (!up?.powerBonus?.extraPowerPoints) continue;
-    // Lasha combined Power of Pain + Power of Pleasure
-    if (power === 'lasha' && (upId === 'lasha_power_of_pain' || upId === 'lasha_power_of_pleasure')) {
-      const hasBoth = state.powers['lasha']!.upgradesInPlay.includes('lasha_power_of_pain')
-        && state.powers['lasha']!.upgradesInPlay.includes('lasha_power_of_pleasure');
-      if (hasBoth) {
-        // Combined = +3 total, not +1+1; handle once
-        if (upId === 'lasha_power_of_pain') base += 3; // add 3 once
-        // skip second card
-        continue;
-      }
-    }
-    base += up.powerBonus.extraPowerPoints;
-  }
-  return base;
-}
+// getBasePP is in helpers.ts — re-export for backward compat
+export { getBasePP } from '../helpers.js';
 
 function makeLocalRng(state: GameState) {
   return makeRng(state.rngSeed ^ (state.actionCount * 2654435761));

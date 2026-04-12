@@ -1,4 +1,5 @@
-import type { GameEvent, Power, RegionId, FollowerClass } from './types.js';
+import type { GameState, GameEvent, Power, RegionId, FollowerClass } from './types.js';
+import { applyEvent } from './applyEvent.js';
 import {
   CARD_BY_ID,
   FOLLOWERS,
@@ -283,6 +284,12 @@ export class GameLog {
     this.events.push(event);
     const text = renderText(event);
     if (text !== null) this.entries.push(text);
+  }
+
+  /** Emit an event AND apply it to state. Single codepath for state changes. */
+  apply(state: GameState, event: GameEvent): GameState {
+    this.emit(event);
+    return applyEvent(state, event);
   }
 
   /** Legacy: log a plain text message without a structured event. */

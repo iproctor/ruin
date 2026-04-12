@@ -9,7 +9,7 @@
  */
 
 import type { GameState, GameEvent, Power, RegionId } from './types.js';
-import { getBasePP } from './phases/draw.js';
+import { getBasePP } from './helpers.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
