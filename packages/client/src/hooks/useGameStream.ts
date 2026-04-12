@@ -8,8 +8,7 @@ export type { ChatMessage };
 
 // ── Animation durations per event type (ms) ──────────────────────────────────
 
-// TODO: remove DEBUG_MULTIPLIER after testing
-const DEBUG_MULTIPLIER = 5;
+const DEBUG_MULTIPLIER = 1;
 
 function getEventDuration(event: GameEvent): number {
   const base = (() => {

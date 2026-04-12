@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerClass, TokenType } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, getRegionResistance } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -81,7 +81,7 @@ const GLOBAL_DIMS = 4;
 // round/10, ruination_cards_used/5, world_slot1_filled, world_slot2_filled
 
 // Per-power: basic stats + upgrade one-hot
-const PER_POWER_BASIC = 14;
+const PER_POWER_BASIC = 18; // 14 base + 3 affordable summons + 1 affordable cards
 // vp, dialPos, dialCounters, pp, basePP, hand, deck, discard,
 // figuresOnBoard, figuresReserve, cultistCount, warriorCount, incarnationCount, passedSummoning
 
@@ -151,8 +151,10 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     out[i++] = ps.victoryPoints / 60;
     out[i++] = ps.dialPosition / DIAL_MAX[p];
     out[i++] = Math.min(ps.dialCounters / 3, 1);
-    out[i++] = Math.min(ps.powerPoints / 10, 1);
-    out[i++] = Math.min(ps.basePowerPoints / 10, 1);
+    // PP as fraction of base (1.0 = full budget, 0 = spent). A +1 PP change
+    // on a base-6 power is a 0.17 shift — much more visible than the old /10.
+    out[i++] = ps.basePowerPoints > 0 ? ps.powerPoints / ps.basePowerPoints : 0;
+    out[i++] = ps.basePowerPoints / 10;
     out[i++] = Math.min(ps.hand.length / 8, 1);
     out[i++] = Math.min(ps.deckIds.length / 20, 1);
     out[i++] = Math.min(ps.discardIds.length / 20, 1);
@@ -175,6 +177,24 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     out[i++] = warrior / 6;
     out[i++] = incarnation / 2;
     out[i++] = ps.passedSummoning ? 1 : 0;
+
+    // Affordable summons: how many figures this power could still place.
+    // This is the strategic threat number — "xarm can still drop 2 warriors."
+    const reserveCultists = ps.followers.filter(f => f.class === 'cultist' && f.regionId === null).length;
+    const reserveWarriors = ps.followers.filter(f => f.class === 'warrior' && f.regionId === null).length;
+    const reserveIncarnation = ps.followers.filter(f => f.class === 'incarnation' && f.regionId === null).length;
+    const cultistCost = FOLLOWERS[p]!.cultist.base.cost;
+    const warriorCost = FOLLOWERS[p]!.warrior.base.cost;
+    const incarnationCost = FOLLOWERS[p]!.incarnation.base.cost;
+    out[i++] = Math.min(ps.powerPoints / cultistCost, reserveCultists) / 8;   // affordable cultists
+    out[i++] = Math.min(Math.floor(ps.powerPoints / warriorCost), reserveWarriors) / 6; // affordable warriors
+    out[i++] = (ps.powerPoints >= incarnationCost && reserveIncarnation > 0) ? 1 : 0;   // can afford incarnation
+
+    // PP threshold flags: can this power afford 1/2/3-cost actions?
+    // Human-readable: "xarm has 4 PP so can play a 3-cost card or summon an incarnation."
+    out[i++] = ps.powerPoints >= 1 ? 1 : 0;
+    out[i++] = ps.powerPoints >= 2 ? 1 : 0;
+    out[i++] = ps.powerPoints >= 3 ? 1 : 0;
 
     // Upgrade one-hot
     const upStart = i;

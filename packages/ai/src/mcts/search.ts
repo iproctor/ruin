@@ -119,6 +119,7 @@ export function runMcts(
   if (legalRootRaw.length === 0) {
     throw new Error(`runMcts: no legal actions for ${forPower}`);
   }
+
   // Strip out card plays whose preconditions can't fire (Hollow Pact in empty
   // region, Ritual Death without own figures, etc). Always keeps at least pass
   // and any non-card actions.

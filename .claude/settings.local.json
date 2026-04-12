@@ -69,7 +69,9 @@
       "Bash(npx --no-install vitest run packages/engine)",
       "Bash(node_modules/.bin/vitest run:*)",
       "Bash(npx --no-install vitest run)",
-      "Bash(ls /Users/iainap/code/chaos/packages/client/src/*.css)"
+      "Bash(ls /Users/iainap/code/chaos/packages/client/src/*.css)",
+      "Bash(npx tsx:*)",
+      "Bash(cat /Users/iainap/code/chaos/packages/ai/data/inbox/*.jsonl /Users/iainap/code/chaos/packages/ai/data/archive/*.jsonl)"
     ]
   }
 }
