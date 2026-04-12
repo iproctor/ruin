@@ -39,17 +39,14 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
 
   if (action.cardId !== null) {
     const tenzen = s.powers['tenzen']!;
-    if (!tenzen.hand.includes(action.cardId)) {
-      throw new Error(`Card ${action.cardId} not in Tenzen's hand`);
-    }
+    const idx = tenzen.hand.indexOf(action.cardId);
+    if (idx === -1) throw new Error(`Card ${action.cardId} not in Tenzen's hand`);
     s = updatePower(s, 'tenzen', {
-      hand: tenzen.hand.filter(id => id !== action.cardId),
+      hand: [...tenzen.hand.slice(0, idx), ...tenzen.hand.slice(idx + 1)],
       discardIds: [...tenzen.discardIds, action.cardId],
     });
-    log.emit({ type: 'tenzen_discard', cardId: action.cardId });
-  } else {
-    log.emit({ type: 'tenzen_discard', cardId: null });
   }
+  log.emit({ type: 'tenzen_discard', cardId: action.cardId });
 
   return resolveAllDraws(s, log);
 }
@@ -61,15 +58,18 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
 
   // Draw cards, then reset PP. Events include the new PP values so the
   // client can sync without a full state broadcast.
-  const drawResults: Array<{ power: Power; drawn: number; handSize: number; drawnCardIds: string[] }> = [];
+  const drawResults: Array<{ power: Power; drawn: number; handSize: number; drawnCardIds: string[]; deckIds: string[]; discardIds: string[] }> = [];
   for (const power of s.activePowers) {
     const result = drawForPower(s, power);
     s = result.state;
+    const ps = s.powers[power]!;
     drawResults.push({
       power,
       drawn: (result.event as any).drawn,
       handSize: (result.event as any).handSize,
       drawnCardIds: (result.event as any).drawnCardIds,
+      deckIds: ps.deckIds,
+      discardIds: ps.discardIds,
     });
   }
 
@@ -80,9 +80,9 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   }
 
   // Emit draw events with the reset PP values
-  for (const { power, drawn, handSize, drawnCardIds } of drawResults) {
+  for (const { power, drawn, handSize, drawnCardIds, deckIds, discardIds } of drawResults) {
     const ps = s.powers[power]!;
-    log.emit({ type: 'power_draw', power, drawn, handSize, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints, drawnCardIds });
+    log.emit({ type: 'power_draw', power, drawn, handSize, powerPoints: ps.powerPoints, basePowerPoints: ps.basePowerPoints, drawnCardIds, deckIds, discardIds });
   }
 
   const firstSummoner = s.summoningOrder[0]!;
@@ -144,7 +144,8 @@ function drawForPower(state: GameState, power: Power): { state: GameState; event
   hand = [...hand, ...drawn];
   s = updatePower(s, power, { hand, deckIds, discardIds });
   // PP fields are placeholders — filled in by resolveAllDraws after the PP reset
-  return { state: s, event: { type: 'power_draw' as const, power, drawn: drawn.length, handSize: hand.length, powerPoints: 0, basePowerPoints: 0, drawnCardIds: drawn } };
+  // PP and deck/discard are placeholders — filled in by resolveAllDraws after the PP reset
+  return { state: s, event: { type: 'power_draw' as const, power, drawn: drawn.length, handSize: hand.length, powerPoints: 0, basePowerPoints: 0, drawnCardIds: drawn, deckIds: [], discardIds: [] } };
 }
 
 function getTenzenDrawTarget(state: GameState): number {

@@ -213,7 +213,7 @@ export type GameEvent =
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
   | { type: 'tenzen_discard'; cardId: string | null }
-  | { type: 'power_draw'; power: Power; drawn: number; handSize: number; powerPoints: number; basePowerPoints: number; drawnCardIds: string[] }
+  | { type: 'power_draw'; power: Power; drawn: number; handSize: number; powerPoints: number; basePowerPoints: number; drawnCardIds: string[]; deckIds: string[]; discardIds: string[] }
 
 
   // ── Summoning ────────────────────────────────────────────────────────────────

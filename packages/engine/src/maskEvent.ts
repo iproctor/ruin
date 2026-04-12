@@ -36,10 +36,10 @@ export function maskEvent(event: GameEvent, viewerPower: Power | null): GameEven
       }
       return event;
 
-    // Power draw: mask drawn card IDs for non-owner
+    // Power draw: mask drawn card IDs and deck/discard for non-owner
     case 'power_draw':
       if (!isOwn(event.power)) {
-        return { ...event, drawnCardIds: event.drawnCardIds.map(() => '?') };
+        return { ...event, drawnCardIds: event.drawnCardIds.map(() => '?'), deckIds: [], discardIds: [] };
       }
       return event;
 

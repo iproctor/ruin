@@ -187,16 +187,23 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       }
       return state;
     case 'power_draw': {
-      // Reset PP and add drawn cards to hand.
+      // Reset PP, add drawn cards, and sync deck/discard state.
       const dp = state.powers[event.power];
       if (!dp) return state;
-      // drawnCardIds carries actual IDs (masked to '?' for opponents via maskEvent)
       const newHand = [...dp.hand, ...event.drawnCardIds];
       return {
         ...state,
         powers: {
           ...state.powers,
-          [event.power]: { ...dp, hand: newHand, powerPoints: event.powerPoints, basePowerPoints: event.basePowerPoints, passedSummoning: false },
+          [event.power]: {
+            ...dp,
+            hand: newHand,
+            powerPoints: event.powerPoints,
+            basePowerPoints: event.basePowerPoints,
+            passedSummoning: false,
+            deckIds: event.deckIds,
+            discardIds: event.discardIds,
+          },
         },
       };
     }
@@ -405,15 +412,16 @@ function setControlledBy(state: GameState, followerId: string, controller: Power
 
 function drawCard(state: GameState, power: Power, cardId: string): GameState {
   const p = state.powers[power]!;
+  // Add to hand. Remove from deck if present; if deck is empty, clear discard
+  // (the engine reshuffled it into deck, then drew — we just need to keep
+  // deck/discard roughly in sync for the next power_draw to correct fully).
   let { deckIds, discardIds } = p;
-  if (deckIds.length === 0) {
-    deckIds = [...discardIds].reverse();
+  if (deckIds.length === 0 && discardIds.length > 0) {
+    deckIds = discardIds;
     discardIds = [];
   }
-  if (deckIds.length === 0) return state;
-  // Remove from deck, add to hand
   const idx = deckIds.indexOf(cardId);
-  const newDeck = idx >= 0 ? [...deckIds.slice(0, idx), ...deckIds.slice(idx + 1)] : deckIds.slice(1);
+  const newDeck = idx >= 0 ? [...deckIds.slice(0, idx), ...deckIds.slice(idx + 1)] : deckIds;
   return patchPower(state, power, {
     hand: [...p.hand, cardId],
     deckIds: newDeck,

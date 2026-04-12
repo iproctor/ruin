@@ -68,8 +68,16 @@ function statesEqual(a: GameState, b: GameState): string | null {
         return `${power}.follower[${fa[i]!.id}].protected: ${fa[i]!.protected} vs ${fb[i]!.protected}`;
     }
 
-    // Hand contents are hidden info — draws aren't fully event-sourced
-    // (power_draw doesn't carry card IDs for opponents). Skip hand comparison.
+    // Compare hand contents (sorted — order may differ)
+    const ha = [...pa.hand].sort().join(',');
+    const hb = [...pb.hand].sort().join(',');
+    if (ha !== hb)
+      return `${power}.hand: [${ha}] vs [${hb}]`;
+    // Compare discard piles (sorted)
+    const da = [...pa.discardIds].sort().join(',');
+    const db = [...pb.discardIds].sort().join(',');
+    if (da !== db)
+      return `${power}.discardIds: [${da}] vs [${db}]`;
   }
 
   for (const rid of Object.keys(a.regions)) {
