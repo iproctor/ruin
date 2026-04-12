@@ -65,7 +65,6 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       availableUpgradeIds: UPGRADES.filter(u => u.power === power).map(u => u.id),
       claimedPeasants: 0,
       passedSummoning: false,
-      pendingForcedDiscards: 0,
       followers: makeFollowers(power),
       lastSummonTurnAt: 0,
     };

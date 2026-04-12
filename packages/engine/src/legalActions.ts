@@ -43,7 +43,7 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
 
     case 'forced_discard': {
       const ps = state.powers[power]!;
-      const required = Math.min(ps.pendingForcedDiscards, ps.hand.length);
+      const required = Math.min((state.pendingAction?.context['count'] as number) ?? 2, ps.hand.length);
       const hand = ps.hand.filter(c => c !== '?');
       // Return one canonical action per card as a selection hint; client enforces count
       return hand.map(cardId => ({

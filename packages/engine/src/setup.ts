@@ -95,7 +95,6 @@ export function createInitialState(config: GameConfig): GameState {
       availableUpgradeIds,
       claimedPeasants: 0,
       passedSummoning: false,
-      pendingForcedDiscards: 0,
       followers,
       lastSummonTurnAt: 0,
     };

@@ -51,8 +51,6 @@ function statesEqual(a: GameState, b: GameState): string | null {
       return `${power}.dialPosition: ${pa.dialPosition} vs ${pb.dialPosition}`;
     if (pa.passedSummoning !== pb.passedSummoning)
       return `${power}.passedSummoning: ${pa.passedSummoning} vs ${pb.passedSummoning}`;
-    if (pa.pendingForcedDiscards !== pb.pendingForcedDiscards)
-      return `${power}.pendingForcedDiscards: ${pa.pendingForcedDiscards} vs ${pb.pendingForcedDiscards}`;
 
     const sortF = (f: typeof pa.followers) => [...f].sort((a, b) => a.id.localeCompare(b.id));
     const fa = sortF(pa.followers);

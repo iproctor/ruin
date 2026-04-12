@@ -339,8 +339,9 @@ describe('Tenzen Meddling of Rats (opponent discards 2 cards)', () => {
       kind: 'card_on_play_choice', power: 'tenzen', cardId: 'tenzen_the_meddling_of_rats',
       regionId: 'norrsund', choices: { targetPower: 'xarm' },
     });
-    // Meddling of Rats queues a forced discard on xarm's next turn (not immediate)
-    expect(state.powers.xarm!.pendingForcedDiscards).toBe(2);
+    // Meddling of Rats now prompts immediate discard
+    expect(state.pendingAction?.waitingFor).toBe('xarm');
+    expect(state.pendingAction?.actionKind).toBe('forced_discard');
   });
 });
 

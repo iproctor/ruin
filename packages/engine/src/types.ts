@@ -85,7 +85,6 @@ export interface PowerState {
   availableUpgradeIds: string[]; // upgrade cards not yet played
   claimedPeasants: number;       // collected via battle (for Peasant Harvest)
   passedSummoning: boolean;
-  pendingForcedDiscards: number; // cards this power must discard at start of their next summoning turn
   followers: FollowerInstance[]; // all followers (on board + reserve)
   lastSummonTurnAt: number;     // actionCount at start of this power's most recent summoning turn
 }
@@ -382,7 +381,7 @@ export interface CardOnPlayChoiceAction {
 export interface ForcedDiscardAction {
   kind: 'forced_discard';
   power: Power;
-  cardIds: string[];  // cards chosen to discard (length must equal min(pendingForcedDiscards, hand.length))
+  cardIds: string[];  // cards chosen to discard
 }
 
 export interface BattleHitAssignmentAction {

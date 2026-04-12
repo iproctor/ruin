@@ -73,7 +73,9 @@
       "Bash(npx tsx:*)",
       "Bash(cat /Users/iainap/code/chaos/packages/ai/data/inbox/*.jsonl /Users/iainap/code/chaos/packages/ai/data/archive/*.jsonl)",
       "Bash(pnpm exec:*)",
-      "Bash(pnpm --filter engine test)"
+      "Bash(pnpm --filter engine test)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)"
     ]
   }
 }
