@@ -99,6 +99,8 @@ export interface GameSummary {
   createdAt: string;
   updatedAt: string;
   powers: Array<{ power: string; playerType: string; userId: string | null }>;
+  name: string | null;
+  status: string;
 }
 
 export async function listGames(): Promise<GameSummary[]> {
@@ -128,4 +130,76 @@ export async function sendChat(gameId: string, message: string): Promise<void> {
     method: 'POST',
     body: JSON.stringify({ message }),
   });
+}
+
+// ── Lobby ──────────────────────────────────────────────────────────────────
+
+export interface LobbyPlayer {
+  userId: string;
+  username: string;
+  power: string | null;
+  isCreator: boolean;
+}
+
+export interface LobbyInvitation {
+  id: string;
+  email: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface LobbyState {
+  game: { id: string; name: string | null; isPublic: boolean; status: string; createdBy: string };
+  players: LobbyPlayer[];
+  invitations: LobbyInvitation[];
+}
+
+export async function createMultiplayerGame(name: string, isPublic?: boolean): Promise<{ gameId: string }> {
+  return request('/games', {
+    method: 'POST',
+    body: JSON.stringify({ mode: 'multiplayer', name, isPublic }),
+  });
+}
+
+export async function getLobby(gameId: string): Promise<LobbyState> {
+  return request(`/games/${gameId}/lobby`);
+}
+
+export async function invitePlayer(gameId: string, email: string): Promise<void> {
+  await request(`/games/${gameId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function joinGame(gameId: string): Promise<void> {
+  await request(`/games/${gameId}/join`, { method: 'POST' });
+}
+
+export async function leaveGame(gameId: string): Promise<void> {
+  await request(`/games/${gameId}/leave`, { method: 'POST' });
+}
+
+export async function kickPlayer(gameId: string, userId: string): Promise<void> {
+  await request(`/games/${gameId}/kick`, {
+    method: 'POST',
+    body: JSON.stringify({ userId }),
+  });
+}
+
+export interface PowerAssignment {
+  power: string;
+  type: 'human' | 'ai' | 'none';
+  userId?: string;
+}
+
+export async function startGame(gameId: string, powerConfig: PowerAssignment[]): Promise<void> {
+  await request(`/games/${gameId}/start`, {
+    method: 'POST',
+    body: JSON.stringify({ powerConfig }),
+  });
+}
+
+export async function revokeInvitation(gameId: string, invitationId: string): Promise<void> {
+  await request(`/games/${gameId}/invitations/${invitationId}`, { method: 'DELETE' });
 }

@@ -7,6 +7,7 @@ import JoinPage from './pages/JoinPage.js';
 import GameListPage from './pages/GameListPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
+import LobbyPage from './pages/LobbyPage.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -38,6 +39,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <NewGamePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/games/:id/lobby"
+        element={
+          <ProtectedRoute>
+            <LobbyPage />
           </ProtectedRoute>
         }
       />

@@ -24,7 +24,7 @@ export function applyCardOnPlayChoice(
       const followerIds = (choices['followerIds'] as string[] | undefined) ?? [];
       for (const fId of followerIds.slice(0, 2)) {
         const figure = findFigureAnywhere(s, fId);
-        if (!figure || figure.power !== power) continue;
+        if (!figure || figure.power !== power || (figure.controlledBy && figure.controlledBy !== power)) continue;
         const fromRegion = figure.regionId;
         if (fromRegion === null || fromRegion === regionId) continue;
 

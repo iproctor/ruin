@@ -15,7 +15,10 @@ export type StreamEvent =
   | { type: 'sync';    state: GameState }
   | { type: 'events';  events: GameEvent[]; seq?: number }
   | { type: 'chat';    message: ChatMessage }
-  | { type: 'error';   message: string };
+  | { type: 'error';   message: string }
+  | { type: 'lobby_state'; lobby: unknown; chat: ChatMessage[] }
+  | { type: 'lobby_update'; players: unknown[]; invitations: unknown[] }
+  | { type: 'game_started' };
 
 export function connectGameStream(
   gameId: string,

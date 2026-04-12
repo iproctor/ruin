@@ -77,6 +77,26 @@ export async function ensureSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_game_events_game_id_seq ON game_events(game_id, seq);
     `);
 
+    // Lobby system migration
+    await client.query(`
+      ALTER TABLE games ADD COLUMN IF NOT EXISTS name TEXT;
+      ALTER TABLE games ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+      ALTER TABLE games ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false;
+
+      UPDATE games SET status = 'complete' WHERE is_complete = true AND status = 'active';
+
+      ALTER TABLE invitations ADD COLUMN IF NOT EXISTS invitation_status TEXT NOT NULL DEFAULT 'pending';
+
+      CREATE TABLE IF NOT EXISTS lobby_players (
+        game_id    UUID NOT NULL REFERENCES games(id),
+        user_id    UUID NOT NULL REFERENCES users(id),
+        power      TEXT,
+        is_creator BOOLEAN NOT NULL DEFAULT false,
+        joined_at  TIMESTAMP NOT NULL DEFAULT now(),
+        PRIMARY KEY (game_id, user_id)
+      );
+    `);
+
     console.log('Database schema verified/created.');
   } finally {
     client.release();

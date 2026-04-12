@@ -10,6 +10,17 @@ export type { ChatMessage };
 
 const DEBUG_MULTIPLIER = 1;
 
+const BATTLE_EVENTS = new Set([
+  'battle_region_start', 'battle_roll', 'battle_kill', 'peasant_claimed',
+  'rapture_control', 'heartrippers_corruption', 'war_frenzy_partial',
+]);
+const CORRUPTION_EVENTS = new Set([
+  'domination_result', 'domination_failed', 'corruption_placement',
+  'war_cry_block', 'deaths_perfume', 'vile_consumption',
+  'ruination', 'ruination_blocked', 'dial_counter', 'provender_score',
+  'ruination_scoring',
+]);
+
 function getEventDuration(event: GameEvent): number {
   const base = (() => {
     switch (event.type) {
@@ -37,7 +48,10 @@ function getEventDuration(event: GameEvent): number {
       default:                  return 0;
     }
   })();
-  return base * DEBUG_MULTIPLIER;
+  const phaseMultiplier = BATTLE_EVENTS.has(event.type) ? 2
+    : CORRUPTION_EVENTS.has(event.type) ? 3
+    : 1;
+  return base * phaseMultiplier * DEBUG_MULTIPLIER;
 }
 
 export interface GameStreamResult {
@@ -69,6 +83,7 @@ export function useGameStream(gameId: string): GameStreamResult {
   const knownSeq = useRef(0);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
+  const hadBattle = useRef(false);
 
   const processNext = useCallback(() => {
     if (queue.current.length === 0) {
@@ -76,9 +91,9 @@ export function useGameStream(gameId: string): GameStreamResult {
       return;
     }
 
-    // Pause before corruption phase — let user absorb battle results
+    // Pause before corruption phase — but only if battles actually happened
     const peek = queue.current[0];
-    if (peek && peek.type === 'phase_start' && peek.phase === 'corruption' && !pausedRef.current) {
+    if (peek && peek.type === 'phase_start' && peek.phase === 'corruption' && !pausedRef.current && hadBattle.current) {
       pausedRef.current = true;
       setPaused(true);
       return;
@@ -86,12 +101,21 @@ export function useGameStream(gameId: string): GameStreamResult {
 
 
     const event = queue.current.shift()!;
+
+    // Track whether battles happened this round
+    if (event.type === 'battle_region_start') hadBattle.current = true;
+    if (event.type === 'round_start') hadBattle.current = false;
+
     const s = stateRef.current;
 
     if (s) {
-      const next = applyEvent(s, event);
-      setState(next);
-      stateRef.current = next;
+      try {
+        const next = applyEvent(s, event);
+        setState(next);
+        stateRef.current = next;
+      } catch (err) {
+        console.error('[event] applyEvent failed, skipping:', event.type, err);
+      }
     }
 
     setEvents(prev => [...prev, event]);
@@ -149,6 +173,7 @@ export function useGameStream(gameId: string): GameStreamResult {
 
   const resume = useCallback(() => {
     pausedRef.current = false;
+    hadBattle.current = false;
     setPaused(false);
     processNext();
   }, [processNext]);

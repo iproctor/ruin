@@ -1,19 +1,28 @@
 import { Router } from 'express';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, asc } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Power, PlayerType, Action } from '@ruin/engine';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import {
   createGame,
+  createMultiplayerGame,
   getGameState,
+  getLobbyState,
   applyPlayerAction,
   listGamesForUser,
   getGameHistory,
   postChat,
+  lobbyInvite,
+  lobbyJoin,
+  lobbyLeave,
+  lobbyKick,
+  lobbyAssign,
+  startMultiplayerGame,
+  revokeInvitation,
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
-import { gamePlayers, invitations, users } from '../db/schema.js';
+import { games, gamePlayers, lobbyPlayers, invitations, users, chatMessages } from '../db/schema.js';
 import { createMagicLink } from '../auth/magicLink.js';
 import { sendEmail } from '../email/index.js';
 import { gameInviteEmail } from '../email/templates/gameInvite.js';
@@ -23,23 +32,29 @@ const router: ReturnType<typeof Router> = Router();
 // ---------------------------------------------------------------------------
 // POST /api/games — create game
 // ---------------------------------------------------------------------------
-const createGameSchema = z.object({
-  powers: z.array(z.enum(['xarm', 'gormen', 'tenzen', 'lasha'])).min(2).max(4),
-  playerTypes: z.record(
-    z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
-    z.enum(['human', 'ai', 'guest']),
-  ),
-  playerUserIds: z.record(
-    z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
-    z.string().uuid(),
-  ).optional(),
-  inviteEmails: z.array(
-    z.object({
-      power: z.enum(['xarm', 'gormen', 'tenzen', 'lasha']),
-      email: z.string().email(),
-    }),
-  ).optional(),
+const zPowerEnum = z.enum(['xarm', 'gormen', 'tenzen', 'lasha']);
+
+const singleplayerSchema = z.object({
+  mode: z.literal('singleplayer'),
+  powers: z.array(zPowerEnum).min(2).max(4),
+  playerTypes: z.record(zPowerEnum, z.enum(['human', 'ai'])),
 });
+
+const multiplayerSchema = z.object({
+  mode: z.literal('multiplayer'),
+  name: z.string().min(1).max(60),
+  isPublic: z.boolean().optional(),
+});
+
+// Legacy schema (no mode field — treat as singleplayer)
+const legacySchema = z.object({
+  powers: z.array(zPowerEnum).min(2).max(4),
+  playerTypes: z.record(zPowerEnum, z.enum(['human', 'ai', 'guest'])),
+  playerUserIds: z.record(zPowerEnum, z.string().uuid()).optional(),
+  inviteEmails: z.array(z.object({ power: zPowerEnum, email: z.string().email() })).optional(),
+});
+
+const createGameSchema = z.union([singleplayerSchema, multiplayerSchema, legacySchema]);
 
 router.post('/', requireAuth, async (req, res) => {
   const parsed = createGameSchema.safeParse(req.body);
@@ -47,11 +62,26 @@ router.post('/', requireAuth, async (req, res) => {
     res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
     return;
   }
+  const data = parsed.data;
 
-  const { powers, playerTypes, playerUserIds = {}, inviteEmails = [] } = parsed.data;
+  // Multiplayer — create pending game with lobby
+  if ('mode' in data && data.mode === 'multiplayer') {
+    try {
+      const gameId = await createMultiplayerGame(req.userId!, data.name, data.isPublic ?? false);
+      res.status(201).json({ gameId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(409).json({ error: msg });
+    }
+    return;
+  }
+
+  // Singleplayer (or legacy)
+  const { powers, playerTypes } = data as z.infer<typeof legacySchema>;
+  const playerUserIds = ('playerUserIds' in data ? data.playerUserIds : {}) ?? {};
+  const inviteEmails = ('inviteEmails' in data ? data.inviteEmails : []) ?? [];
 
   const resolvedUserIds: Partial<Record<Power, string>> = { ...playerUserIds };
-  // Assign the creator to every human slot that has no explicit userId
   for (const p of powers) {
     if (playerTypes[p] === 'human' && !resolvedUserIds[p]) {
       resolvedUserIds[p] = req.userId!;
@@ -119,7 +149,6 @@ router.get('/:id', optionalAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/games/:id/action — apply an action
 // ---------------------------------------------------------------------------
-const zPower = z.enum(['xarm', 'gormen', 'tenzen', 'lasha']);
 const zRegionId = z.enum([
   'norrsund', 'talvimaa', 'volensk', 'mittelreich',
   'normagne', 'almerida', 'toscavar', 'pelascos', 'the_barrens',
@@ -129,21 +158,21 @@ const zChoices = z.record(z.unknown());
 
 const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tenzen_discard'),            power: z.literal('tenzen'), cardId: z.string().nullable() }),
-  z.object({ kind: z.literal('summoning_summon_figure'),   power: zPower, followerId: z.string(), toRegion: zRegionId, carry: z.boolean().optional() }),
-  z.object({ kind: z.literal('summoning_play_card'),       power: zPower, cardId: z.string(), toRegion: zRegionId, slotIndex: z.union([z.literal(0), z.literal(1)]) }),
-  z.object({ kind: z.literal('summoning_pass'),            power: zPower }),
-  z.object({ kind: z.literal('world_choice'),              power: zPower, cardId: z.string(), choices: zChoices }),
-  z.object({ kind: z.literal('hero_removal'),              power: zPower, followerId: z.string(), regionId: zRegionId }),
-  z.object({ kind: z.literal('world_card_effect'),         power: zPower, cardId: z.string(), choices: zChoices }),
-  z.object({ kind: z.literal('upgrade_choice'),            power: zPower, upgradeCardId: z.string() }),
+  z.object({ kind: z.literal('summoning_summon_figure'),   power: zPowerEnum, followerId: z.string(), toRegion: zRegionId, carry: z.boolean().optional() }),
+  z.object({ kind: z.literal('summoning_play_card'),       power: zPowerEnum, cardId: z.string(), toRegion: zRegionId, slotIndex: z.union([z.literal(0), z.literal(1)]) }),
+  z.object({ kind: z.literal('summoning_pass'),            power: zPowerEnum}),
+  z.object({ kind: z.literal('world_choice'),              power: zPowerEnum, cardId: z.string(), choices: zChoices }),
+  z.object({ kind: z.literal('hero_removal'),              power: zPowerEnum, followerId: z.string(), regionId: zRegionId }),
+  z.object({ kind: z.literal('world_card_effect'),         power: zPowerEnum, cardId: z.string(), choices: zChoices }),
+  z.object({ kind: z.literal('upgrade_choice'),            power: zPowerEnum, upgradeCardId: z.string() }),
   z.object({ kind: z.literal('corruption_harvest_choice'), power: z.literal('gormen'), regionId: zRegionId, followerIds: z.array(z.string()) }),
-  z.object({ kind: z.literal('card_on_play_choice'),       power: zPower, cardId: z.string(), regionId: zRegionId, choices: zChoices }),
-  z.object({ kind: z.literal('forced_discard'),            power: zPower, cardIds: z.array(z.string()) }),
-  z.object({ kind: z.literal('battle_hit_assignment'),     power: zPower, regionId: zRegionId, followerIds: z.array(z.string()), peasantsToTake: z.number().int().min(0).optional() }),
-  z.object({ kind: z.literal('dial_place_token'),          power: zPower, regionId: zRegionId }),
-  z.object({ kind: z.literal('dial_remove_corruption'),    power: zPower, regionId: zRegionId, targetPower: zPower }),
-  z.object({ kind: z.literal('dial_remove_world_token'),   power: zPower, regionId: zRegionId, tokenType: zTokenType }),
-  z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPower, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
+  z.object({ kind: z.literal('card_on_play_choice'),       power: zPowerEnum, cardId: z.string(), regionId: zRegionId, choices: zChoices }),
+  z.object({ kind: z.literal('forced_discard'),            power: zPowerEnum, cardIds: z.array(z.string()) }),
+  z.object({ kind: z.literal('battle_hit_assignment'),     power: zPowerEnum, regionId: zRegionId, followerIds: z.array(z.string()), peasantsToTake: z.number().int().min(0).optional() }),
+  z.object({ kind: z.literal('dial_place_token'),          power: zPowerEnum, regionId: zRegionId }),
+  z.object({ kind: z.literal('dial_remove_corruption'),    power: zPowerEnum, regionId: zRegionId, targetPower: zPowerEnum}),
+  z.object({ kind: z.literal('dial_remove_world_token'),   power: zPowerEnum, regionId: zRegionId, tokenType: zTokenType }),
+  z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPowerEnum, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
 ]);
 
 const actionSchema = z.object({ action: zAction });
@@ -205,6 +234,109 @@ router.post('/:id/chat', requireAuth, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Lobby endpoints
+// ---------------------------------------------------------------------------
+
+router.get('/:id/lobby', requireAuth, async (req, res) => {
+  try {
+    const lobby = await getLobbyState(req.params.id!, req.userId!);
+    res.json(lobby);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/invite', requireAuth, async (req, res) => {
+  const emailParsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  if (!emailParsed.success) { res.status(400).json({ error: 'Invalid email' }); return; }
+  try {
+    const invId = await lobbyInvite(req.params.id!, req.userId!, emailParsed.data.email);
+    // Send invite email
+    const token = await createMagicLink(emailParsed.data.email, req.params.id!);
+    await sendEmail({
+      to: emailParsed.data.email,
+      subject: 'You have been invited to play Ruin',
+      html: gameInviteEmail(token, ''),
+    });
+    res.json({ invitationId: invId });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/join', requireAuth, async (req, res) => {
+  try {
+    await lobbyJoin(req.params.id!, req.userId!);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/leave', requireAuth, async (req, res) => {
+  try {
+    await lobbyLeave(req.params.id!, req.userId!);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/kick', requireAuth, async (req, res) => {
+  const parsed = z.object({ userId: z.string().uuid() }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
+  try {
+    await lobbyKick(req.params.id!, req.userId!, parsed.data.userId);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/assign', requireAuth, async (req, res) => {
+  const parsed = z.object({
+    assignments: z.array(z.object({
+      power: zPowerEnum,
+      type: z.enum(['human', 'ai', 'none']),
+      userId: z.string().uuid().optional(),
+    })),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
+  try {
+    await lobbyAssign(req.params.id!, req.userId!, parsed.data.assignments as any);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/start', requireAuth, async (req, res) => {
+  const parsed = z.object({
+    powerConfig: z.array(z.object({
+      power: zPowerEnum,
+      type: z.enum(['human', 'ai', 'none']),
+      userId: z.string().uuid().optional(),
+    })),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
+  try {
+    await startMultiplayerGame(req.params.id!, req.userId!, parsed.data.powerConfig as any);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete('/:id/invitations/:invitationId', requireAuth, async (req, res) => {
+  try {
+    await revokeInvitation(req.params.id!, req.userId!, req.params.invitationId!);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/games/:id/stream — SSE stream
 // ---------------------------------------------------------------------------
 router.get('/:id/stream', optionalAuth, (req, res) => {
@@ -218,15 +350,37 @@ router.get('/:id/stream', optionalAuth, (req, res) => {
   res.write(': connected\n\n');
 
   // Send current state + full history immediately on connect.
-  // Also resolve the viewer's power for event masking.
+  // For pending (lobby) games, send lobby state instead.
   const viewerUserId = req.userId ?? null;
 
-  Promise.all([
-    getGameState(id, viewerUserId),
-    getGameHistory(id),
-    db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id)),
-  ])
-    .then(([state, history, playerRows]) => {
+  db.select().from(games).where(eq(games.id, id)).limit(1)
+    .then(async ([gameRow]) => {
+      if (!gameRow) throw new Error('Game not found');
+
+      if (gameRow.status === 'pending') {
+        // Lobby mode — send lobby state + chat history
+        addListener(id, res, null);
+        const lobby = viewerUserId ? await getLobbyState(id, viewerUserId) : null;
+        const chatRows = await db.select().from(chatMessages)
+          .where(eq(chatMessages.gameId, id))
+          .orderBy(asc(chatMessages.createdAt));
+        res.write(`data: ${JSON.stringify({
+          type: 'lobby_state',
+          lobby,
+          chat: chatRows.map(m => ({
+            id: m.id, power: m.power, username: m.username,
+            message: m.message, createdAt: m.createdAt.toISOString(),
+          })),
+        })}\n\n`);
+        return;
+      }
+
+      // Active/complete game — existing flow
+      const [state, history, playerRows] = await Promise.all([
+        getGameState(id, viewerUserId),
+        getGameHistory(id),
+        db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id)),
+      ]);
       const viewerRow = viewerUserId ? playerRows.find(r => r.userId === viewerUserId) : null;
       const viewerPower = (viewerRow?.power as import('@ruin/engine').Power) ?? null;
       addListener(id, res, viewerPower);

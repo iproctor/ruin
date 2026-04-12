@@ -22,7 +22,16 @@ export function applySummonFigure(
   const { power, followerId, toRegion } = action;
   const p = s.powers[power]!;
 
-  const follower = p.followers.find(f => f.id === followerId);
+  // Look in acting power's followers first, then check other powers for controlled figures
+  let follower = p.followers.find(f => f.id === followerId);
+  let ownerPower = power;
+  if (!follower) {
+    for (const op of s.activePowers) {
+      if (op === power) continue;
+      const f = s.powers[op]!.followers.find(f => f.id === followerId && f.controlledBy === power);
+      if (f) { follower = f; ownerPower = op; break; }
+    }
+  }
   if (!follower) throw new Error(`Follower ${followerId} not found for ${power}`);
 
   const cost = getFollowerCost(s, power, follower.class, follower.id, toRegion);
@@ -55,17 +64,20 @@ export function applySummonFigure(
 
   // Update follower
   const updatedFollower = { ...follower, regionId: toRegion, placedAt: s.actionCount };
-  const updatedFollowers = p.followers.map(f => f.id === followerId ? updatedFollower : f);
 
   // Add to region placements
   s = updateRegion(s, toRegion, {
     placements: [...s.regions[toRegion]!.placements, updatedFollower],
   });
 
-  // Deduct power points
+  // Update the follower in its owner's array (may differ from acting power for controlled figures)
+  s = updatePower(s, ownerPower, {
+    followers: s.powers[ownerPower]!.followers.map(f => f.id === followerId ? updatedFollower : f),
+  });
+
+  // Deduct power points from the acting power
   s = updatePower(s, power, {
-    followers: updatedFollowers,
-    powerPoints: p.powerPoints - cost,
+    powerPoints: s.powers[power]!.powerPoints - cost,
   });
 
   // Gormen Plaguefather upgrade: place 2 corruption tokens on summon

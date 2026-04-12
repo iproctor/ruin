@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { POWER_COLORS } from '../lib/display.js';
 import type {
   GameState,
   Power,
@@ -667,9 +668,6 @@ function UpgradeChoicePanel({
     return <p style={{ color: '#aaa', fontSize: '0.8rem' }}>No upgrades available.</p>;
   }
 
-  const POWER_COLORS: Record<Power, string> = {
-    xarm: '#ef4444', gormen: '#22c55e', tenzen: '#a855f7', lasha: '#ec4899',
-  };
   const powerColor = POWER_COLORS[myPower];
 
   return (
@@ -1451,8 +1449,11 @@ function DialRemoveWorldTokenPanel({
     event: 'Event', hero: 'Hero', noble: 'Noble', peasant: 'Peasant', ratmen: 'Ratmen',
   };
 
+  type Selection = { regionId: RegionId; tokenType: RemovableToken };
+  const [selected, setSelected] = useState<Selection[]>([]);
+
   // Collect (region, tokenType) pairs
-  const options: { regionId: RegionId; tokenType: RemovableToken }[] = [];
+  const options: Selection[] = [];
   for (const regionId of ALL_REGIONS) {
     const seen = new Set<string>();
     for (const t of state.regions[regionId]!.tokens) {
@@ -1463,26 +1464,85 @@ function DialRemoveWorldTokenPanel({
     }
   }
 
+  function toggleOption(opt: Selection) {
+    setSelected(prev => {
+      const key = `${opt.regionId}-${opt.tokenType}`;
+      const exists = prev.some(s => `${s.regionId}-${s.tokenType}` === key);
+      if (exists) return prev.filter(s => `${s.regionId}-${s.tokenType}` !== key);
+      if (prev.length >= remaining) return prev;
+      return [...prev, opt];
+    });
+  }
+
+  function isSelected(opt: Selection) {
+    return selected.some(s => s.regionId === opt.regionId && s.tokenType === opt.tokenType);
+  }
+
+  async function handleConfirm() {
+    for (const s of selected) {
+      onAction({ kind: 'dial_remove_world_token', power: myPower, regionId: s.regionId, tokenType: s.tokenType });
+    }
+  }
+
+  // Single removal — no multi-select needed
+  if (remaining === 1) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+          Dial reward — remove a world token:
+        </div>
+        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+          {options.length === 0 && (
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No tokens to remove.</span>
+          )}
+          {options.map(({ regionId, tokenType }) => (
+            <button
+              key={`${regionId}-${tokenType}`}
+              className="secondary"
+              onClick={() => onAction({ kind: 'dial_remove_world_token', power: myPower, regionId, tokenType })}
+              style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            >
+              {TOKEN_NAMES[tokenType]} from {REGION_LABELS[regionId]}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — remove a world token ({remaining} remaining):
+        Dial reward — remove {remaining} world tokens (select {remaining}):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {options.length === 0 && (
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No tokens to remove.</span>
         )}
-        {options.map(({ regionId, tokenType }) => (
-          <button
-            key={`${regionId}-${tokenType}`}
-            className="danger"
-            onClick={() => onAction({ kind: 'dial_remove_world_token', power: myPower, regionId, tokenType })}
-            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
-          >
-            {TOKEN_NAMES[tokenType]} from {REGION_LABELS[regionId]}
-          </button>
-        ))}
+        {options.map(({ regionId, tokenType }) => {
+          const sel = isSelected({ regionId, tokenType });
+          return (
+            <button
+              key={`${regionId}-${tokenType}`}
+              className={sel ? 'primary' : 'secondary'}
+              onClick={() => toggleOption({ regionId, tokenType })}
+              style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            >
+              {TOKEN_NAMES[tokenType]} from {REGION_LABELS[regionId]}
+            </button>
+          );
+        })}
       </div>
+      {selected.length > 0 && (
+        <button
+          className="primary"
+          onClick={handleConfirm}
+          disabled={selected.length !== remaining}
+          style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          Confirm ({selected.length}/{remaining})
+        </button>
+      )}
     </div>
   );
 }

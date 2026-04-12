@@ -311,6 +311,8 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
   const moveCache = new Map<RegionId, RegionId[]>();
   for (const follower of p.followers) {
     if (follower.regionId === null) continue; // skip reserve
+    // Cannot move figures controlled by another power (e.g. Narcotic Musk)
+    if (follower.controlledBy && follower.controlledBy !== power) continue;
     const currentRegion = follower.regionId;
     // Killing Ground: cannot move non-Xarm figures away from a region with this card
     const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
@@ -337,6 +339,33 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
         followerId: follower.id,
         toRegion: regionId,
       } satisfies SummonFigureAction);
+    }
+  }
+
+  // Move figures controlled by this power but owned by other powers (e.g. Narcotic Musk)
+  for (const otherPower of state.activePowers) {
+    if (otherPower === power) continue;
+    for (const follower of state.powers[otherPower]!.followers) {
+      if (follower.regionId === null) continue;
+      if ((follower.controlledBy ?? follower.power) !== power) continue;
+      const currentRegion = follower.regionId;
+      const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
+        c => c?.cardId === 'xarm_carnage_trap'
+      );
+      if (hasKillingGround && power !== 'xarm') continue;
+
+      const movableRegions = legalPlacementRegions(state, power, follower.id);
+      for (const regionId of movableRegions) {
+        if (regionId === currentRegion) continue;
+        const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
+        if (p.powerPoints < cost) continue;
+        actions.push({
+          kind: 'summoning_summon_figure',
+          power,
+          followerId: follower.id,
+          toRegion: regionId,
+        } satisfies SummonFigureAction);
+      }
     }
   }
 
@@ -393,8 +422,10 @@ function isCardPlayableInRegion(
   const region = state.regions[regionId]!;
   switch (cardId) {
     case 'xarm_call_to_war':
-      // Requires own figures in at least one other region to move here
-      return state.powers[power]!.followers.some(f => f.regionId !== null && f.regionId !== regionId);
+      // Requires own (non-musked) figures in at least one other region to move here
+      return state.powers[power]!.followers.some(f =>
+        f.regionId !== null && f.regionId !== regionId && (!f.controlledBy || f.controlledBy === power)
+      );
     case 'tenzen_teleport':
       // Requires a cultist or warrior already in the region
       return region.placements.some(f => f.class === 'cultist' || f.class === 'warrior');

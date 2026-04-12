@@ -129,10 +129,19 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
         });
       }
       return state;
-    case 'power_draw':
-      // Actual cards drawn depend on deck state — client uses this for display only.
-      // Full state sync happens at round boundaries.
-      return state;
+    case 'power_draw': {
+      // Reset PP to the values from the draw phase. Card draws depend on deck
+      // state (hidden info), but PP must be synced so the client doesn't go negative.
+      const dp = state.powers[event.power];
+      if (!dp) return state;
+      return {
+        ...state,
+        powers: {
+          ...state.powers,
+          [event.power]: { ...dp, powerPoints: event.powerPoints, basePowerPoints: event.basePowerPoints, passedSummoning: false },
+        },
+      };
+    }
 
     // ── Informational (no state change) ───────────────────────────────────
     case 'summoning_banner':
@@ -312,14 +321,31 @@ function claimPeasant(state: GameState, regionId: RegionId, power: Power): GameS
 }
 
 function setControlledBy(state: GameState, followerId: string, controller: Power | null): GameState {
-  // Find which power owns this figure
+  // Find which power owns this figure and update both followers AND placements
   for (const power of state.activePowers) {
     const p = state.powers[power]!;
     const fig = p.followers.find(f => f.id === followerId);
     if (fig) {
-      return patchPower(state, power, {
+      let s = patchPower(state, power, {
         followers: p.followers.map(f => f.id === followerId ? { ...f, controlledBy: controller } : f),
       });
+      // Also update region placements (dual tracking)
+      if (fig.regionId) {
+        const region = s.regions[fig.regionId]!;
+        s = {
+          ...s,
+          regions: {
+            ...s.regions,
+            [fig.regionId]: {
+              ...region,
+              placements: region.placements.map(f =>
+                f.id === followerId ? { ...f, controlledBy: controller } : f
+              ),
+            },
+          },
+        };
+      }
+      return s;
     }
   }
   return state;
@@ -390,10 +416,28 @@ function applyCardEffect(
     case 'fate_shield': {
       for (const power of state.activePowers) {
         const p = state.powers[power]!;
-        if (p.followers.some(f => f.id === event.followerId)) {
-          return patchPower(state, power, {
+        const fig = p.followers.find(f => f.id === event.followerId);
+        if (fig) {
+          let s = patchPower(state, power, {
             followers: p.followers.map(f => f.id === event.followerId ? { ...f, protected: true } : f),
           });
+          // Dual tracking: also update region placements
+          if (fig.regionId) {
+            const region = s.regions[fig.regionId]!;
+            s = {
+              ...s,
+              regions: {
+                ...s.regions,
+                [fig.regionId]: {
+                  ...region,
+                  placements: region.placements.map(f =>
+                    f.id === event.followerId ? { ...f, protected: true } : f
+                  ),
+                },
+              },
+            };
+          }
+          return s;
         }
       }
       return state;

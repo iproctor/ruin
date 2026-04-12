@@ -18,12 +18,14 @@ function formatDate(dateStr: string): string {
 }
 
 function GameRow({ game, userId }: { game: GameSummary; userId: string | null }) {
+  const isPending = game.status === 'pending';
+  const link = isPending ? `/games/${game.id}/lobby` : `/games/${game.id}`;
   const myPowerEntry = game.powers.find((p) => p.userId === userId);
   const powers = game.powers.map((p) => p.power);
 
   return (
     <Link
-      to={`/games/${game.id}`}
+      to={link}
       style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}
     >
       <div
@@ -39,27 +41,42 @@ function GameRow({ game, userId }: { game: GameSummary; userId: string | null })
         }}
       >
         <div>
-          <div className="flex-row" style={{ flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.25rem' }}>
-            {powers.map((p) => (
-              <span
-                key={p}
-                style={{ fontWeight: 600, fontSize: '0.9rem', color: POWER_COLORS[p as keyof typeof POWER_COLORS] }}
-              >
-                {POWER_LABELS[p as keyof typeof POWER_LABELS] ?? p}
-              </span>
-            ))}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: '#888' }}>
-            Round {game.round} &bull; Phase: {game.phase}
-            {myPowerEntry && (
-              <span style={{ marginLeft: '0.5rem', fontWeight: 600, color: POWER_COLORS[myPowerEntry.power as keyof typeof POWER_COLORS] }}>
-                (You: {POWER_LABELS[myPowerEntry.power as keyof typeof POWER_LABELS] ?? myPowerEntry.power})
-              </span>
-            )}
-          </div>
+          {game.name && (
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.2rem' }}>
+              {game.name}
+            </div>
+          )}
+          {isPending ? (
+            <div style={{ fontSize: '0.8rem', color: '#888' }}>
+              Waiting in lobby
+            </div>
+          ) : (
+            <>
+              <div className="flex-row" style={{ flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                {powers.map((p) => (
+                  <span
+                    key={p}
+                    style={{ fontWeight: 600, fontSize: '0.9rem', color: POWER_COLORS[p as keyof typeof POWER_COLORS] }}
+                  >
+                    {POWER_LABELS[p as keyof typeof POWER_LABELS] ?? p}
+                  </span>
+                ))}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#888' }}>
+                Round {game.round} &bull; Phase: {game.phase}
+                {myPowerEntry && (
+                  <span style={{ marginLeft: '0.5rem', fontWeight: 600, color: POWER_COLORS[myPowerEntry.power as keyof typeof POWER_COLORS] }}>
+                    (You: {POWER_LABELS[myPowerEntry.power as keyof typeof POWER_LABELS] ?? myPowerEntry.power})
+                  </span>
+                )}
+              </div>
+            </>
+          )}
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          {game.isComplete ? (
+          {isPending ? (
+            <span style={{ color: '#fbbf24', fontSize: '0.8rem', fontWeight: 600 }}>Lobby</span>
+          ) : game.isComplete ? (
             <span style={{ color: '#facc15', fontSize: '0.8rem' }}>Completed</span>
           ) : (
             <span style={{ color: '#86efac', fontSize: '0.8rem' }}>Active</span>

@@ -276,12 +276,12 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     try {
       if (pendingAction) {
         await submitAction(gameId, pendingAction);
-        setPendingAction(null);
+        // Don't clear pendingAction here — let SSE state change clear it
+        // so the tableau keeps showing the PP decrement until events arrive.
         setSelectedCardId(null);
       }
       if (pendingOnPlayChoice) {
         await submitAction(gameId, pendingOnPlayChoice);
-        setPendingOnPlayChoice(null);
       }
       // Pure pass: End Turn clicked without staging any action
       if (!hadStagedAction) {
@@ -392,10 +392,10 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
               pendingAction={anim.animationPhase ? null : pendingAction}
               onRegionClick={needsOnPlayChoice && !pendingOnPlayChoice ? handleOnPlayRegionClick : undefined}
               myPower={isSummoningTurn && !pendingAction && !anim.animationPhase ? myPower : null}
-              animationRegion={anim.animationPhase === 'battle' || anim.animationPhase === 'corruption' ? anim.activeRegion : null}
+              animationRegion={!paused && (anim.animationPhase === 'battle' || anim.animationPhase === 'corruption') ? anim.activeRegion : null}
               animationKilledIds={anim.animationPhase ? anim.killedIds : undefined}
               hideKilled={anim.hideKilled}
-              battlePaneEvents={(anim.animationPhase === 'battle' || anim.animationPhase === 'corruption') ? anim.processedBattleEvents : undefined}
+              battlePaneEvents={(anim.animationPhase === 'battle' || anim.animationPhase === 'corruption' || paused) ? anim.processedBattleEvents : undefined}
               dominationLabels={anim.animationPhase === 'corruption' ? anim.dominationLabels : undefined}
               corruptionOverrides={anim.animationPhase === 'corruption' ? anim.corruptionOverrides : undefined}
               corruptionFlies={anim.animationPhase === 'corruption' ? anim.corruptionFlies : undefined}

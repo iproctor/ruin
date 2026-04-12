@@ -2,17 +2,7 @@ import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { GameState, Power } from '@ruin/engine';
 import { UPGRADE_BY_ID } from '@ruin/engine';
-
-const POWER_LABELS: Record<Power, string> = {
-  xarm:   'Xarm',
-  gormen: 'Gormen',
-  tenzen: 'Tenzen',
-  lasha:  'Lasha',
-};
-
-const POWER_COLORS: Record<Power, string> = {
-  xarm: '#ef4444', gormen: '#22c55e', tenzen: '#a855f7', lasha: '#ec4899',
-};
+import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
 interface PowerPanelProps {
   power: Power;

@@ -27,6 +27,9 @@ export const games = pgTable('games', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
   isComplete: boolean('is_complete').notNull().default(false),
+  name: text('name'),                                           // multiplayer game name
+  status: text('status').notNull().default('active'),           // 'pending' | 'active' | 'complete'
+  isPublic: boolean('is_public').notNull().default(false),
 });
 
 export const gamePlayers = pgTable('game_players', {
@@ -57,6 +60,19 @@ export const invitations = pgTable('invitations', {
   power: text('power').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   accepted: boolean('accepted').notNull().default(false),
+  invitationStatus: text('invitation_status').notNull().default('pending'), // 'pending' | 'accepted' | 'revoked'
+});
+
+export const lobbyPlayers = pgTable('lobby_players', {
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  power: text('power'),              // nullable, assigned by creator
+  isCreator: boolean('is_creator').notNull().default(false),
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
 });
 
 export const gameEvents = pgTable('game_events', {

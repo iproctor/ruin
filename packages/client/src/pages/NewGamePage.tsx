@@ -1,102 +1,69 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import type { Power, PlayerType } from '@ruin/engine';
-import { createGame } from '../api/client.js';
-import { POWER_COLORS } from '../lib/display.js';
+import { createGame, createMultiplayerGame } from '../api/client.js';
+import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
-const POWER_LABELS: Record<Power, string> = {
-  xarm: 'Xarm',
-  gormen: 'Gormen',
-  tenzen: 'Tenzen',
-  lasha: 'Lasha',
-};
+
 const POWER_DESCRIPTIONS: Record<Power, string> = {
-  xarm: 'Typically wins by dial. Advancement is earned by killing in battle. War Cry blocks corruption, working against opponents\' efforts to ruin regions.',
+  xarm: 'Typically wins by dial. Advancement is earned by killing in battle. War Cry blocks all enemy corruption in a region, working against opponents\' efforts to ruin regions.',
   gormen: 'Cheap warriors lead to easy dominations and secure positions. Dominate valuable regions repeatedly to win by VP.',
   tenzen: 'Avoid direct confrontation with cards while piling in cultists to rapidly ruin regions. Win by chaining ruinations and shutting opponents out.',
   lasha: 'Steal valuable dominations while advancing the dial, and sneak into ruinations when the hard work is done. Stay flexible and take advantage of opportunities.',
 };
 
-type PlayerTypeChoice = PlayerType;
+type Mode = 'singleplayer' | 'multiplayer';
+type PowerSetting = 'human' | 'ai' | 'none';
 
 interface PowerConfig {
-  enabled: boolean;
-  playerType: PlayerTypeChoice;
-  inviteEmail: string;
+  setting: PowerSetting;
 }
 
-function defaultConfig(): Record<Power, PowerConfig> {
+function defaultSPConfig(): Record<Power, PowerConfig> {
   return {
-    xarm: { enabled: true, playerType: 'human', inviteEmail: '' },
-    gormen: { enabled: true, playerType: 'ai', inviteEmail: '' },
-    tenzen: { enabled: true, playerType: 'ai', inviteEmail: '' },
-    lasha: { enabled: true, playerType: 'ai', inviteEmail: '' },
+    xarm: { setting: 'human' },
+    gormen: { setting: 'ai' },
+    tenzen: { setting: 'ai' },
+    lasha: { setting: 'ai' },
   };
 }
 
 export default function NewGamePage() {
   const navigate = useNavigate();
-  const [config, setConfig] = useState<Record<Power, PowerConfig>>(defaultConfig);
+  const [mode, setMode] = useState<Mode>('singleplayer');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const enabledPowers = ALL_POWERS.filter((p) => config[p].enabled);
+  // Single player state
+  const [spConfig, setSPConfig] = useState<Record<Power, PowerConfig>>(defaultSPConfig);
 
-  function togglePower(power: Power) {
-    const next = enabledPowers.length;
-    const isEnabled = config[power].enabled;
-    // Can't have fewer than 2 or more than 4
-    if (!isEnabled && next >= 4) return;
-    if (isEnabled && next <= 2) return;
-    setConfig((prev) => ({
-      ...prev,
-      [power]: { ...prev[power]!, enabled: !isEnabled },
-    }));
+  // Multiplayer state
+  const [gameName, setGameName] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+
+  const activePowers = ALL_POWERS.filter(p => spConfig[p].setting !== 'none');
+
+  function cycleSetting(power: Power) {
+    setSPConfig(prev => {
+      const order: PowerSetting[] = ['human', 'ai', 'none'];
+      const cur = prev[power].setting;
+      const next = order[(order.indexOf(cur) + 1) % order.length]!;
+      return { ...prev, [power]: { setting: next } };
+    });
   }
 
-  function setPlayerType(power: Power, playerType: PlayerTypeChoice) {
-    setConfig((prev) => ({
-      ...prev,
-      [power]: { ...prev[power]!, playerType, inviteEmail: '' },
-    }));
-  }
-
-  function setInviteEmail(power: Power, email: string) {
-    setConfig((prev) => ({
-      ...prev,
-      [power]: { ...prev[power]!, inviteEmail: email },
-    }));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSingleplayer(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-
-    if (enabledPowers.length < 2) {
-      setError('Select at least 2 powers.');
-      return;
-    }
+    if (activePowers.length < 2) { setError('Need at least 2 active powers.'); return; }
 
     const playerTypes: Record<string, string> = {};
-    const inviteEmails: Array<{ power: string; email: string }> = [];
-
-    for (const power of enabledPowers) {
-      const cfg = config[power];
-      if (!cfg) continue;
-      playerTypes[power] = cfg.playerType;
-      if (cfg.playerType === 'guest' && cfg.inviteEmail) {
-        inviteEmails.push({ power, email: cfg.inviteEmail });
-      }
-    }
+    for (const p of activePowers) playerTypes[p] = spConfig[p].setting;
 
     setLoading(true);
     try {
-      const res = await createGame({
-        powers: enabledPowers,
-        playerTypes,
-        inviteEmails,
-      });
+      const res = await createGame({ mode: 'singleplayer', powers: activePowers, playerTypes } as any);
       navigate(`/games/${res.gameId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create game');
@@ -105,6 +72,25 @@ export default function NewGamePage() {
     }
   }
 
+  async function handleMultiplayer(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!gameName.trim()) { setError('Give your game a name.'); return; }
+
+    setLoading(true);
+    try {
+      const res = await createMultiplayerGame(gameName.trim(), isPublic);
+      navigate(`/games/${res.gameId}/lobby`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create game');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const settingLabel: Record<PowerSetting, string> = { human: 'Human', ai: 'AI', none: 'Off' };
+  const settingColor: Record<PowerSetting, string> = { human: '#86efac', ai: '#93c5fd', none: '#64748b' };
+
   return (
     <div className="page" style={{ maxWidth: 560 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -112,100 +98,146 @@ export default function NewGamePage() {
         <h1 style={{ margin: 0 }}>New Game</h1>
       </div>
 
-      <form onSubmit={handleSubmit}>
-        <div className="card" style={{ marginBottom: '1.25rem' }}>
-          <h2>Select Powers (2–4)</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            {ALL_POWERS.map((power) => {
-              const cfg = config[power]!;
-              const canDisable = enabledPowers.length > 2;
-              const canEnable = enabledPowers.length < 4;
-              return (
-                <div
-                  key={power}
-                  onClick={() => togglePower(power)}
-                  style={{
-                    border: `2px solid`,
-                    borderColor: cfg.enabled
-                      ? POWER_COLORS[power]
-                      : '#2d2d5e',
-                    borderRadius: 6,
-                    padding: '0.75rem',
-                    cursor: (cfg.enabled ? canDisable : canEnable) ? 'pointer' : 'not-allowed',
-                    opacity: (!cfg.enabled && !canEnable) ? 0.4 : 1,
-                    background: cfg.enabled ? '#1e1e3a' : '#16213e',
-                  }}
-                  className=""
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, color: cfg.enabled ? POWER_COLORS[power] : undefined }}>
-                      {POWER_LABELS[power]}
-                    </span>
-                    <span style={{ fontSize: '1rem' }}>{cfg.enabled ? '✓' : ''}</span>
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.25rem' }}>
-                    {POWER_DESCRIPTIONS[power]}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem' }}>
+        {(['singleplayer', 'multiplayer'] as Mode[]).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={mode === m ? 'primary' : 'secondary'}
+            style={{ flex: 1 }}
+          >
+            {m === 'singleplayer' ? 'Single Player' : 'Multiplayer'}
+          </button>
+        ))}
+      </div>
 
-        {enabledPowers.length >= 2 && (
+      {mode === 'singleplayer' && (
+        <form onSubmit={handleSingleplayer}>
           <div className="card" style={{ marginBottom: '1.25rem' }}>
-            <h2>Player Assignment</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {enabledPowers.map((power) => {
-                const cfg = config[power]!;
+            <h2>Powers</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              {ALL_POWERS.map(power => {
+                const cfg = spConfig[power];
+                const active = cfg.setting !== 'none';
                 return (
-                  <div key={power}>
-                    <div style={{ fontWeight: 600, marginBottom: '0.4rem', color: POWER_COLORS[power] }}>
-                      {POWER_LABELS[power]}
+                  <div
+                    key={power}
+                    onClick={() => cycleSetting(power)}
+                    style={{
+                      border: '2px solid',
+                      borderColor: active ? POWER_COLORS[power] : '#2d2d5e',
+                      borderRadius: 6,
+                      padding: '0.75rem',
+                      cursor: 'pointer',
+                      opacity: active ? 1 : 0.5,
+                      background: active ? '#1e1e3a' : '#16213e',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, color: active ? POWER_COLORS[power] : undefined }}>
+                        {POWER_LABELS[power]}
+                      </span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        background: settingColor[cfg.setting] + '22',
+                        color: settingColor[cfg.setting],
+                      }}>
+                        {settingLabel[cfg.setting]}
+                      </span>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
-                      {(['human', 'ai', 'guest'] as PlayerTypeChoice[]).map((pt) => (
-                        <button
-                          key={pt}
-                          type="button"
-                          onClick={() => setPlayerType(power, pt)}
-                          className={cfg.playerType === pt ? 'primary' : 'secondary'}
-                          style={{ flex: '1', minWidth: 70 }}
-                        >
-                          {pt === 'human' ? 'Human (you)' : pt === 'ai' ? 'AI' : 'Guest (invite)'}
-                        </button>
-                      ))}
+                    <div style={{ fontSize: '0.72rem', color: '#888', marginTop: '0.25rem', lineHeight: 1.4 }}>
+                      {POWER_DESCRIPTIONS[power]}
                     </div>
-                    {cfg.playerType === 'guest' && (
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label htmlFor={`email-${power}`}>Invite email</label>
-                        <input
-                          id={`email-${power}`}
-                          type="email"
-                          placeholder="guest@example.com"
-                          value={cfg.inviteEmail}
-                          onChange={(e) => setInviteEmail(power, e.target.value)}
-                        />
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
+            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '0.75rem' }}>
+              Click a power to cycle: Human → AI → Off. At least 2 must be active.
+            </div>
           </div>
-        )}
 
-        {error && <p className="error-msg" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+          {error && <p className="error-msg" style={{ marginBottom: '0.75rem' }}>{error}</p>}
 
-        <button
-          type="submit"
-          className="primary"
-          disabled={loading || enabledPowers.length < 2}
-          style={{ width: '100%', padding: '0.65rem' }}
-        >
-          {loading ? 'Creating game…' : 'Create Game'}
-        </button>
-      </form>
+          <button
+            type="submit"
+            className="primary"
+            disabled={loading || activePowers.length < 2}
+            style={{ width: '100%', padding: '0.65rem' }}
+          >
+            {loading ? 'Creating…' : 'Start Game'}
+          </button>
+        </form>
+      )}
+
+      {mode === 'multiplayer' && (
+        <form onSubmit={handleMultiplayer}>
+          <div className="card" style={{ marginBottom: '1.25rem' }}>
+            <h2>Game Settings</h2>
+            <div className="form-group">
+              <label htmlFor="game-name">Game Name</label>
+              <input
+                id="game-name"
+                type="text"
+                placeholder="e.g. Friday Night Ruin"
+                value={gameName}
+                onChange={e => setGameName(e.target.value)}
+                maxLength={60}
+              />
+            </div>
+            <div
+              onClick={() => setIsPublic(!isPublic)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                marginTop: '0.75rem',
+                padding: '0.6rem 0.75rem',
+                borderRadius: 6,
+                border: `2px solid ${isPublic ? '#6366f1' : '#2d2d5e'}`,
+                background: isPublic ? '#1e1b4b' : '#16213e',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{
+                width: 22,
+                height: 22,
+                borderRadius: 4,
+                border: `2px solid ${isPublic ? '#818cf8' : '#4b5563'}`,
+                background: isPublic ? '#6366f1' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                fontSize: '0.8rem',
+                color: '#fff',
+                fontWeight: 700,
+              }}>
+                {isPublic && '✓'}
+              </div>
+              <span style={{ fontSize: '0.85rem', color: isPublic ? '#c7d2fe' : '#888' }}>
+                Public game (anyone can find and join)
+              </span>
+            </div>
+          </div>
+
+          {error && <p className="error-msg" style={{ marginBottom: '0.75rem' }}>{error}</p>}
+
+          <button
+            type="submit"
+            className="primary"
+            disabled={loading || !gameName.trim()}
+            style={{ width: '100%', padding: '0.65rem' }}
+          >
+            {loading ? 'Creating…' : 'Create Lobby'}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
