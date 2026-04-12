@@ -65,6 +65,28 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     }
     case 'control_released':
       return setControlledBy(state, event.followerId, null);
+    case 'battle_cleanup': {
+      let bc = state;
+      // Clear warFrenzyHits
+      for (const fid of event.clearedWarFrenzyHits) {
+        for (const power of bc.activePowers) {
+          const p = bc.powers[power]!;
+          if (p.followers.some(f => f.id === fid)) {
+            bc = patchPower(bc, power, {
+              followers: p.followers.map(f => f.id === fid ? { ...f, warFrenzyHits: 0 } : f),
+            });
+            break;
+          }
+        }
+      }
+      // Reset dial counters
+      if (event.resetDialCounters) {
+        for (const power of bc.activePowers) {
+          bc = patchPower(bc, power, { dialCounters: 0 });
+        }
+      }
+      return bc;
+    }
     case 'chaos_card_discarded': {
       const cdr = state.regions[event.regionId]!;
       const newSlots = [...cdr.chaosCards] as typeof cdr.chaosCards;
@@ -137,7 +159,6 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
       return patchPower(state, event.power, {
         hand: fd.hand.filter(id => !event.cardIds.includes(id)),
         discardIds: [...fd.discardIds, ...event.cardIds],
-        pendingForcedDiscards: 0,
       });
     }
     case 'upgrade_taken':
@@ -286,18 +307,27 @@ function moveFigure(
   state: GameState, power: Power, followerId: string,
   toRegion: RegionId, _fromRegion: RegionId | null, cost: number,
 ): GameState {
-  const p = state.powers[power]!;
-  const follower = p.followers.find(f => f.id === followerId);
+  // Find the figure — may be in the acting power's array or another power's
+  // (controlled figures via Narcotic Musk)
+  let ownerPower = power;
+  let follower = state.powers[power]!.followers.find(f => f.id === followerId);
+  if (!follower) {
+    for (const p of state.activePowers) {
+      const f = state.powers[p]!.followers.find(f => f.id === followerId);
+      if (f) { follower = f; ownerPower = p; break; }
+    }
+  }
   if (!follower) return state;
 
-  // Update follower's regionId and deduct cost
   const updated = { ...follower, regionId: toRegion };
-  const newFollowers = p.followers.map(f => f.id === followerId ? updated : f);
-
-  return {
-    ...state,
-    powers: { ...state.powers, [power]: { ...p, followers: newFollowers, powerPoints: p.powerPoints - cost } },
-  };
+  let s = patchPower(state, ownerPower, {
+    followers: state.powers[ownerPower]!.followers.map(f => f.id === followerId ? updated : f),
+  });
+  // Deduct cost from the acting power
+  if (cost > 0) {
+    s = patchPower(s, power, { powerPoints: s.powers[power]!.powerPoints - cost });
+  }
+  return s;
 }
 
 function playCard(
@@ -420,9 +450,15 @@ function applyCardEffect(
   switch (event.subtype) {
     case 'plaguefather_corruption':
       return addCorruption(state, event.regionId, 'gormen', event.tokens);
-    case 'fractals_summon':
-      // Free warrior summon — handled by the summon_figure event that follows
-      return state;
+    case 'fractals_summon': {
+      // Free warrior summon from Fractals upgrade
+      const tp = state.powers['tenzen']!;
+      const warrior = tp.followers.find(f => f.id === event.followerId);
+      if (!warrior) return state;
+      return patchPower(state, 'tenzen', {
+        followers: tp.followers.map(f => f.id === event.followerId ? { ...f, regionId: event.regionId } : f),
+      });
+    }
     case 'call_to_war':
       return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, 0);
     case 'teleport': {
@@ -435,9 +471,8 @@ function applyCardEffect(
       return state;
     }
     case 'meddling_of_rats':
-      return patchPower(state, event.targetPower, {
-        pendingForcedDiscards: state.powers[event.targetPower]!.pendingForcedDiscards + 2,
-      });
+      // Discard is now immediate — handled by forced_discard event that follows
+      return state;
     case 'fate_shield': {
       for (const power of state.activePowers) {
         const p = state.powers[power]!;
@@ -573,10 +608,11 @@ function applyWorldCardEffect(
       return s;
     }
     case 'great_exorcism_events':
-      // Event tokens moved — simplified (exact movement handled by state sync)
+      // Actual token movement handled by preceding token_removed/token_placed events
       return state;
     case 'central_overpopulation':
-      return removeToken(state, event.regionId, 'peasant');
+      // Peasant removal handled by preceding token_removed event
+      return state;
     case 'cleansing_wave':
       return {
         ...state,

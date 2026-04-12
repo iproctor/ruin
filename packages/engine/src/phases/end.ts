@@ -376,14 +376,17 @@ function applyWorldCardPersistentEffect(
       );
 
       for (const regionId of eventRegions) {
+        const count = s.regions[regionId]!.tokens.filter(t => t === 'event').length;
         const tokens = s.regions[regionId]!.tokens.filter(t => t !== 'event');
         s = updateRegion(s, regionId, { tokens });
+        for (let i = 0; i < count; i++) log.emit({ type: 'token_removed', regionId, tokenType: 'event' });
       }
       if (totalEvents > 0) {
         const existing = s.regions[mostCorrupt]!.tokens;
         s = updateRegion(s, mostCorrupt, {
           tokens: [...existing, ...Array(totalEvents).fill('event')],
         });
+        for (let i = 0; i < totalEvents; i++) log.emit({ type: 'token_placed', regionId: mostCorrupt, tokenType: 'event' });
         log.emit({ type: 'world_card_effect', subtype: 'great_exorcism_events', regionId: mostCorrupt, eventsMoved: totalEvents });
       }
       break;
@@ -397,6 +400,7 @@ function applyWorldCardPersistentEffect(
         const tokens = [...region.tokens];
         tokens.splice(tokens.indexOf('peasant'), 1);
         s = updateRegion(s, regionId, { tokens });
+        log.emit({ type: 'token_removed', regionId, tokenType: 'peasant' });
         log.emit({ type: 'world_card_effect', subtype: 'central_overpopulation', regionId });
       }
       break;
@@ -564,6 +568,7 @@ function advanceThreatDials(
   for (const power of s.activePowers) {
     s = updatePower(s, power, { dialCounters: 0 });
   }
+  log.emit({ type: 'battle_cleanup', clearedWarFrenzyHits: [], resetDialCounters: true });
 
   if (queuedRewards.length > 0) {
     s = { ...s, pendingDialRewards: queuedRewards };

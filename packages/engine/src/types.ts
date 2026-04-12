@@ -223,7 +223,7 @@ export type GameEvent =
   | { type: 'summoning_pass'; power: Power }
   | { type: 'apprentice_choice'; followerId: string; fromRegion: RegionId; toRegion: RegionId; carry: boolean }
   | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }
-  | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerName: string }
+  | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerId: string; followerName: string }
   | { type: 'card_effect'; subtype: 'call_to_war'; power: Power; followerId: string; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerId: string; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'meddling_of_rats'; targetPower: Power }
@@ -242,6 +242,7 @@ export type GameEvent =
   | { type: 'protected_cleared'; followerIds: string[] }
   | { type: 'control_released'; followerId: string; power: Power }
   | { type: 'chaos_card_discarded'; regionId: RegionId; slotIndex: number; cardId: string; playedBy: Power }
+  | { type: 'battle_cleanup'; clearedWarFrenzyHits: string[]; resetDialCounters: boolean }
   | { type: 'peasant_claimed'; regionId: RegionId; power: Power; total: number }
   | { type: 'rapture_control'; regionId: RegionId; targetPower: Power; targetClass: FollowerClass; targetId: string }
   | { type: 'heartrippers_corruption'; regionId: RegionId; tokens: number }

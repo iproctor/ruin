@@ -1,7 +1,7 @@
 import type { GameState, Action, Power, DialPendingReward } from './types.js';
 import { resolveWorldPhase, applyWorldChoice } from './phases/world.js';
 import { beginDrawPhase, applyTenzenDiscard, getBasePP } from './phases/draw.js';
-import { applySummonFigure, applyPlayCard, applySummoningPass, applyTenzenApprenticeChoice } from './phases/summoning.js';
+import { applySummonFigure, applyPlayCard, applySummoningPass, applyTenzenApprenticeChoice, advanceSummoningTurn } from './phases/summoning.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
 import { resolveEndPhase } from './phases/end.js';
@@ -76,8 +76,11 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
 
     case 'forced_discard': {
       const p = s.powers[action.power as Power]!;
-      const required = Math.min(p.pendingForcedDiscards, p.hand.length);
+      const ctx = s.pendingAction?.context ?? {};
+      const required = (ctx['count'] as number) ?? Math.min(2, p.hand.length);
       const toDiscard = action.cardIds.filter(id => p.hand.includes(id)).slice(0, required);
+      // Return to the power that played Meddling of Rats (stored in context)
+      const returnTo = (ctx['returnTo'] as Power) ?? action.power as Power;
       s = {
         ...s,
         powers: {
@@ -86,18 +89,12 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
             ...p,
             hand: p.hand.filter(id => !toDiscard.includes(id)),
             discardIds: [...p.discardIds, ...toDiscard],
-            pendingForcedDiscards: 0,
           },
-        },
-        pendingAction: {
-          waitingFor: action.power as Power,
-          actionKind: 'summoning_action',
-          context: {},
         },
       };
       const log = new GameLog();
       log.emit({ type: 'forced_discard', power: action.power as Power, count: toDiscard.length, cardIds: toDiscard });
-      log.emit({ type: 'awaiting_action', power: action.power as Power, actionKind: 'summoning_action', context: {}, description: `${action.power}'s turn to summon.` });
+      s = advanceSummoningTurn(s, returnTo, log);
       result = { state: s, log };
       break;
     }

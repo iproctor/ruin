@@ -74,12 +74,34 @@ export function applyCardOnPlayChoice(
     }
 
     // ── Tenzen: Meddling of Rats ───────────────────────────────────────────────
-    // Queue a forced discard on the target — they choose on their next summoning turn
+    // Target must immediately discard 2 cards
     case 'tenzen_the_meddling_of_rats': {
       const targetPower = choices['targetPower'] as Power;
-      const current = s.powers[targetPower]!.pendingForcedDiscards;
-      s = updatePower(s, targetPower, { pendingForcedDiscards: current + 2 });
+      const targetPs = s.powers[targetPower]!;
+      const required = Math.min(2, targetPs.hand.length);
       log.emit({ type: 'card_effect', subtype: 'meddling_of_rats', targetPower });
+
+      if (required > 0 && targetPs.hand.length > required) {
+        // Target must choose which cards to discard
+        s = {
+          ...s,
+          pendingAction: {
+            waitingFor: targetPower,
+            actionKind: 'forced_discard',
+            context: { count: required, returnTo: power },
+          },
+        };
+        log.emit({ type: 'awaiting_action', power: targetPower, actionKind: 'forced_discard', context: { count: required, returnTo: power }, description: `${targetPower} must discard ${required} card(s).` });
+        return { state: s, log };
+      } else if (required > 0) {
+        // Auto-discard (hand <= required)
+        const toDiscard = targetPs.hand.slice(0, required);
+        s = updatePower(s, targetPower, {
+          hand: targetPs.hand.slice(required),
+          discardIds: [...targetPs.discardIds, ...toDiscard],
+        });
+        log.emit({ type: 'forced_discard', power: targetPower, count: toDiscard.length, cardIds: toDiscard });
+      }
       break;
     }
 

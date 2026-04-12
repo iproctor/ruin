@@ -183,7 +183,7 @@ export function applyPlayCard(
       s = updatePower(s, 'tenzen', {
         followers: s.powers['tenzen']!.followers.map(f => f.id === reserve.id ? updated : f),
       });
-      log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
+      log.emit({ type: 'card_effect', subtype: 'fractals_summon', regionId: toRegion, followerId: reserve.id, followerName: FOLLOWERS.tenzen.warrior.name.replace(/s$/, '') });
     }
   }
 
@@ -313,47 +313,6 @@ export function advanceSummoningTurn(state: GameState, justActed: Power, log?: G
 
   const nextPower = activePowers[next]!;
   const nextPs = base.powers[nextPower]!;
-
-  // If the next player has queued forced discards, handle them
-  if (nextPs.pendingForcedDiscards > 0) {
-    const required = Math.min(nextPs.pendingForcedDiscards, nextPs.hand.length);
-
-    // If they have more cards than required, they must choose — show the panel
-    if (nextPs.hand.length > required) {
-      log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'forced_discard', context: { count: required }, description: `${nextPower} must discard ${required} card(s).` });
-      return {
-        ...base,
-        summoningIndex: next,
-        pendingAction: {
-          waitingFor: nextPower,
-          actionKind: 'forced_discard',
-          context: { count: required },
-        },
-      };
-    }
-
-    // Otherwise auto-discard all (0 or <= required cards — no meaningful choice)
-    const toDiscard = nextPs.hand.slice(0, required);
-    log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'summoning_action', context: {}, description: `${nextPower}'s turn to summon.` });
-    return {
-      ...base,
-      powers: {
-        ...base.powers,
-        [nextPower]: {
-          ...nextPs,
-          hand: nextPs.hand.slice(required),
-          discardIds: [...nextPs.discardIds, ...toDiscard],
-          pendingForcedDiscards: 0,
-        },
-      },
-      summoningIndex: next,
-      pendingAction: {
-        waitingFor: nextPower,
-        actionKind: 'summoning_action',
-        context: {},
-      },
-    };
-  }
 
   log?.emit({ type: 'awaiting_action', power: nextPower, actionKind: 'summoning_action', context: {}, description: `${nextPower}'s turn to summon.` });
   return {

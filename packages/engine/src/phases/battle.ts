@@ -480,6 +480,7 @@ function runPostUndying(
 
   // Reset warFrenzyHits on all surviving figures in this region
   const surviving = followersInRegion(s, regionId).filter(f => f.warFrenzyHits > 0);
+  const clearedIds: string[] = [];
   for (const f of surviving) {
     const owner = f.power as Power;
     s = updatePower(s, owner, {
@@ -487,6 +488,10 @@ function runPostUndying(
         fl.id === f.id ? { ...fl, warFrenzyHits: 0 } : fl
       ),
     });
+    clearedIds.push(f.id);
+  }
+  if (clearedIds.length > 0) {
+    log.emit({ type: 'battle_cleanup', clearedWarFrenzyHits: clearedIds, resetDialCounters: false });
   }
 
   // ── End-of-battle: Corruption's Harvest ──────────────────────────────────

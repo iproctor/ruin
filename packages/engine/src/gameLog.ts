@@ -76,6 +76,8 @@ export function renderText(event: GameEvent): string | null {
       return null;
     case 'chaos_card_discarded':
       return null;
+    case 'battle_cleanup':
+      return null;
 
     // ── Draw ──────────────────────────────────────────────────────────────
     case 'tenzen_discard':
