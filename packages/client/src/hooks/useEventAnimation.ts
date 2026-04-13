@@ -3,7 +3,7 @@ import type { GameState, Power, RegionId, GameEvent, Phase } from '@ruin/engine'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const CORRUPTION_FLY_MS = 2750;
+const CORRUPTION_FLY_MS = 1100;
 const FIGURE_ANIM_MS = 800;
 const CARD_ANIM_MS = 800;
 const BANNER_MS = 1500;

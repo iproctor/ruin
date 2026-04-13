@@ -442,8 +442,8 @@ function isCardPlayableInRegion(
         followersInRegion(state, regionId, p).length > 0
       );
     case 'tenzen_fate_shield':
-      // Requires own figure in the region
-      return followersInRegion(state, regionId, power).length > 0;
+      // Playable in any region — on-play choice falls back to any own figure on board
+      return true;
     case 'lasha_narcotic_musk':
       // Requires an opponent cultist in the region
       return followersInRegion(state, regionId).some(f => f.class === 'cultist' && (f.controlledBy ?? f.power) !== power);

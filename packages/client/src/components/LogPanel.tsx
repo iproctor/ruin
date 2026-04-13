@@ -149,7 +149,7 @@ function renderEvent(event: GameEvent): ReactNode | null {
     case 'apprentice_choice':
       return event.carry
         ? <><Fig power="tenzen" cls="cultist" /> <T>carries</T> <CStone /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>
-        : <><Fig power="tenzen" cls="cultist" /> <T>leaves</T> <CStone /> <T>in</T> <Rg id={event.fromRegion} /></>;
+        : null;
     case 'card_effect':
       return renderCardEffect(event);
 
@@ -252,8 +252,10 @@ function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): R
       return <><Card cardId="tenzen_teleport" power={event.power} /><T>:</T> <Fig power={event.power} cls={event.followerClass} /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>;
     case 'meddling_of_rats':
       return <><Card cardId="tenzen_the_meddling_of_rats" power="tenzen" /><T>:</T> <Pw power={event.targetPower} /> <T>must discard 2 cards</T></>;
-    case 'fate_shield':
-      return <><Card cardId="tenzen_fate_shield" power="tenzen" /><T>: a figure is protected</T></>;
+    case 'fate_shield': {
+      const fsCls = event.followerId.split('_').slice(1, -1).join('_') as FollowerClass;
+      return <><Card cardId="tenzen_fate_shield" power="tenzen" /><T>:</T> <Fig power="tenzen" cls={fsCls} /> <T>protected</T></>;
+    }
     case 'hidden_influence':
       return <><Card cardId="lasha_hidden_influence" power="lasha" /><T>:</T> <Tok type={event.tokenType} /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>;
     case 'narcotic_musk':

@@ -276,12 +276,12 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     try {
       if (pendingAction) {
         await submitAction(gameId, pendingAction);
-        // Don't clear pendingAction here — let SSE state change clear it
-        // so the tableau keeps showing the PP decrement until events arrive.
+        setPendingAction(null);
         setSelectedCardId(null);
       }
       if (pendingOnPlayChoice) {
         await submitAction(gameId, pendingOnPlayChoice);
+        setPendingOnPlayChoice(null);
       }
       // Pure pass: End Turn clicked without staging any action
       if (!hadStagedAction) {

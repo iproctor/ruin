@@ -993,7 +993,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                 transform: 'translate(-50%, -50%)',
                 pointerEvents: 'none',
                 zIndex: 70,
-                animation: `${animName} 2750ms ease-in forwards`,
+                animation: `${animName} 1100ms ease-in forwards`,
               }}
             >
               <style>{`

@@ -82,6 +82,9 @@ export function useGameStream(gameId: string): GameStreamResult {
   const processing = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownSeq = useRef(0);
+  // Buffer of SSE event batches, kept so syncAfterAction can replay events
+  // that arrived before the HTTP response.
+  const sseBuffer = useRef<{ seq: number; events: GameEvent[] }[]>([]);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const hadBattle = useRef(false);
@@ -139,6 +142,7 @@ export function useGameStream(gameId: string): GameStreamResult {
   const handleEvent = useCallback((ev: StreamEvent) => {
     if (ev.type === 'history') {
       queue.current = [];
+      sseBuffer.current = [];
       if (timerRef.current) clearTimeout(timerRef.current);
       processing.current = false;
 
@@ -165,6 +169,8 @@ export function useGameStream(gameId: string): GameStreamResult {
     } else if (ev.type === 'events') {
       // Skip events the client already has from the action response
       if (ev.seq !== undefined && ev.seq <= knownSeq.current) return;
+      // Buffer for potential replay by syncAfterAction
+      if (ev.seq !== undefined) sseBuffer.current.push({ seq: ev.seq, events: ev.events });
       queue.current.push(...ev.events);
       startProcessing();
     } else if (ev.type === 'chat') {
@@ -180,27 +186,37 @@ export function useGameStream(gameId: string): GameStreamResult {
   }, [processNext]);
 
   /** Called by GamePage after a successful action POST.
-   *  Syncs to the returned state and skips SSE events up to `seq`. */
+   *  Syncs to the returned state and replays any SSE events that arrived
+   *  ahead of the HTTP response (seq > actionSeq). */
   const syncAfterAction = useCallback((actionState: GameState, seq: number, actionEvents?: GameEvent[]) => {
-    // Drain remaining queued events into the log before syncing
-    if (queue.current.length > 0) {
-      const remaining = queue.current.splice(0);
-      setEvents(prev => [...prev, ...remaining]);
-      if (remaining.length > 0) setLastEvent(remaining[remaining.length - 1]!);
-    }
+    // Stop any in-progress queue processing
     if (timerRef.current) clearTimeout(timerRef.current);
     processing.current = false;
+    queue.current = [];
 
+    // Apply authoritative action state
+    knownSeq.current = seq;
     setState(actionState);
     stateRef.current = actionState;
-    knownSeq.current = seq;
 
-    // Add the action's events directly to the log (no animation delay)
+    // Add the action's events to the log (no animation delay)
     if (actionEvents && actionEvents.length > 0) {
       setEvents(prev => [...prev, ...actionEvents]);
       setLastEvent(actionEvents[actionEvents.length - 1]!);
     }
-  }, []);
+
+    // Replay any SSE events that arrived ahead of the HTTP response.
+    // These have seq > actionSeq and need to be re-applied on top of
+    // the authoritative actionState.
+    const ahead = sseBuffer.current.filter(b => b.seq > seq);
+    sseBuffer.current = [];
+    if (ahead.length > 0) {
+      for (const batch of ahead) {
+        queue.current.push(...batch.events);
+      }
+      startProcessing();
+    }
+  }, [startProcessing]);
 
   useEffect(() => {
     return () => {
@@ -211,6 +227,7 @@ export function useGameStream(gameId: string): GameStreamResult {
   useEffect(() => {
     setConn(false);
     queue.current = [];
+    sseBuffer.current = [];
     if (timerRef.current) clearTimeout(timerRef.current);
     processing.current = false;
     knownSeq.current = 0;

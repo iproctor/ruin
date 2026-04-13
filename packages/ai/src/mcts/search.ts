@@ -189,15 +189,26 @@ export function runMcts(
   _mctsStats.iters += iteration;
   if (hitTimeCap) _mctsStats.timeCapped++;
 
+  // Visit margin: how decisive was this search?
+  const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
+  if (sorted.length >= 2) {
+    const margin = sorted[0]!.visits / Math.max(sorted[1]!.visits, 1);
+    _mctsStats.margins.push(margin);
+  }
+
   return bestAction(root);
 }
 
 // Temporary instrumentation — call reportMctsStats() to print
-export const _mctsStats = { total: 0, timeCapped: 0, iters: 0 };
+export const _mctsStats = { total: 0, timeCapped: 0, iters: 0, margins: [] as number[] };
 export function reportMctsStats(): void {
-  const { total, timeCapped, iters } = _mctsStats;
+  const { total, timeCapped, iters, margins } = _mctsStats;
   if (total === 0) return;
-  console.log(`[mcts] ${total} searches: ${timeCapped} time-capped (${(timeCapped/total*100).toFixed(0)}%), avg ${(iters/total).toFixed(0)} iterations`);
+  const avgMargin = margins.length > 0 ? margins.reduce((a, b) => a + b, 0) / margins.length : 0;
+  const closeCount = margins.filter(m => m < 1.5).length;
+  const decisiveCount = margins.filter(m => m >= 3).length;
+  console.log(`[mcts] ${total} searches: ${timeCapped} time-capped (${(timeCapped/total*100).toFixed(0)}%), avg ${(iters/total).toFixed(0)} iters`);
+  console.log(`[mcts] visit margin: avg ${avgMargin.toFixed(1)}x, close (<1.5x) ${closeCount}/${margins.length} (${(closeCount/margins.length*100).toFixed(0)}%), decisive (>3x) ${decisiveCount}/${margins.length} (${(decisiveCount/margins.length*100).toFixed(0)}%)`);
 }
 
 /**

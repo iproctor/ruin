@@ -156,8 +156,16 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
     // ── Reducers ──────────────────────────────────────────────────────────
     case 'forced_discard': {
       const fd = state.powers[event.power]!;
+      // Remove discarded cards from hand. For masked hands ('?' entries),
+      // fall back to removing the right number of '?' entries.
+      let newHand = [...fd.hand];
+      for (const cardId of event.cardIds) {
+        let idx = newHand.indexOf(cardId);
+        if (idx === -1) idx = newHand.indexOf('?');
+        if (idx >= 0) newHand.splice(idx, 1);
+      }
       return patchPower(state, event.power, {
-        hand: fd.hand.filter(id => !event.cardIds.includes(id)),
+        hand: newHand,
         discardIds: [...fd.discardIds, ...event.cardIds],
       });
     }

@@ -334,7 +334,7 @@ export default function Tableau({
     const nameB = cb?.shortName ?? cb?.name ?? b;
     return nameA.localeCompare(nameB);
   });
-  const isSummoningTurn = !!onEndTurn;
+  const isSummoningTurn = !!onEndTurn || !!apprenticeChoice;
 
   // Which card is pending (played to board)
   const pendingCardId =
