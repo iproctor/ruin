@@ -44,7 +44,7 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
     case 'forced_discard': {
       const ps = state.powers[power]!;
       const required = Math.min((state.pendingAction?.context['count'] as number) ?? 2, ps.hand.length);
-      const hand = ps.hand.filter(c => c !== '?');
+      const hand = [...new Set(ps.hand.filter(c => c !== '?'))];
       // Return one canonical action per card as a selection hint; client enforces count
       return hand.map(cardId => ({
         kind: 'forced_discard' as const,
@@ -386,8 +386,9 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
     } satisfies SummonFigureAction);
   }
 
-  // Play card actions
-  for (const cardId of p.hand) {
+  // Play card actions — dedupe so duplicate cards in hand don't produce identical actions
+  const uniqueCards = [...new Set(p.hand)];
+  for (const cardId of uniqueCards) {
     const def = CARD_BY_ID[cardId];
     if (!def) continue;
     // Cheap upper-bound prefilter: if the base cost alone is unaffordable
@@ -482,7 +483,7 @@ function getTenzenDiscardActions(state: GameState): TenzenDiscardAction[] {
   const actions: TenzenDiscardAction[] = [
     { kind: 'tenzen_discard', power: 'tenzen', cardId: null }, // keep hand
   ];
-  for (const cardId of hand) {
+  for (const cardId of new Set(hand)) {
     if (TENZEN_KEEP_CARDS.has(cardId)) continue; // never discard these
     actions.push({ kind: 'tenzen_discard', power: 'tenzen', cardId });
   }

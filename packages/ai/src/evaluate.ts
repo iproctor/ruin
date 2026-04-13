@@ -740,11 +740,23 @@ function evaluateGormenHandmade(state: GameState): number {
     const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
     if (warCry && !changer && myCultists > 0) warCryBlocked++;
 
-    // Domination
+    // Domination strength — raw domination value scaled by region worth.
+    // Rewards building presence in valuable regions, not just already-winning.
     const nobles = region.tokens.filter(t => t === 'noble').length;
-    const { leader } = getRegionDomination(state, regionId);
-    if (leader === 'gormen') {
-      dominationValue += region.baseValue + nobles;
+    const conquestValue = region.baseValue + nobles;
+    const resistance = getRegionResistance(state, regionId);
+    const myDom = getPowerDomination(state, regionId, 'gormen');
+    if (myDom > 0) {
+      // Scale by how close to overcoming resistance and by region value
+      const domRatio = Math.min(myDom / Math.max(resistance, 1), 1.5);
+      dominationValue += domRatio * conquestValue;
+      if (region.populous) dominationValue += domRatio * 2;
+    }
+
+    // Fortified position: warriors in a valuable region add to domination
+    // AND defend the cultist pile. Each warrior is +1 domination + a battle die.
+    if (myWarriors > 0 && conquestValue >= 3) {
+      dominationValue += myWarriors * conquestValue * 0.3;
     }
 
     // Card synergy
@@ -805,15 +817,16 @@ function evaluateGormenHandmade(state: GameState): number {
   const raw =
     0.18 * vpProgress +        // VP is everything
     0.08 * vpLeadScore +       // relative lead
-    0.15 * depthScore +        // corruption depth across regions
-    0.12 * nearRuinScore +     // multiple regions near simultaneous ruin
-    0.10 * spreadScore +       // cultists spread wide
-    0.08 * populousScore +     // cultists in populous regions (DAC + high value)
-    0.08 * dominationScore +   // current domination VP
-    0.07 * ruinScore +         // position in ruined regions
-    0.06 * provenderScore +    // Provender of Rot upgrade
-    0.04 * cardSynergy +       // Pestilent Aura + Pandemic leverage
+    0.18 * dominationScore +   // dominate valuable populous regions every round
+    0.12 * populousScore +     // cultists in populous regions (high value + DAC)
+    0.08 * depthScore +        // corruption depth (slow ruin)
+    0.07 * spreadScore +       // cultists in multiple regions
+    0.06 * nearRuinScore +     // regions approaching ruination
+    0.06 * ruinScore +         // position in ruined regions
+    0.05 * provenderScore +    // Provender of Rot upgrade
+    0.05 * cardSynergy +       // Pestilent Aura + Pandemic leverage
     0.04 * warriorScore +      // cheap warriors for defense
+    0.03 * Math.min(totalCultistsOnBoard / 8, 1.0) + // cultists on board
     - warCryPenalty;
 
   return Math.max(0.0, Math.min(1.0, raw));
