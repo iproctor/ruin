@@ -157,9 +157,9 @@ export function runMcts(
   // Tenzen: force 0-cost card plays when PP is low to cycle the hand
   legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
 
-  // Tenzen: hard-filter actions that feed Xarm a free DAC. The value head
-  // can't reliably detect this danger, so we enforce it.
-  if (forPower === 'tenzen') {
+  // Hard-filter actions that feed Xarm a free DAC. Always for Tenzen
+  // (value head is flat), early game for others (policy hasn't learned yet).
+  if (forPower === 'tenzen' || (forPower !== 'xarm' && state.round <= 3)) {
     const filtered = legalRoot.filter(a => !isFeedingXarmDac(state, a));
     if (filtered.length > 0) legalRoot = filtered;
   }
@@ -252,7 +252,7 @@ export function runMctsWithStats(
   }
   let legalRoot = filterPointlessActions(state, legalRootRaw);
   legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
-  if (forPower === 'tenzen') {
+  if (forPower === 'tenzen' || (forPower !== 'xarm' && state.round <= 3)) {
     const filtered = legalRoot.filter(a => !isFeedingXarmDac(state, a));
     if (filtered.length > 0) legalRoot = filtered;
   }

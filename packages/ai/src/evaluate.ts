@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId } from '@ruin/engine';
-import { REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, followersInRegion } from '@ruin/engine';
+import { REGIONS, CHAOS_CARDS, THREAT_DIALS, getRegionDomination, getRegionResistance, getPowerDomination, followersInRegion } from '@ruin/engine';
 import { evaluateLearned, hasModel } from './learn/evaluator.js';
 
 // If a learned model has been loaded (via loadModel in a server/script entry
@@ -54,6 +54,12 @@ const LASHA_SNEAK_THRESHOLD = 7;
 export function evaluateState(state: GameState, power: Power): number {
   if (state.winners !== null) {
     return state.winners.includes(power) ? 1.0 : 0.0;
+  }
+
+  // Tenzen: use handmade evaluator for early game (rounds 1-4) because the
+  // learned model's Tenzen evaluation is flat (~0.04 regardless of position).
+  if (power === 'tenzen' && state.round <= 4) {
+    return evaluateTenzen(state);
   }
 
   if (hasModel()) {
@@ -467,6 +473,186 @@ function evaluateGormen(
     0.15 * dominationScore +
     0.06 * ppScore +
     0.06 * dialScore;
+
+  return Math.max(0.0, Math.min(1.0, raw));
+}
+
+// ─── Magic symbol card lookup ──────────────────────────────────────────────
+
+const MAGIC_SYMBOL_CARD_IDS = new Set(
+  CHAOS_CARDS.filter(c => c.hasMagicSymbol).map(c => c.id),
+);
+
+/**
+ * Tenzen-specific evaluation for rounds 1-4.
+ *
+ * Strategy priorities (from strategy guide):
+ *   1. Get 8 cultists on board, spread across regions for DAC flexibility
+ *   2. Play 3-4 cards per turn — cycle the deck aggressively
+ *   3. Don't waste PP on warriors/incarnation
+ *   4. Get Apprentices upgrade ASAP (carry chaos stones)
+ *   5. Set up DAC conditions: ≥2 cultists in regions with ≥2 magic+chaos
+ *   6. Dominate and ruin where possible — both VP and dial are viable
+ *   7. Use Stasis Web to protect regions, Teleport for repositioning
+ */
+function evaluateTenzen(state: GameState): number {
+  const ps = state.powers['tenzen']!;
+  const hasFatespinner = ps.upgradesInPlay.includes('tenzen_fatespinner_up');
+  const hasApprentices = ps.upgradesInPlay.includes('tenzen_apprentices_up');
+  const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+
+  // ── Single pass over regions ───────────────────────────────────────────
+  let cultistsOnBoard = 0;
+  let safeCultists = 0;       // cultists NOT threatened by Xarm attack dice
+  let threatenedCultists = 0; // cultists in regions where Xarm can attack
+  let regionsWithCultists = 0;
+  let dacReadyRegions = 0;
+  let nearDacRegions = 0;
+  let stoneCultistSynergy = 0;
+  let stasisProtectedPiles = 0; // regions with Stasis Web + ≥2 cultists
+  let dominationValue = 0;
+  let ruinParticipation = 0;
+
+  for (const regionId of ALL_REGIONS) {
+    const region = state.regions[regionId];
+    if (!region) continue;
+
+    // Ruination participation (works on ruined regions too)
+    const myCorr = region.corruptionTokens['tenzen'] ?? 0;
+    const totalCorr = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
+    if (myCorr > 0) {
+      if (region.ruinationCardIndex !== null) {
+        const sorted = [...state.activePowers].sort(
+          (a, b) => (region.corruptionTokens[b] ?? 0) - (region.corruptionTokens[a] ?? 0),
+        );
+        const rank = sorted.indexOf('tenzen');
+        ruinParticipation += rank === 0 ? 1.0 : rank === 1 ? 0.6 : 0.2;
+      } else {
+        ruinParticipation += Math.min(totalCorr / 12, 1.0) * Math.min(myCorr / 4, 1.0);
+      }
+    }
+
+    if (region.ruinationCardIndex !== null) continue;
+
+    const rFigs = followersInRegion(state, regionId);
+    const myCultists = rFigs.filter(
+      f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
+    ).length;
+
+    if (myCultists === 0) continue;
+
+    cultistsOnBoard += myCultists;
+    regionsWithCultists++;
+
+    // ── Defense: is this region threatened by Xarm? ──────────────────────
+    const hasStasis = region.chaosCards.some(c => c?.cardId === 'tenzen_stasis_web');
+    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+    const hasEcstasy = !changer && region.chaosCards.some(c => c?.cardId === 'lasha_ecstasy');
+
+    let xarmAttack = 0;
+    if (!hasEcstasy) {
+      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
+      if (hasWarFrenzy) xarmAttack += 2;
+      for (const f of rFigs) {
+        if (f.tipped || (f.controlledBy ?? f.power) !== 'xarm') continue;
+        if (f.class === 'warrior' || f.class === 'incarnation') xarmAttack += 2;
+        else if (f.class === 'cultist' && xarmHasHeartseekers) xarmAttack += 1;
+      }
+    }
+
+    if (xarmAttack > 0) {
+      threatenedCultists += myCultists;
+    } else {
+      safeCultists += myCultists;
+    }
+
+    // Stasis Web protecting a cultist pile is very valuable
+    if (hasStasis && myCultists >= 2) stasisProtectedPiles++;
+
+    // ── DAC readiness ────────────────────────────────────────────────────
+    const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+    if (!warCry || changer) {
+      const magicSymbols = region.chaosCards.filter(
+        c => c !== null && MAGIC_SYMBOL_CARD_IDS.has(c.cardId),
+      ).length;
+      const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
+      const fatespinnerBonus = hasFatespinner &&
+        rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+      const magicTotal = magicSymbols + chaosStones + fatespinnerBonus;
+
+      if (myCultists >= 2 && magicTotal >= 2) dacReadyRegions++;
+      else if ((myCultists >= 2 && magicTotal >= 1) || (myCultists >= 1 && magicTotal >= 2)) nearDacRegions++;
+
+      // Chaos stones near cultists
+      if (chaosStones > 0) {
+        stoneCultistSynergy += chaosStones * Math.min(myCultists / 2, 1);
+      }
+    }
+
+    // ── Domination ───────────────────────────────────────────────────────
+    const nobles = region.tokens.filter(t => t === 'noble').length;
+    const { leader } = getRegionDomination(state, regionId);
+    if (leader === 'tenzen') dominationValue += region.baseValue + nobles;
+  }
+
+  // ── Composite scores ──────────────────────────────────────────────────
+
+  // Cultists: safe cultists are worth full value, threatened ones half
+  const effectiveCultists = safeCultists + threatenedCultists * 0.5;
+  const cultistScore = Math.min(effectiveCultists / 8, 1.0);
+
+  const spreadScore = Math.min(regionsWithCultists / 4, 1.0);
+
+  // DAC engine — ready regions weighted higher, near-ready gives partial
+  const dacScore = Math.min(dacReadyRegions / 3, 1.0) + 0.3 * Math.min(nearDacRegions / 3, 1.0);
+
+  const stoneScore = Math.min(stoneCultistSynergy / 4, 1.0);
+
+  // Defense: Stasis-protected piles are strongholds
+  const defenseScore = Math.min(stasisProtectedPiles / 2, 1.0);
+
+  // Threat penalty: fraction of cultists that are threatened
+  const threatPenalty = cultistsOnBoard > 0
+    ? (threatenedCultists / cultistsOnBoard) * 0.15
+    : 0;
+
+  const upgradeScore = hasApprentices ? 1.0 : 0.0;
+
+  const maxDialPos = THREAT_DIALS['tenzen'].length - 1;
+  const dialFraction = (ps.dialPosition + Math.min(ps.dialCounters / 3, 0.9)) / maxDialPos;
+  const dialScore = Math.min(dialFraction, 1.0);
+
+  const vpProgress = Math.min(ps.victoryPoints / 50, 1.0);
+  let maxOpponentVP = 0;
+  for (const p of state.activePowers) {
+    if (p === 'tenzen') continue;
+    const opVP = state.powers[p]?.victoryPoints ?? 0;
+    if (opVP > maxOpponentVP) maxOpponentVP = opVP;
+  }
+  const vpLeadScore = Math.max(0, Math.min((ps.victoryPoints - maxOpponentVP + 50) / 100, 1.0));
+
+  const dominationScore = Math.min(dominationValue / TOTAL_BASE_CONQUEST, 1.0);
+  const ruinScore = Math.min(ruinParticipation / 3, 1.0);
+
+  const fightingUnitsOnBoard = ps.followers.filter(
+    f => f.regionId !== null && (f.class === 'warrior' || f.class === 'incarnation'),
+  ).length;
+  const noCombatPenalty = fightingUnitsOnBoard > 0 ? -0.03 * fightingUnitsOnBoard : 0;
+
+  const raw =
+    0.20 * dacScore +          // DAC-ready regions
+    0.16 * cultistScore +      // effective cultists (safe > threatened)
+    0.10 * spreadScore +       // cultists in many regions
+    0.10 * defenseScore +      // Stasis-protected cultist piles
+    0.08 * stoneScore +        // chaos stones near cultists
+    0.07 * upgradeScore +      // Apprentices upgrade
+    0.07 * dialScore +         // dial progress
+    0.07 * vpProgress +        // VP progress
+    0.05 * vpLeadScore +       // VP relative to opponents
+    0.05 * dominationScore +   // current domination
+    0.05 * ruinScore +         // ruination participation
+    - threatPenalty +          // penalize exposed cultists
+    noCombatPenalty;
 
   return Math.max(0.0, Math.min(1.0, raw));
 }

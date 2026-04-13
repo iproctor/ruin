@@ -80,7 +80,9 @@
       "Bash(rsync -avz -e 'ssh -i __TRACKED_VAR__/.ssh/id_ed25519_hetzner' 'iain@78.46.79.158:/home/iain/code/chaos/packages/ai/data/bench_iter_*.json' /Users/iainap/code/chaos/packages/ai/data/)",
       "Bash(ls drizzle.config.*)",
       "Bash(cat drizzle.config.*)",
-      "Bash(npx drizzle-kit:*)"
+      "Bash(npx drizzle-kit:*)",
+      "Bash(./scripts/push-hetzner.sh)",
+      "Bash(/Users/iainap/code/chaos/node_modules/.pnpm/typescript@5.9.3/node_modules/.bin/tsc --noEmit -p packages/ai/tsconfig.json)"
     ]
   }
 }
