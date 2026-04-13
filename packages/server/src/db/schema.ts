@@ -56,7 +56,8 @@ export const invitations = pgTable('invitations', {
   gameId: uuid('game_id')
     .notNull()
     .references(() => games.id),
-  email: text('email').notNull(),
+  email: text('email'),
+  username: text('username'),
   power: text('power').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   accepted: boolean('accepted').notNull().default(false),

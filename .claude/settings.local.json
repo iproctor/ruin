@@ -77,7 +77,10 @@
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
       "Bash(npx -y vitest run packages/engine/src/__tests__/summoning.test.ts)",
-      "Bash(rsync -avz -e 'ssh -i __TRACKED_VAR__/.ssh/id_ed25519_hetzner' 'iain@78.46.79.158:/home/iain/code/chaos/packages/ai/data/bench_iter_*.json' /Users/iainap/code/chaos/packages/ai/data/)"
+      "Bash(rsync -avz -e 'ssh -i __TRACKED_VAR__/.ssh/id_ed25519_hetzner' 'iain@78.46.79.158:/home/iain/code/chaos/packages/ai/data/bench_iter_*.json' /Users/iainap/code/chaos/packages/ai/data/)",
+      "Bash(ls drizzle.config.*)",
+      "Bash(cat drizzle.config.*)",
+      "Bash(npx drizzle-kit:*)"
     ]
   }
 }

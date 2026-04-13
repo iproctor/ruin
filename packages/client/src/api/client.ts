@@ -143,7 +143,7 @@ export interface LobbyPlayer {
 
 export interface LobbyInvitation {
   id: string;
-  email: string;
+  label: string;
   status: string;
   createdAt: string;
 }
@@ -165,10 +165,10 @@ export async function getLobby(gameId: string): Promise<LobbyState> {
   return request(`/games/${gameId}/lobby`);
 }
 
-export async function invitePlayer(gameId: string, email: string): Promise<void> {
+export async function invitePlayer(gameId: string, identifier: string): Promise<void> {
   await request(`/games/${gameId}/invite`, {
     method: 'POST',
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ identifier }),
   });
 }
 

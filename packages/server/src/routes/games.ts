@@ -250,17 +250,21 @@ router.get('/:id/lobby', requireAuth, async (req, res) => {
 });
 
 router.post('/:id/invite', requireAuth, async (req, res) => {
-  const emailParsed = z.object({ email: z.string().email() }).safeParse(req.body);
-  if (!emailParsed.success) { res.status(400).json({ error: 'Invalid email' }); return; }
+  const parsed = z.object({ identifier: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Provide a username or email' }); return; }
+  const { identifier } = parsed.data;
+  const isEmail = identifier.includes('@');
   try {
-    const invId = await lobbyInvite(req.params.id!, req.userId!, emailParsed.data.email);
-    // Send invite email
-    const token = await createMagicLink(emailParsed.data.email, req.params.id!);
-    await sendEmail({
-      to: emailParsed.data.email,
-      subject: 'You have been invited to play Ruin',
-      html: gameInviteEmail(token, ''),
-    });
+    const invId = await lobbyInvite(req.params.id!, req.userId!, identifier);
+    // Send invite email if an email address was provided
+    if (isEmail) {
+      const token = await createMagicLink(identifier, req.params.id!);
+      await sendEmail({
+        to: identifier,
+        subject: 'You have been invited to play Ruin',
+        html: gameInviteEmail(token, ''),
+      });
+    }
     res.json({ invitationId: invId });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });

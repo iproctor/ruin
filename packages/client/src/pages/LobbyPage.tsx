@@ -36,7 +36,7 @@ export default function LobbyPage() {
   const [lobby, setLobby] = useState<LobbyState | null>(null);
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [error, setError] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteInput, setInviteInput] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [sending, setSending] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -103,10 +103,10 @@ export default function LobbyPage() {
   }, [lobby?.players]);
 
   async function handleInvite() {
-    if (!id || !inviteEmail.trim()) return;
+    if (!id || !inviteInput.trim()) return;
     try {
-      await invitePlayer(id, inviteEmail.trim());
-      setInviteEmail('');
+      await invitePlayer(id, inviteInput.trim());
+      setInviteInput('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to invite');
     }
@@ -229,14 +229,14 @@ export default function LobbyPage() {
               <h2 style={{ fontSize: '1rem' }}>Invite</h2>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
-                  type="email"
-                  placeholder="email@example.com"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
+                  type="text"
+                  placeholder="username or email"
+                  value={inviteInput}
+                  onChange={e => setInviteInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleInvite())}
                   style={{ flex: 1 }}
                 />
-                <button className="primary" onClick={handleInvite} disabled={!inviteEmail.trim()}>
+                <button className="primary" onClick={handleInvite} disabled={!inviteInput.trim()}>
                   Send
                 </button>
               </div>
@@ -247,7 +247,7 @@ export default function LobbyPage() {
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       fontSize: '0.75rem', color: '#888', padding: '2px 0',
                     }}>
-                      <span>{inv.email}</span>
+                      <span>{inv.label}</span>
                       <button
                         className="secondary"
                         style={{ fontSize: '0.6rem', padding: '1px 4px' }}
