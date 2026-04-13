@@ -86,6 +86,8 @@ export async function ensureSchema(): Promise<void> {
       UPDATE games SET status = 'complete' WHERE is_complete = true AND status = 'active';
 
       ALTER TABLE invitations ADD COLUMN IF NOT EXISTS invitation_status TEXT NOT NULL DEFAULT 'pending';
+      ALTER TABLE invitations ADD COLUMN IF NOT EXISTS username TEXT;
+      ALTER TABLE invitations ALTER COLUMN email DROP NOT NULL;
 
       CREATE TABLE IF NOT EXISTS lobby_players (
         game_id    UUID NOT NULL REFERENCES games(id),
