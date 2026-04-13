@@ -282,13 +282,15 @@ export function getFollowerCost(
     UPGRADES.find(up => up.id === u)?.upgradeType === cls
   ) ? (def.upgraded.cost) : def.base.cost;
 
-  // Gormen free Plaguecarrier in empty region
+  // Gormen free Plaguecarrier in empty region (once per figure per round)
   if (power === 'gormen' && cls === 'cultist' &&
       state.powers['gormen']!.upgradesInPlay.includes('gormen_plaguecarriers_up')) {
-    const hasOtherFigures = state.powers['gormen']!.followers.some(
+    const gp = state.powers['gormen']!;
+    const hasOtherFigures = gp.followers.some(
       f => f.regionId === toRegion && f.id !== followerId
     );
-    if (!hasOtherFigures) cost = 0;
+    const alreadyUsedFree = (gp.freeRedeployIds ?? []).includes(followerId);
+    if (!hasOtherFigures && !alreadyUsedFree) cost = 0;
   }
 
   // Stasis Web: +2 for non-Tenzen in regions with Stasis Web card

@@ -239,10 +239,31 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     if (!validDropRegions?.has(dropRegion)) return;
 
     if (drag.kind === 'reserve_follower' || drag.kind === 'board_follower') {
+      let bestFollowerId = drag.followerId;
+
+      // Gormen Plaguecarrier swap: if the dragged cultist already used its free
+      // move, prefer another cultist in the same region that hasn't.
+      if (drag.kind === 'board_follower' && myPower === 'gormen' && displayState) {
+        const dragged = displayState.powers['gormen']!.followers.find(f => f.id === drag.followerId);
+        if (dragged && dragged.class === 'cultist' && dragged.regionId) {
+          const freeUsed = displayState.powers['gormen']!.freeRedeployIds ?? [];
+          if (freeUsed.includes(drag.followerId)) {
+            const substitute = displayState.powers['gormen']!.followers.find(f =>
+              f.class === 'cultist' &&
+              f.regionId === dragged.regionId &&
+              f.id !== drag.followerId &&
+              !freeUsed.includes(f.id) &&
+              (f.controlledBy === null || f.controlledBy === 'gormen')
+            );
+            if (substitute) bestFollowerId = substitute.id;
+          }
+        }
+      }
+
       const action: Action = {
         kind: 'summoning_summon_figure',
         power: myPower,
-        followerId: drag.followerId,
+        followerId: bestFollowerId,
         toRegion: dropRegion,
       };
       setPendingAction(action);

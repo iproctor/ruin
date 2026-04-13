@@ -87,6 +87,7 @@ export interface PowerState {
   passedSummoning: boolean;
   followers: FollowerInstance[]; // all followers (on board + reserve)
   lastSummonTurnAt: number;     // actionCount at start of this power's most recent summoning turn
+  freeRedeployIds: string[];    // follower IDs that used a free redeploy this round (Plaguecarrier upgrade)
 }
 
 // ─── Pending action ───────────────────────────────────────────────────────────
