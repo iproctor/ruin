@@ -91,8 +91,8 @@ function computeSoftTarget(finalState: import('@ruin/engine').GameState, winners
   // toward any victory condition (VP threshold OR dial position). Crediting
   // dial progress matters because some powers (xarm) win primarily by dial,
   // and crediting only VP share underweights "I was about to win by dial."
-  const winnerMass = 0.8;
-  const progressMass = 0.2;
+  const winnerMass = 0.4;
+  const progressMass = 0.6;
   const target = new Array(POWERS.length).fill(0);
 
   if (winners.length > 0) {
