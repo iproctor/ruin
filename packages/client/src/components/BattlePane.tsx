@@ -91,7 +91,7 @@ export default function BattlePane({ regionId, events }: BattlePaneProps) {
             <div key={ri} style={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
               {roll.kind !== 'normal' && (
                 <span style={{ color: '#94a3b8', fontSize: '0.6rem', marginRight: 4 }}>
-                  {roll.kind === 'war_frenzy' ? 'WF' : 'UF'}
+                  {roll.kind === 'war_frenzy' ? 'WF' : 'BR'}
                 </span>
               )}
               {roll.dice.map((d, di) => <DiceValue key={di} value={d} />)}

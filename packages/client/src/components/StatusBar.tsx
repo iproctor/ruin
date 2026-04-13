@@ -12,6 +12,7 @@ interface StatusBarProps {
   state: GameState;
   myPower: Power | null;
   players?: GamePlayerInfo[];
+  events?: GameEvent[];
 }
 
 // ── World card mini chip ──────────────────────────────────────────────────────
@@ -195,7 +196,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
 
 // ── Ruination chip with tooltip ──────────────────────────────────────────────
 
-function RuinChip({ state }: { state: GameState }) {
+function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] }) {
   const [hovered, setHovered] = useState(false);
   const chipRef = useRef<HTMLDivElement>(null);
 
@@ -210,11 +211,13 @@ function RuinChip({ state }: { state: GameState }) {
     }
   }
 
-  // Build map of cardIndex -> scoring event
+  // Build map of cardIndex -> scoring event from the SSE event log
   const scoringMap = new Map<number, Extract<GameEvent, { type: 'ruination_scoring' }>>();
-  for (const evt of state.events) {
-    if (evt.type === 'ruination_scoring') {
-      scoringMap.set(evt.cardIndex, evt);
+  if (events) {
+    for (const evt of events) {
+      if (evt.type === 'ruination_scoring') {
+        scoringMap.set(evt.cardIndex, evt);
+      }
     }
   }
 
@@ -353,7 +356,7 @@ function RuinChip({ state }: { state: GameState }) {
 
 // ── Status bar ────────────────────────────────────────────────────────────────
 
-export default function StatusBar({ state, myPower, players }: StatusBarProps) {
+export default function StatusBar({ state, myPower, players, events: eventLog }: StatusBarProps) {
   const playerByPower = new Map((players ?? []).map((p) => [p.power, p]));
   const waiting = state.pendingAction?.waitingFor ?? null;
   const phaseLabel = PHASE_LABELS[state.phase] ?? state.phase;
@@ -416,7 +419,7 @@ export default function StatusBar({ state, myPower, players }: StatusBarProps) {
 
       {/* Ruination tracker */}
       <span className="text-slate-600 shrink-0">|</span>
-      <RuinChip state={state} />
+      <RuinChip state={state} events={eventLog} />
 
       <div className="flex-1" />
 

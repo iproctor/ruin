@@ -20,22 +20,6 @@ export function maskEvent(event: GameEvent, viewerPower: Power | null): GameEven
       if (!isOwn(event.power)) return { ...event, cardId: '?' };
       return event;
 
-    // Tenzen discard: mask which card was discarded for non-tenzen
-    case 'tenzen_discard':
-      if (!isOwn('tenzen') && event.cardId !== null) return { ...event, cardId: '?' };
-      return event;
-
-    // Play card: card is now public (on the board), no masking needed
-    case 'play_card':
-      return event;
-
-    // Normagne heir discard: mask card for non-owner
-    case 'world_card_effect':
-      if (event.subtype === 'normagne_heir_discard' && !isOwn(event.power)) {
-        return { ...event, cardId: '?' };
-      }
-      return event;
-
     // Power draw: mask drawn card IDs and deck/discard for non-owner
     case 'power_draw':
       if (!isOwn(event.power)) {

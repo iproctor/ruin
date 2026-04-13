@@ -9,7 +9,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import type { Power, Action, RegionId, FollowerClass, GameState } from '@ruin/engine';
+import type { Power, Action, RegionId, FollowerClass, GameState, GameEvent } from '@ruin/engine';
 import type { DragItem } from '../types/drag.js';
 import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
@@ -274,18 +274,22 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     // tick. We must NOT auto-pass that new tick.
     const hadStagedAction = !!pendingAction || !!pendingOnPlayChoice;
     try {
+      let lastResult: { state: GameState; seq: number; events: GameEvent[] } | null = null;
       if (pendingAction) {
-        await submitAction(gameId, pendingAction);
+        lastResult = await submitAction(gameId, pendingAction);
         setPendingAction(null);
         setSelectedCardId(null);
       }
       if (pendingOnPlayChoice) {
-        await submitAction(gameId, pendingOnPlayChoice);
+        lastResult = await submitAction(gameId, pendingOnPlayChoice);
         setPendingOnPlayChoice(null);
       }
       // Pure pass: End Turn clicked without staging any action
       if (!hadStagedAction) {
-        await submitAction(gameId, { kind: 'summoning_pass', power: acting });
+        lastResult = await submitAction(gameId, { kind: 'summoning_pass', power: acting });
+      }
+      if (lastResult) {
+        syncAfterAction(lastResult.state, lastResult.seq, lastResult.events);
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Action failed');
@@ -377,7 +381,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
-        <StatusBar state={statusState} myPower={myPower} players={players} />
+        <StatusBar state={statusState} myPower={myPower} players={players} events={events} />
 
         {/* Main area */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
