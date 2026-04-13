@@ -123,6 +123,15 @@ interface GameInnerProps {
   players: import('../api/client.js').GamePlayerInfo[];
 }
 
+/** Find a follower by ID across all powers. */
+function findFollower(state: GameState, followerId: string) {
+  for (const power of state.activePowers) {
+    const f = state.powers[power]!.followers.find(f => f.id === followerId);
+    if (f) return f;
+  }
+  return null;
+}
+
 function GameInner({ gameId, myPowers, players }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
   const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume } = useGameStream(gameId);
@@ -191,16 +200,23 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
       );
     }
 
-    // For follower drags (reserve or board), consult legal actions for valid toRegions
+    // For follower drags, find legal actions for any equivalent follower (same
+    // class, source region, protected, controlledBy).  getLegalActions deduplicates
+    // identical followers so the dragged figure's ID may not appear directly.
     if (activeDrag.kind === 'reserve_follower' || activeDrag.kind === 'board_follower') {
       const legal = getLegalActions(displayState, myPowerEarly);
+      const dragged = findFollower(displayState, activeDrag.followerId);
+      if (!dragged) return null;
       return new Set(
         legal
-          .filter(
-            (a) =>
-              a.kind === 'summoning_summon_figure' &&
-              a.followerId === activeDrag.followerId
-          )
+          .filter((a) => {
+            if (a.kind !== 'summoning_summon_figure') return false;
+            const rep = findFollower(displayState, a.followerId);
+            return rep && rep.class === dragged.class
+              && rep.regionId === dragged.regionId
+              && rep.protected === dragged.protected
+              && (rep.controlledBy ?? rep.power) === (dragged.controlledBy ?? dragged.power);
+          })
           .map((a) => (a as { toRegion: RegionId }).toRegion)
       );
     }
@@ -239,34 +255,22 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     if (!validDropRegions?.has(dropRegion)) return;
 
     if (drag.kind === 'reserve_follower' || drag.kind === 'board_follower') {
-      let bestFollowerId = drag.followerId;
+      // Map to the representative followerId from getLegalActions — the dragged
+      // figure may have been deduped away in favour of an equivalent one.
+      const legal = getLegalActions(displayState, myPower);
+      const dragged = findFollower(displayState, drag.followerId);
+      const match = dragged && legal.find((a) => {
+        if (a.kind !== 'summoning_summon_figure') return false;
+        if ((a as { toRegion: RegionId }).toRegion !== dropRegion) return false;
+        const rep = findFollower(displayState, a.followerId);
+        return rep && rep.class === dragged.class
+          && rep.regionId === dragged.regionId
+          && rep.protected === dragged.protected
+          && (rep.controlledBy ?? rep.power) === (dragged.controlledBy ?? dragged.power);
+      });
+      if (!match) return;
 
-      // Gormen Plaguecarrier swap: if the dragged cultist already used its free
-      // move, prefer another cultist in the same region that hasn't.
-      if (drag.kind === 'board_follower' && myPower === 'gormen' && displayState) {
-        const dragged = displayState.powers['gormen']!.followers.find(f => f.id === drag.followerId);
-        if (dragged && dragged.class === 'cultist' && dragged.regionId) {
-          const freeUsed = displayState.powers['gormen']!.freeRedeployIds ?? [];
-          if (freeUsed.includes(drag.followerId)) {
-            const substitute = displayState.powers['gormen']!.followers.find(f =>
-              f.class === 'cultist' &&
-              f.regionId === dragged.regionId &&
-              f.id !== drag.followerId &&
-              !freeUsed.includes(f.id) &&
-              (f.controlledBy === null || f.controlledBy === 'gormen')
-            );
-            if (substitute) bestFollowerId = substitute.id;
-          }
-        }
-      }
-
-      const action: Action = {
-        kind: 'summoning_summon_figure',
-        power: myPower,
-        followerId: bestFollowerId,
-        toRegion: dropRegion,
-      };
-      setPendingAction(action);
+      setPendingAction(match as Action);
     } else if (drag.kind === 'hand_card') {
       const region = displayState.regions[dropRegion]!;
       const slotIndex = region.chaosCards[0] === null ? 0 : 1;

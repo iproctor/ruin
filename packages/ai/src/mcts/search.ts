@@ -41,13 +41,14 @@ function makeRootPriors(
 ): ((action: Action) => number) | null {
   const raw = policyForState(state, forPower);
   if (raw === null) return null;
-  return makeRootPriorsFromRaw(raw, state, rootActions);
+  return makeRootPriorsFromRaw(raw, state, rootActions, forPower);
 }
 
 function makeRootPriorsFromRaw(
   raw: Float32Array,
   state: GameState,
   rootActions: Action[],
+  forPower?: Power,
 ): ((action: Action) => number) | null {
   // Build slot → raw policy
   const slotPriors = new Map<number, number>();
@@ -75,11 +76,26 @@ function makeRootPriorsFromRaw(
     }
   }
 
+  // Tenzen: boost prior for retreating cultists from Xarm-threatened regions.
+  // Tenzen's low DAC rate means it's better to keep cultists alive for
+  // corruption/ruination VP than to lose them contesting Xarm.
+  const RETREAT_PRIOR_FLOOR = 0.08;
+  const retreatSlots = new Set<number>();
+  if (forPower === 'tenzen') {
+    for (const a of rootActions) {
+      if (isRetreatFromXarm(state, a)) {
+        const idx = canonicalActionIndex(a, state);
+        if (idx >= 0) retreatSlots.add(idx);
+      }
+    }
+  }
+
   return (action: Action) => {
     const idx = canonicalActionIndex(action, state);
     if (idx < 0) return 1 / rootActions.length;
     let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
     if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
+    if (retreatSlots.has(idx)) p = Math.max(p, RETREAT_PRIOR_FLOOR);
     return p;
   };
 }
@@ -175,7 +191,7 @@ export function runMcts(
   const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
 
   const root = createNode(state, null, null, null, forPower, [...rootActions]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions) : null;
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions, forPower) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -267,7 +283,7 @@ export function runMctsWithStats(
   const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
   const root = createNode(state, null, null, null, forPower, [...rootActions]);
 
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions) : null;
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions, forPower) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
