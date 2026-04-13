@@ -316,10 +316,6 @@ def main() -> int:
     class_freq = class_counts / class_counts.sum()
     # Weight = 1 / (4 * freq) → uniform classes get weight 1.0, rare classes get > 1
     inv_freq = 1.0 / (4.0 * class_freq)
-    # Extra boost for tenzen (index 2) — its indirect strategy needs more
-    # gradient signal to learn. 3× on top of the inverse-frequency weight.
-    TENZEN_BOOST = 2.0
-    inv_freq[2] *= TENZEN_BOOST
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)
     sw_val = sample_weights[:n_val]

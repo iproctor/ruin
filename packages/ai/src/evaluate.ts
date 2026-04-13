@@ -56,9 +56,11 @@ export function evaluateState(state: GameState, power: Power): number {
     return state.winners.includes(power) ? 1.0 : 0.0;
   }
 
-  // Tenzen: use handmade evaluator for early game (rounds 1-4) because the
-  // learned model's Tenzen evaluation is flat (~0.04 regardless of position).
-  if (power === 'tenzen' && state.round <= 4) {
+  // Tenzen: use handmade evaluator for early game because the learned
+  // model's Tenzen evaluation is flat (~0.04 regardless of position).
+  // TENZEN_EVAL_CUTOFF=0 disables, default=4.
+  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '5', 10);
+  if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
 
