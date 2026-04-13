@@ -1,5 +1,5 @@
 # Stage 1: build all packages
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 RUN npm install -g pnpm
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml* ./
@@ -16,10 +16,10 @@ COPY tsconfig.base.json ./
 RUN pnpm build
 
 # Stage 2: production image
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS builder
 WORKDIR /app
 RUN npm install -g pnpm
-COPY --from=builder /app/pnpm-workspace.yaml /app/package.json ./
+COPY --from=builder /app/pnpm-workspace.yaml /app/package.json pnpm-lock.yaml* ./
 COPY --from=builder /app/packages/engine/package.json packages/engine/
 COPY --from=builder /app/packages/server/package.json packages/server/
 COPY --from=builder /app/packages/ai/package.json packages/ai/
