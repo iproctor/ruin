@@ -31,8 +31,16 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
 
     // ── Summoning ─────────────────────────────────────────────────────────
     // Turn advancement is handled by awaiting_action events, not here.
-    case 'summon_figure':
-      return moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost);
+    case 'summon_figure': {
+      let s = moveFigure(state, event.power, event.followerId, event.toRegion, event.fromRegion, event.cost);
+      // Track Plaguecarrier free redeploy (once per figure per round)
+      if (event.cost === 0 && event.power === 'gormen' && event.followerClass === 'cultist' &&
+          s.powers['gormen']!.upgradesInPlay.includes('gormen_plaguecarriers_up')) {
+        const gp = s.powers['gormen']!;
+        s = patchPower(s, 'gormen', { freeRedeployIds: [...(gp.freeRedeployIds ?? []), event.followerId] });
+      }
+      return s;
+    }
     case 'play_card':
       return playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
     case 'summoning_pass':
@@ -215,6 +223,7 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
             powerPoints: event.powerPoints,
             basePowerPoints: event.basePowerPoints,
             passedSummoning: false,
+            freeRedeployIds: [],
             deckIds: event.deckIds,
             discardIds: event.discardIds,
           },

@@ -3,7 +3,7 @@
  * cost modifiers, and cards whose effects apply at summon time.
  */
 import { applyAction } from '../reducers.js';
-import { applySummonFigure, applyPlayCard, applySummoningPass } from '../phases/summoning.js';
+import { applySummonFigure, applyPlayCard, applySummoningPass, getFollowerCost } from '../phases/summoning.js';
 import { applyCardOnPlayChoice } from '../phases/cardChoices.js';
 import { resolveCorruptionPhase } from '../phases/corruption.js';
 import {
@@ -437,6 +437,46 @@ describe('Gormen Plaguecarriers upgrade', () => {
       toRegion: 'norrsund',
     });
     expect(state.powers.gormen!.powerPoints).toBe(BASE_POWER_POINTS.gormen - 1);
+  });
+
+  test('free move is recorded in freeRedeployIds', () => {
+    const s = withUpgrade(makeState(), 'gormen', 'gormen_plaguecarriers_up');
+    const { state } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_cultist_1',
+      toRegion: 'norrsund',
+    });
+    expect(state.powers.gormen!.freeRedeployIds).toContain('gormen_cultist_1');
+  });
+
+  test('same cultist cannot get free move twice per round', () => {
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguecarriers_up');
+    // First free summon to norrsund
+    ({ state: s } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_cultist_1',
+      toRegion: 'norrsund',
+    }));
+    const ppAfterFree = s.powers.gormen!.powerPoints;
+    // Move same cultist to a different empty region — should cost 1 now
+    ({ state: s } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_cultist_1',
+      toRegion: 'talvimaa',
+    }));
+    expect(s.powers.gormen!.powerPoints).toBe(ppAfterFree - 1);
+  });
+
+  test('getFollowerCost returns 0 for unused cultist, 1 for already-used', () => {
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguecarriers_up');
+    // Before any move: cost is 0 for empty region
+    expect(getFollowerCost(s, 'gormen', 'cultist', 'gormen_cultist_1', 'norrsund')).toBe(0);
+    // Summon for free
+    ({ state: s } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_cultist_1',
+      toRegion: 'norrsund',
+    }));
+    // Same cultist to another empty region: cost is 1
+    expect(getFollowerCost(s, 'gormen', 'cultist', 'gormen_cultist_1', 'talvimaa')).toBe(1);
+    // Different cultist to an empty region: still 0
+    expect(getFollowerCost(s, 'gormen', 'cultist', 'gormen_cultist_2', 'talvimaa')).toBe(0);
   });
 });
 

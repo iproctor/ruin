@@ -287,40 +287,43 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
     return [{ kind: 'summoning_pass', power }];
   }
 
-  // Summon figure actions
+  // ── Summon / move figure actions ──────────────────────────────────────────
+  // Collect all candidate summon actions, then deduplicate: followers of the
+  // same class with identical strategic attributes (source region, protected,
+  // controlledBy) moving to the same destination are interchangeable.  Keep
+  // only the cheapest candidate per equivalence group so the AI doesn't waste
+  // search time evaluating identical board states.
   const legalRegions = legalPlacementRegions(state, power);
-  for (const follower of p.followers) {
-    if (follower.regionId !== null) continue; // only reserve figures
-    for (const regionId of legalRegions) {
-      // Cost depends on (class, region) — Stasis Web adds +2 in some regions,
-      // gormen plaguecarrier upgrade may make it free, etc. Skip unaffordable.
-      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
-      if (p.powerPoints < cost) continue;
-      actions.push({
-        kind: 'summoning_summon_figure',
-        power,
-        followerId: follower.id,
-        toRegion: regionId,
-      } satisfies SummonFigureAction);
-    }
-  }
 
-  // Move figures already on board (re-summon to different region).
-  // legalPlacementRegions(power, figureId) differs from the base result only when
-  // the figure's current region would become unoccupied by removing it — i.e. when
-  // this power has exactly one follower there. Cache by regionId: two followers in
-  // the same region always produce the same result.
+  // Pre-compute region counts and move caches for board moves
   const regionCounts: Partial<Record<RegionId, number>> = {};
   for (const f of p.followers) {
     if (f.regionId !== null) regionCounts[f.regionId] = (regionCounts[f.regionId] ?? 0) + 1;
   }
   const moveCache = new Map<RegionId, RegionId[]>();
+
+  // Gather every (follower, toRegion, cost) candidate
+  type Candidate = { followerId: string; toRegion: RegionId; cost: number; key: string };
+  const candidates: Candidate[] = [];
+
+  const makeKey = (f: typeof p.followers[0], toRegion: RegionId) =>
+    `${f.class}|${f.regionId ?? 'R'}|${toRegion}|${f.protected ? 1 : 0}|${f.controlledBy ?? ''}`;
+
+  // Reserve figures
   for (const follower of p.followers) {
-    if (follower.regionId === null) continue; // skip reserve
-    // Cannot move figures controlled by another power (e.g. Narcotic Musk)
+    if (follower.regionId !== null) continue;
+    for (const regionId of legalRegions) {
+      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
+      if (p.powerPoints < cost) continue;
+      candidates.push({ followerId: follower.id, toRegion: regionId, cost, key: makeKey(follower, regionId) });
+    }
+  }
+
+  // Board figures (own)
+  for (const follower of p.followers) {
+    if (follower.regionId === null) continue;
     if (follower.controlledBy && follower.controlledBy !== power) continue;
     const currentRegion = follower.regionId;
-    // Killing Ground: cannot move non-Xarm figures away from a region with this card
     const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
       c => c?.cardId === 'xarm_carnage_trap'
     );
@@ -328,27 +331,20 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
 
     let legalRegionsForMove = moveCache.get(currentRegion);
     if (!legalRegionsForMove) {
-      // If another follower of this power is also in currentRegion, removing this
-      // follower leaves the occupied set unchanged → equals base result.
       legalRegionsForMove = (regionCounts[currentRegion] ?? 0) > 1
         ? legalRegions
         : legalPlacementRegions(state, power, follower.id);
       moveCache.set(currentRegion, legalRegionsForMove);
     }
     for (const regionId of legalRegionsForMove) {
-      if (regionId === follower.regionId) continue; // skip same region
+      if (regionId === follower.regionId) continue;
       const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
       if (p.powerPoints < cost) continue;
-      actions.push({
-        kind: 'summoning_summon_figure',
-        power,
-        followerId: follower.id,
-        toRegion: regionId,
-      } satisfies SummonFigureAction);
+      candidates.push({ followerId: follower.id, toRegion: regionId, cost, key: makeKey(follower, regionId) });
     }
   }
 
-  // Move figures controlled by this power but owned by other powers (e.g. Narcotic Musk)
+  // Controlled figures (e.g. Narcotic Musk) — these are unique, no dedup needed
   for (const otherPower of state.activePowers) {
     if (otherPower === power) continue;
     for (const follower of state.powers[otherPower]!.followers) {
@@ -373,6 +369,21 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
         } satisfies SummonFigureAction);
       }
     }
+  }
+
+  // Deduplicate own-figure candidates: keep cheapest per equivalence group
+  const best = new Map<string, Candidate>();
+  for (const c of candidates) {
+    const prev = best.get(c.key);
+    if (!prev || c.cost < prev.cost) best.set(c.key, c);
+  }
+  for (const c of best.values()) {
+    actions.push({
+      kind: 'summoning_summon_figure',
+      power,
+      followerId: c.followerId,
+      toRegion: c.toRegion,
+    } satisfies SummonFigureAction);
   }
 
   // Play card actions

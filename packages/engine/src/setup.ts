@@ -97,6 +97,7 @@ export function createInitialState(config: GameConfig): GameState {
       passedSummoning: false,
       followers,
       lastSummonTurnAt: 0,
+      freeRedeployIds: [],
     };
   }
 
