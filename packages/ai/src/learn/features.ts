@@ -141,6 +141,62 @@ export const FEATURE_DIM =
   POTENTIAL_CORRUPTION_DIMS +
   EXPECTED_RUIN_DIMS;
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Count regions where `power` would optimistically earn a dial counter this round. */
+function optimisticDac(state: GameState, power: Power): number {
+  let count = 0;
+  const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+  const lashaRavers = state.powers['lasha']?.upgradesInPlay.includes('lasha_ravers_up') ?? false;
+
+  for (const r of REGION_ORDER) {
+    const region = state.regions[r];
+    if (!region || region.ruinationCardIndex !== null) continue;
+    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+
+    if (power === 'xarm') {
+      // Xarm: has attack dice AND enemies → assume a kill
+      const ecstasy = !changer && region.chaosCards.some(c => c?.cardId === 'lasha_ecstasy');
+      if (ecstasy) continue;
+      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
+      let attack = 0;
+      const figs = followersInRegion(state, r);
+      for (const f of figs) {
+        if (f.tipped || (f.controlledBy ?? f.power) !== 'xarm') continue;
+        if (f.class === 'warrior' || f.class === 'incarnation') attack++;
+        else if (f.class === 'cultist' && xarmHasHeartseekers) attack++;
+      }
+      if (hasWarFrenzy) attack += 2;
+      if (attack > 0 && figs.some(f => !f.tipped && (f.controlledBy ?? f.power) !== 'xarm')) count++;
+    } else {
+      // Gormen/Tenzen/Lasha: ≥2 corruption tokens placed (assume cultists survive)
+      const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+      if (warCry && !changer) continue;
+
+      const rFigs = followersInRegion(state, r);
+      const cultists = rFigs.filter(f => !f.tipped && (f.controlledBy ?? f.power) === power && f.class === 'cultist').length;
+      let warriors = 0;
+      if (power === 'lasha' && lashaRavers) {
+        warriors = rFigs.filter(f => !f.tipped && (f.controlledBy ?? f.power) === 'lasha' && f.class === 'warrior' && f.power === 'lasha').length;
+      }
+      const shimmer = !changer && region.chaosCards.some(c => c?.cardId === 'tenzen_shimmer');
+      const reduction = (shimmer && power !== 'tenzen') ? 1 : 0;
+      const tokens = Math.max(0, cultists + warriors - reduction);
+      if (tokens < 2) continue;
+
+      if (power === 'gormen' && region.populous) count++;
+      else if (power === 'tenzen') {
+        const ms = region.chaosCards.filter(c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId)).length;
+        const cs = region.tokens.filter(t => t === 'chaos_stone').length;
+        const fatespinner = state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+          rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+        if (ms + cs + fatespinner >= 2) count++;
+      } else if (power === 'lasha' && region.tokens.some(t => t === 'noble' || t === 'hero')) count++;
+    }
+  }
+  return count;
+}
+
 // ── Extractor ────────────────────────────────────────────────────────────────
 
 export function extractFeatures(state: GameState, viewpoint: Power): Float32Array {
@@ -160,7 +216,9 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
 
     out[i++] = ps.victoryPoints / 60;
     out[i++] = ps.dialPosition / DIAL_MAX[p];
-    out[i++] = Math.min(ps.dialCounters / 3, 1);
+    // Optimistic expected DAC: count regions where this power would earn a
+    // dial counter assuming optimistic outcomes (xarm kills, others' cultists survive).
+    out[i++] = Math.min(optimisticDac(state, p) / 3, 1);
     // PP as fraction of base (1.0 = full budget, 0 = spent). A +1 PP change
     // on a base-6 power is a 0.17 shift — much more visible than the old /10.
     out[i++] = ps.basePowerPoints > 0 ? ps.powerPoints / ps.basePowerPoints : 0;
