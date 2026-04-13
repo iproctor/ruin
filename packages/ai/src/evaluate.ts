@@ -56,12 +56,16 @@ export function evaluateState(state: GameState, power: Power): number {
     return state.winners.includes(power) ? 1.0 : 0.0;
   }
 
-  // Tenzen: use handmade evaluator for early game because the learned
-  // model's Tenzen evaluation is flat (~0.04 regardless of position).
-  // TENZEN_EVAL_CUTOFF=0 disables, default=4.
+  // Power-specific handmade evaluators for early game. The learned model's
+  // evaluation is too flat to guide MCTS effectively.
+  // Env vars control cutoff rounds (0 = disabled).
   const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '5', 10);
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
+  }
+  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '5', 10);
+  if (power === 'gormen' && gormenCutoff > 0 && state.round <= gormenCutoff) {
+    return evaluateGormenHandmade(state);
   }
 
   if (hasModel()) {
@@ -655,6 +659,162 @@ function evaluateTenzen(state: GameState): number {
     0.05 * ruinScore +         // ruination participation
     - threatPenalty +          // penalize exposed cultists
     noCombatPenalty;
+
+  return Math.max(0.0, Math.min(1.0, raw));
+}
+
+/**
+ * Gormen-specific handmade evaluator.
+ *
+ * Strategy (from guide):
+ *   - VP is everything. Win by VP or don't win.
+ *   - Spread corruption across multiple regions (don't put all eggs in one basket)
+ *   - Dominate populous regions (high value + DAC trigger)
+ *   - Get Provender of Rot ASAP (+3 VP per ruination anywhere)
+ *   - Use cheap warriors (1 PP) to defend and kill enemy cultists
+ *   - Don't chase dial — one tick per round is fine
+ *   - Pestilent Aura + corruption tokens = domination without figures at risk
+ *   - Pandemic (-2 resistance) enables domination of tough populous regions
+ */
+function evaluateGormenHandmade(state: GameState): number {
+  const ps = state.powers['gormen']!;
+
+  // ── Cultist spread (the core engine) ───────────────────────────────────
+  // Cultists in many distinct regions = corruption everywhere = ruinations
+  let regionsWithCultists = 0;
+  let totalCultistsOnBoard = 0;
+  let cultistsInPopulous = 0;
+
+  // ── Single pass over regions ───────────────────────────────────────────
+  let corruptionDepth = 0;     // how close to ruining regions we have stake in
+  let dominationValue = 0;     // conquest VP from regions we dominate
+  let ruinParticipation = 0;   // position in already-ruined regions
+  let regionsNearRuin = 0;     // regions at ≥8 total corruption where we have stake
+  let auraValue = 0;           // Pestilent Aura synergy
+  let pandemicValue = 0;       // Pandemic in populous regions
+  let warCryBlocked = 0;       // regions where War Cry blocks our corruption
+
+  for (const regionId of ALL_REGIONS) {
+    const region = state.regions[regionId];
+    if (!region) continue;
+
+    const myCorr = region.corruptionTokens['gormen'] ?? 0;
+    const totalCorr = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
+
+    // Ruined region scoring position
+    if (region.ruinationCardIndex !== null) {
+      if (myCorr > 0 && totalCorr > 0) {
+        const sorted = [...state.activePowers].sort(
+          (a, b) => (region.corruptionTokens[b] ?? 0) - (region.corruptionTokens[a] ?? 0),
+        );
+        const rank = sorted.indexOf('gormen');
+        ruinParticipation += rank === 0 ? 1.0 : rank === 1 ? 0.6 : 0.2;
+      }
+      continue;
+    }
+
+    const rFigs = followersInRegion(state, regionId);
+    const myCultists = rFigs.filter(
+      f => !f.tipped && (f.controlledBy ?? f.power) === 'gormen' && f.class === 'cultist',
+    ).length;
+    const myWarriors = rFigs.filter(
+      f => !f.tipped && (f.controlledBy ?? f.power) === 'gormen' && f.class === 'warrior',
+    ).length;
+
+    if (myCultists > 0) {
+      regionsWithCultists++;
+      totalCultistsOnBoard += myCultists;
+      if (region.populous) cultistsInPopulous += myCultists;
+    }
+
+    // Corruption depth: reward having corruption in regions near ruination
+    if (myCorr > 0) {
+      const proximity = Math.min(totalCorr / 12, 1.0);
+      const myShare = myCorr / Math.max(totalCorr, 1);
+      corruptionDepth += proximity * (0.5 + 0.5 * myShare);
+      if (totalCorr >= 8) regionsNearRuin++;
+    }
+
+    // War Cry blocking our corruption
+    const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+    if (warCry && !changer && myCultists > 0) warCryBlocked++;
+
+    // Domination
+    const nobles = region.tokens.filter(t => t === 'noble').length;
+    const { leader } = getRegionDomination(state, regionId);
+    if (leader === 'gormen') {
+      dominationValue += region.baseValue + nobles;
+    }
+
+    // Card synergy
+    const hasAura = region.chaosCards.some(c => c?.cardId === 'gormen_pestilent_aura');
+    if (hasAura && myCorr > 0) {
+      auraValue += Math.min(myCorr / 4, 1.0);
+    }
+    const hasPandemic = region.chaosCards.some(c => c?.cardId === 'gormen_pandemic');
+    if (hasPandemic && region.populous) {
+      pandemicValue += 1;
+    }
+  }
+
+  // ── Composite scores ──────────────────────────────────────────────────
+
+  // Spread: cultists in 4+ regions is good, in populous regions is better
+  const spreadScore = Math.min(regionsWithCultists / 5, 1.0);
+  const populousScore = Math.min(cultistsInPopulous / 6, 1.0);
+
+  // Corruption depth: how close to ruining regions
+  const depthScore = Math.min(corruptionDepth / 4, 1.0);
+
+  // Regions near ruin: having 2-3 regions near simultaneous ruination is the dream
+  const nearRuinScore = Math.min(regionsNearRuin / 3, 1.0);
+
+  // Already-ruined scoring position
+  const ruinScore = Math.min(ruinParticipation / 3, 1.0);
+
+  // Domination of high-value regions
+  const dominationScore = Math.min(dominationValue / TOTAL_BASE_CONQUEST, 1.0);
+
+  // Card synergy
+  const cardSynergy = Math.min((auraValue + pandemicValue) / 3, 1.0);
+
+  // Provender of Rot (the key upgrade — +3 VP per ruination anywhere)
+  const hasProvender = ps.upgradesInPlay.includes('gormen_provender_up');
+  const provenderScore = hasProvender ? 1.0 : 0.0;
+
+  // VP progress
+  const vpProgress = Math.min(ps.victoryPoints / 50, 1.0);
+  let maxOpponentVP = 0;
+  for (const p of state.activePowers) {
+    if (p === 'gormen') continue;
+    const opVP = state.powers[p]?.victoryPoints ?? 0;
+    if (opVP > maxOpponentVP) maxOpponentVP = opVP;
+  }
+  const vpLeadScore = Math.max(0, Math.min((ps.victoryPoints - maxOpponentVP + 50) / 100, 1.0));
+
+  // Warriors on board (cheap defense — 1 PP each)
+  const warriorsOnBoard = ps.followers.filter(
+    f => f.regionId !== null && f.class === 'warrior',
+  ).length;
+  const warriorScore = Math.min(warriorsOnBoard / 4, 1.0);
+
+  // War Cry penalty — regions where corruption is blocked
+  const warCryPenalty = warCryBlocked * 0.04;
+
+  const raw =
+    0.18 * vpProgress +        // VP is everything
+    0.08 * vpLeadScore +       // relative lead
+    0.15 * depthScore +        // corruption depth across regions
+    0.12 * nearRuinScore +     // multiple regions near simultaneous ruin
+    0.10 * spreadScore +       // cultists spread wide
+    0.08 * populousScore +     // cultists in populous regions (DAC + high value)
+    0.08 * dominationScore +   // current domination VP
+    0.07 * ruinScore +         // position in ruined regions
+    0.06 * provenderScore +    // Provender of Rot upgrade
+    0.04 * cardSynergy +       // Pestilent Aura + Pandemic leverage
+    0.04 * warriorScore +      // cheap warriors for defense
+    - warCryPenalty;
 
   return Math.max(0.0, Math.min(1.0, raw));
 }
