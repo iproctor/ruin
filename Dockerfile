@@ -19,7 +19,7 @@ RUN pnpm build
 FROM node:22-alpine AS runner
 WORKDIR /app
 RUN npm install -g pnpm
-COPY --from=builder /app/pnpm-workspace.yaml /app/package.json pnpm-lock.yaml* ./
+COPY --from=builder /app/pnpm-workspace.yaml /app/package.json /app/pnpm-lock.yaml* ./
 COPY --from=builder /app/packages/engine/package.json packages/engine/
 COPY --from=builder /app/packages/server/package.json packages/server/
 COPY --from=builder /app/packages/ai/package.json packages/ai/
