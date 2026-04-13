@@ -16,7 +16,7 @@ COPY tsconfig.base.json ./
 RUN pnpm build
 
 # Stage 2: production image
-FROM node:22-alpine AS builder
+FROM node:22-alpine AS runner
 WORKDIR /app
 RUN npm install -g pnpm
 COPY --from=builder /app/pnpm-workspace.yaml /app/package.json pnpm-lock.yaml* ./
