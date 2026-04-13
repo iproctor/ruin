@@ -37,6 +37,8 @@ const outPath = getArg('--out', '');
 // Optional explicit model path. If omitted, falls back to packages/ai/data/model.json.
 // Lets benches load any historical iter snapshot without touching model.json.
 const modelPath = getArg('--model', '');
+const rolloutDepthArg = getArg('--rollout-depth', '');
+const mctsOpts = rolloutDepthArg ? { rolloutDepth: parseInt(rolloutDepthArg, 10) } : undefined;
 
 loadLearnedModelIfPresent(modelPath || undefined);
 
@@ -252,7 +254,7 @@ function runGame(seed: number): GameResult {
         pending.actionKind === 'corruption_harvest_choice' ||
         pending.actionKind === 'card_on_play_choice';
       action = useMcts
-        ? runMcts(state, pending.waitingFor)
+        ? runMcts(state, pending.waitingFor, mctsOpts)
         : greedyAction(state, pending.waitingFor);
     } catch (err) {
       const e = captureErr(err);

@@ -9,7 +9,7 @@
 import {
   createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
 } from '@ruin/engine';
-import { runMcts, greedyAction } from '@ruin/ai';
+import { runMcts, greedyAction, reportMctsStats } from '@ruin/ai';
 import type { Power, Action } from '@ruin/engine';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -141,4 +141,5 @@ if (state.winners) {
   console.log(`Game ended: phase=${state.phase}`);
 }
 console.log(`Rounds: ${state.round}  |  Actions: ${actionCount}  |  Time: ${elapsed}s`);
+reportMctsStats();
 console.log(`──────────────────────────────────────\n`);

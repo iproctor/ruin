@@ -18,6 +18,8 @@ export interface MctsOptions {
   timeMs?: number;
   /** UCB1 exploration constant (default √2 ≈ 1.414). */
   explorationC?: number;
+  /** Override rollout depth. 0 = pure value head at leaf (no rollout). */
+  rolloutDepth?: number;
 }
 
 const DEFAULT_ITERATIONS = 2000;
@@ -170,7 +172,7 @@ export function runMcts(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = rolloutDepthForRound(state.round);
+  const rolloutDepth = options?.rolloutDepth ?? rolloutDepthForRound(state.round);
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
@@ -182,7 +184,20 @@ export function runMcts(
     iteration += 1;
   }
 
+  const hitTimeCap = iteration < maxIterations;
+  _mctsStats.total++;
+  _mctsStats.iters += iteration;
+  if (hitTimeCap) _mctsStats.timeCapped++;
+
   return bestAction(root);
+}
+
+// Temporary instrumentation — call reportMctsStats() to print
+export const _mctsStats = { total: 0, timeCapped: 0, iters: 0 };
+export function reportMctsStats(): void {
+  const { total, timeCapped, iters } = _mctsStats;
+  if (total === 0) return;
+  console.log(`[mcts] ${total} searches: ${timeCapped} time-capped (${(timeCapped/total*100).toFixed(0)}%), avg ${(iters/total).toFixed(0)} iterations`);
 }
 
 /**
