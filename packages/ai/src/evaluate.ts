@@ -724,13 +724,16 @@ function evaluateGormenHandmade(state: GameState): number {
     const nobles = region.tokens.filter(t => t === 'noble').length;
     const conquestValue = region.baseValue + nobles;
 
-    // Base: region value × figure concentration (superlinear — stacking is good)
-    let score = conquestValue * Math.pow(myTotal, 1.3);
+    // Actual domination value (respects Hollow Pact, Aura, card costs, etc.)
+    const myDom = getPowerDomination(state, regionId, 'gormen');
+
+    // Base: region value × domination strength (superlinear)
+    let score = conquestValue * Math.pow(myDom, 1.3);
 
     // Populous bonus: these are the money regions for domination VP + DAC
     if (region.populous) score *= 1.5;
 
-    // Warriors add domination AND battle dice to defend
+    // Warriors add battle dice to defend the stronghold
     score += myWarriors * conquestValue * 0.5;
 
     // Corruption already placed: progress toward ruination
@@ -739,10 +742,6 @@ function evaluateGormenHandmade(state: GameState): number {
       // Near-ruin bonus: close to paying off
       if (totalCorr >= 8) score += (totalCorr / 12) * conquestValue;
     }
-
-    // Pestilent Aura: corruption tokens count as domination
-    const hasAura = region.chaosCards.some(c => c?.cardId === 'gormen_pestilent_aura');
-    if (hasAura) score += myCorr * 1.5;
 
     // Pandemic: -2 resistance makes domination much easier
     const hasPandemic = region.chaosCards.some(c => c?.cardId === 'gormen_pandemic');
