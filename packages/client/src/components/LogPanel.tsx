@@ -145,6 +145,7 @@ function renderEvent(event: GameEvent): ReactNode | null {
       return <><Fig power={event.power} cls={event.followerClass} /> <T>→</T> <Rg id={event.toRegion} /></>;
     }
     case 'play_card':
+      if (event.cardId === 'tenzen_teleport') return null;
       return <><Card cardId={event.cardId} power={event.power} /> <T>→</T> <Rg id={event.toRegion} /></>;
     case 'summoning_pass':
       return <><Pw power={event.power} /> <T>passes.</T></>;

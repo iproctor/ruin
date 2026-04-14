@@ -599,8 +599,19 @@ function evaluateTenzen(state: GameState): number {
       });
 
       if (hasReach) {
-        if (myCultists >= 2 && magicTotal >= 2) dacReadyRegions++;
-        else if ((myCultists >= 2 && magicTotal >= 1) || (myCultists >= 1 && magicTotal >= 2)) nearDacRegions++;
+        if (myCultists >= 2 && magicTotal >= 2) {
+          dacReadyRegions++;
+        } else if (myCultists >= 1 && magicTotal >= 2) {
+          // Have enough magic, need one more cultist — always feasible given reach.
+          nearDacRegions++;
+        } else if (myCultists >= 2 && magicTotal >= 1) {
+          // Have cultists, need another magic source. Feasible only if there's
+          // a free card slot to play a magic card, or Apprentices is taken so
+          // a cultist can carry a chaos stone here. Otherwise the region can
+          // never reach the DAC threshold.
+          const freeCardSlot = region.chaosCards.some(c => c === null);
+          if (freeCardSlot || hasApprentices) nearDacRegions++;
+        }
 
         // Chaos stones near cultists — only useful in regions we can reach
         // AND when the region isn't already at the DAC threshold.
@@ -785,7 +796,7 @@ function evaluateGormenHandmade(state: GameState): number {
   const strongholdScore = Math.min(top3 / 60, 1.0);
 
   // Provender of Rot
-  const hasProvender = ps.upgradesInPlay.includes('gormen_provender_up');
+  const hasProvender = ps.upgradesInPlay.includes('gormen_provender_of_rot');
   const provenderScore = hasProvender ? 1.0 : 0.0;
 
   // VP progress

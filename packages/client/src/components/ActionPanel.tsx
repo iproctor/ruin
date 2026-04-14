@@ -1239,6 +1239,9 @@ function BattleHitAssignmentPanel({
   }
 
   const kills = selectedIds.size;
+  const canKillMore = targets.some(f => !selectedIds.has(f.id) && getDefense(f) <= hitsLeft);
+  const canClaimMore = selectedPeasants < peasantsAvailable && hitsLeft >= 1;
+  const confirmDisabled = hitsLeft > 0 && (canKillMore || canClaimMore);
   const confirmLabel = kills === 0 && selectedPeasants === 0
     ? 'Apply hits (no kills)'
     : [
@@ -1287,7 +1290,7 @@ function BattleHitAssignmentPanel({
           </button>
         ))}
       </div>
-      <button className="danger" onClick={handleConfirm}>
+      <button className="danger" onClick={handleConfirm} disabled={confirmDisabled}>
         {confirmLabel}
       </button>
     </div>

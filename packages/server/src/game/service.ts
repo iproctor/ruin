@@ -47,16 +47,20 @@ async function loadGameRow(gameId: string) {
 }
 
 async function loadGameWithSeq(gameId: string): Promise<{ state: GameState; seq: number }> {
-  // Single statement so state and seq come from the same snapshot.
-  // Promise.all would race: state could be read before a concurrent commit
-  // while seq is read after, producing a stale state paired with a fresh seq
-  // that the CAS check accepts, silently overwriting the committed state.
-  const [row] = await db.select({
-    state: games.state,
-    seq: sql<number>`(SELECT COALESCE(MAX(${gameEvents.seq}), -1) + 1 FROM ${gameEvents} WHERE ${gameEvents.gameId} = ${games.id})`,
-  }).from(games).where(eq(games.id, gameId)).limit(1);
-  if (!row) throw new Error(`Game ${gameId} not found`);
-  return { state: row.state as unknown as GameState, seq: Number(row.seq) };
+  // Load state and next-seq atomically. Promise.all would race: the state
+  // query could be dispatched before a concurrent commit while the seq query
+  // is dispatched after, pairing stale state with a fresh seq — that combo
+  // passes the CAS check and silently overwrites committed state.
+  // A repeatable-read transaction pins both reads to the same snapshot.
+  return db.transaction(async (tx) => {
+    const [row] = await tx.select().from(games).where(eq(games.id, gameId)).limit(1);
+    if (!row) throw new Error(`Game ${gameId} not found`);
+    const [seqRow] = await tx.select({ maxSeq: sql<number>`COALESCE(MAX(${gameEvents.seq}), -1)` })
+      .from(gameEvents)
+      .where(eq(gameEvents.gameId, gameId));
+    const seq = Number(seqRow?.maxSeq ?? -1) + 1;
+    return { state: row.state as unknown as GameState, seq };
+  }, { isolationLevel: 'repeatable read' });
 }
 
 async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
