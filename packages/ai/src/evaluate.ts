@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId } from '@ruin/engine';
-import { REGIONS, CHAOS_CARDS, THREAT_DIALS, getRegionDomination, getRegionResistance, getPowerDomination, followersInRegion } from '@ruin/engine';
+import { REGIONS, ADJACENCY, CHAOS_CARDS, THREAT_DIALS, getRegionDomination, getRegionResistance, getPowerDomination, followersInRegion } from '@ruin/engine';
 import { evaluateLearned, hasModel } from './learn/evaluator.js';
 
 // If a learned model has been loaded (via loadModel in a server/script entry
@@ -584,14 +584,29 @@ function evaluateTenzen(state: GameState): number {
       const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
       const fatespinnerBonus = hasFatespinner &&
         rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
-      const magicTotal = magicSymbols + chaosStones + fatespinnerBonus;
+      // Cap magic total at 2 — DAC threshold. Beyond 2 is redundant.
+      const magicTotal = Math.min(magicSymbols + chaosStones + fatespinnerBonus, 2);
 
-      if (myCultists >= 2 && magicTotal >= 2) dacReadyRegions++;
-      else if ((myCultists >= 2 && magicTotal >= 1) || (myCultists >= 1 && magicTotal >= 2)) nearDacRegions++;
+      // Reachability: Tenzen needs cultists here or adjacent to threaten this region.
+      // Without reach, magic symbols/stones are wasted — no path to place corruption.
+      const adjacent = ADJACENCY[regionId] ?? [];
+      const hasReach = myCultists > 0 || adjacent.some(r => {
+        const adj = state.regions[r];
+        if (!adj) return false;
+        return followersInRegion(state, r).some(
+          f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
+        );
+      });
 
-      // Chaos stones near cultists
-      if (chaosStones > 0) {
-        stoneCultistSynergy += chaosStones * Math.min(myCultists / 2, 1);
+      if (hasReach) {
+        if (myCultists >= 2 && magicTotal >= 2) dacReadyRegions++;
+        else if ((myCultists >= 2 && magicTotal >= 1) || (myCultists >= 1 && magicTotal >= 2)) nearDacRegions++;
+
+        // Chaos stones near cultists — only useful in regions we can reach
+        // AND when the region isn't already at the DAC threshold.
+        if (chaosStones > 0 && magicTotal < 2) {
+          stoneCultistSynergy += Math.min(myCultists / 2, 1);
+        }
       }
     }
 
@@ -735,6 +750,10 @@ function evaluateGormenHandmade(state: GameState): number {
 
     // Warriors add battle dice to defend the stronghold
     score += myWarriors * conquestValue * 0.5;
+
+    // Exactly 2 cultists in a populous region = DAC trigger (2+ corruption
+    // tokens placed in populous). Sweet spot — any more is over-investment.
+    if (region.populous && myCultists === 2) score += 3;
 
     // Corruption already placed: progress toward ruination
     if (myCorr > 0) {
