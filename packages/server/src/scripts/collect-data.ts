@@ -78,11 +78,17 @@ const VP_THRESHOLD = 60;
 function progressToVictory(finalState: import('@ruin/engine').GameState, power: Power): number {
   const ps = finalState.powers[power];
   if (!ps) return 0;
-  // Two independent paths to victory: VP threshold and dial position. Either
-  // would have ended the game on its own, so a power's "closeness to winning"
-  // is the max progress along either, not the sum.
-  const vpFrac = Math.min(ps.victoryPoints / VP_THRESHOLD, 1);
-  const dialFrac = Math.min(ps.dialPosition / DIAL_MAX[power], 1);
+  // Use per-round gain (efficiency) rather than absolute progress. A power
+  // that gets 40 VP in 5 rounds is playing better than one at 40 VP in 8
+  // rounds. Absolute targets encourage slow grinds; per-round targets reward
+  // efficiency and shorter games.
+  const rounds = Math.max(1, finalState.round);
+  const vpPerRound = ps.victoryPoints / rounds;
+  const dialPerRound = ps.dialPosition / rounds;
+  // Normalize: winning requires ~60 VP or DIAL_MAX. In a 5-round game that's
+  // 12 VP/round or DIAL_MAX/5 per round as the "winning pace".
+  const vpFrac = Math.min(vpPerRound / (VP_THRESHOLD / 5), 1);
+  const dialFrac = Math.min(dialPerRound / (DIAL_MAX[power] / 5), 1);
   return Math.max(vpFrac, dialFrac);
 }
 
@@ -265,12 +271,13 @@ for (let i = 0; i < gameCount; i++) {
     continue;
   }
 
-  // Drop most games that go past 5 rounds — they correlate with weak play.
-  // Keep 20% for diversity. Deterministic per-seed so runs are reproducible.
-  if (rounds > 5) {
+  // Sample down Xarm-win games to balance training data. Xarm wins ~80% of
+  // self-play games which biases the value head heavily. Target ~50/50 Xarm/other
+  // by keeping each Xarm-win game with probability 0.25. Deterministic per-seed.
+  if (winners.length === 1 && winners[0] === 'xarm') {
     const h = ((seed * 2654435761) >>> 0) / 0xffffffff;
-    if (h >= 0.2) {
-      console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): ${rounds}r > 5, dropped (long-game filter)`);
+    if (h >= 0.25) {
+      console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): xarm win, dropped (balance filter)`);
       continue;
     }
   }
