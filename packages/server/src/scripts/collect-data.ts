@@ -68,53 +68,17 @@ interface GameResult {
   target: number[];
 }
 
-// Dial lengths per power — kept locally so this script doesn't import the
-// engine's full constants. Mirror of features.ts DIAL_MAX.
-const DIAL_MAX: Record<Power, number> = {
-  xarm: 9, gormen: 10, tenzen: 8, lasha: 7,
-};
-const VP_THRESHOLD = 60;
-
-function progressToVictory(finalState: import('@ruin/engine').GameState, power: Power): number {
-  const ps = finalState.powers[power];
-  if (!ps) return 0;
-  // Use per-round gain (efficiency) rather than absolute progress. A power
-  // that gets 40 VP in 5 rounds is playing better than one at 40 VP in 8
-  // rounds. Absolute targets encourage slow grinds; per-round targets reward
-  // efficiency and shorter games.
-  const rounds = Math.max(1, finalState.round);
-  const vpPerRound = ps.victoryPoints / rounds;
-  const dialPerRound = ps.dialPosition / rounds;
-  // Normalize: winning requires ~60 VP or DIAL_MAX. In a 5-round game that's
-  // 12 VP/round or DIAL_MAX/5 per round as the "winning pace".
-  const vpFrac = Math.min(vpPerRound / (VP_THRESHOLD / 5), 1);
-  const dialFrac = Math.min(dialPerRound / (DIAL_MAX[power] / 5), 1);
-  return Math.max(vpFrac, dialFrac);
-}
-
-function computeSoftTarget(finalState: import('@ruin/engine').GameState, winners: Power[]): number[] {
-  // 80% mass on actual winners (split if tie), 20% distributed by progress
-  // toward any victory condition (VP threshold OR dial position). Crediting
-  // dial progress matters because some powers (xarm) win primarily by dial,
-  // and crediting only VP share underweights "I was about to win by dial."
-  const winnerMass = 0.4;
-  const progressMass = 0.6;
+function computeSoftTarget(_finalState: import('@ruin/engine').GameState, winners: Power[]): number[] {
+  // Hard one-hot target on the winner(s). The trainer applies inverse-frequency
+  // reweighting to balance rare-winner samples; combining a soft progress target
+  // with weighting double-counted and leaked xarm-favor into every sample.
   const target = new Array(POWERS.length).fill(0);
-
-  if (winners.length > 0) {
-    const per = winnerMass / winners.length;
-    for (const w of winners) target[POWERS.indexOf(w)] += per;
+  if (winners.length === 0) {
+    // No winner (shouldn't happen in training data — filtered upstream)
+    return target.fill(1 / POWERS.length);
   }
-
-  const progress = POWERS.map(p => progressToVictory(finalState, p));
-  const total = progress.reduce((a, b) => a + b, 0);
-  if (total > 0) {
-    for (let i = 0; i < POWERS.length; i++) {
-      target[i] += progressMass * (progress[i]! / total);
-    }
-  } else {
-    for (let i = 0; i < POWERS.length; i++) target[i] += progressMass / POWERS.length;
-  }
+  const per = 1 / winners.length;
+  for (const w of winners) target[POWERS.indexOf(w)] += per;
   return target;
 }
 
@@ -271,16 +235,8 @@ for (let i = 0; i < gameCount; i++) {
     continue;
   }
 
-  // Sample down Xarm-win games to balance training data. Xarm wins ~80% of
-  // self-play games which biases the value head heavily. Target ~50/50 Xarm/other
-  // by keeping each Xarm-win game with probability 0.25. Deterministic per-seed.
-  if (winners.length === 1 && winners[0] === 'xarm') {
-    const h = ((seed * 2654435761) >>> 0) / 0xffffffff;
-    if (h >= 0.25) {
-      console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): xarm win, dropped (balance filter)`);
-      continue;
-    }
-  }
+  // No collect-time balance filter — trainer already applies inverse-frequency
+  // reweighting on the full dataset (train_mlp.py).
 
   // Each sample gets the same soft target vector for the value head, plus
   // its own visit distribution (when present) for the policy head.
