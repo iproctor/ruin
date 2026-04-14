@@ -56,7 +56,16 @@ export function resolveEndPhase(
   return finalizeEndPhase(s, log);
 }
 
-/** Set pendingAction for the next queued dial reward, or finalize the round. */
+/**
+ * Set pendingAction for the next queued dial reward, or finalize the round.
+ *
+ * Multi-pick reward contexts carry both `count` (total picks the reward
+ * grants) and `remaining` (picks still required). Each pick decrements
+ * `remaining`, and the next drain re-emits awaiting_action so clients always
+ * see the current reduced state — this makes partial batches durable: if a
+ * client only submits some of the picks, the next awaiting_action tells them
+ * how many are still owed.
+ */
 function drainDialRewards(
   state: GameState,
   log: GameLog,
@@ -78,17 +87,15 @@ function drainDialRewards(
       };
       log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'upgrade_choice', context: {}, description: `${next.power} chooses an upgrade.` });
       break;
-    case 'place_token':
+    case 'place_token': {
+      const context = { tokenType: next.tokenType, remaining: next.remaining, count: next.count };
       s = {
         ...s,
-        pendingAction: {
-          waitingFor: next.power,
-          actionKind: 'dial_place_token',
-          context: { tokenType: next.tokenType, remaining: next.remaining },
-        },
+        pendingAction: { waitingFor: next.power, actionKind: 'dial_place_token', context },
       };
-      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_place_token', context: { tokenType: next.tokenType, remaining: next.remaining }, description: `${next.power} places a ${next.tokenType} token.` });
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_place_token', context, description: `${next.power} places ${next.tokenType} token(s) (${next.remaining}/${next.count}).` });
       break;
+    }
     case 'remove_corruption': {
       // Skip if there's no corruption anywhere to remove
       const hasAnyCorruption = REGION_ORDER.some(r =>
@@ -98,28 +105,23 @@ function drainDialRewards(
         s = { ...s, pendingDialRewards: queue.slice(1) };
         return drainDialRewards(s, log);
       }
+      const context = { remaining: next.remaining, count: next.count };
       s = {
         ...s,
-        pendingAction: {
-          waitingFor: next.power,
-          actionKind: 'dial_remove_corruption',
-          context: { remaining: next.remaining },
-        },
+        pendingAction: { waitingFor: next.power, actionKind: 'dial_remove_corruption', context },
       };
-      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_corruption', context: { remaining: next.remaining }, description: `${next.power} removes a corruption token.` });
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_corruption', context, description: `${next.power} removes corruption (${next.remaining}/${next.count}).` });
       break;
     }
-    case 'remove_world_tokens':
+    case 'remove_world_tokens': {
+      const context = { remaining: next.remaining, count: next.count };
       s = {
         ...s,
-        pendingAction: {
-          waitingFor: next.power,
-          actionKind: 'dial_remove_world_token',
-          context: { remaining: next.remaining },
-        },
+        pendingAction: { waitingFor: next.power, actionKind: 'dial_remove_world_token', context },
       };
-      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_world_token', context: { remaining: next.remaining }, description: `${next.power} removes a world token.` });
+      log.emit({ type: 'awaiting_action', power: next.power, actionKind: 'dial_remove_world_token', context, description: `${next.power} removes world token (${next.remaining}/${next.count}).` });
       break;
+    }
   }
 
   return { state: s, log };
@@ -537,11 +539,11 @@ function advanceDial(
       break;
 
     case 'place_nobles':
-      rewards.push({ kind: 'place_token', power, tokenType: 'noble', remaining: entry.instruction.amount });
+      rewards.push({ kind: 'place_token', power, tokenType: 'noble', remaining: entry.instruction.amount, count: entry.instruction.amount });
       break;
 
     case 'place_chaos_stone':
-      rewards.push({ kind: 'place_token', power, tokenType: 'chaos_stone', remaining: entry.instruction.amount });
+      rewards.push({ kind: 'place_token', power, tokenType: 'chaos_stone', remaining: entry.instruction.amount, count: entry.instruction.amount });
       break;
 
     case 'remove_corruption': {
@@ -552,7 +554,7 @@ function advanceDial(
         return Object.values(tokens).some(v => v > 0);
       });
       if (anyCorruption) {
-        rewards.push({ kind: 'remove_corruption', power, remaining: entry.instruction.amount });
+        rewards.push({ kind: 'remove_corruption', power, remaining: entry.instruction.amount, count: entry.instruction.amount });
       }
       break;
     }
@@ -562,7 +564,7 @@ function advanceDial(
         s.regions[r]!.tokens.some(t => t !== 'chaos_stone'),
       );
       if (hasTokens) {
-        rewards.push({ kind: 'remove_world_tokens', power, remaining: entry.instruction.amount });
+        rewards.push({ kind: 'remove_world_tokens', power, remaining: entry.instruction.amount, count: entry.instruction.amount });
       }
       break;
     }

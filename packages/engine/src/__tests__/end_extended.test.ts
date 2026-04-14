@@ -259,6 +259,26 @@ describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () =>
     expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
   });
 
+  test('awaiting_action carries count upfront and remaining reduces per pick', () => {
+    // remove_world_tokens: 2 emits awaiting_action each drain. First carries
+    // remaining=2, count=2; after one pick remaining=1, count=2 (partial state
+    // is durable — if a client only submitted 1 of 2, they see the reduced
+    // awaiting_action next).
+    let s = endState();
+    s = setDial(s, 'lasha', 5, 1);
+    s = setDial(s, 'xarm', 0, 1);
+    s = addToken(s, 'normagne', 'peasant');
+    s = addToken(s, 'toscavar', 'peasant');
+    const { log } = autoResolveEndPhase(resolveEndPhase(s));
+    const awaitings = log.events.filter(
+      e => e.type === 'awaiting_action' &&
+        (e as { actionKind?: string }).actionKind === 'dial_remove_world_token',
+    ) as unknown as Array<{ context: { count: number; remaining: number } }>;
+    expect(awaitings).toHaveLength(2);
+    expect(awaitings[0]!.context).toMatchObject({ count: 2, remaining: 2 });
+    expect(awaitings[1]!.context).toMatchObject({ count: 2, remaining: 1 });
+  });
+
   test('double-advance (5→6→7 victory) still only queues 2 removals, not 3', () => {
     // If Lasha is unique max-counter holder, advanceThreatDials advances twice:
     // 5→6 (remove_world_tokens: 2) then 6→7 (victory).

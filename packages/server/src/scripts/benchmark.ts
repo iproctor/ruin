@@ -13,7 +13,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
+  createInitialState, applyAction, getLegalActions, enumerateBattleHitStrategies, autoAdvance, GameLog,
 } from '@ruin/engine';
 import { runMcts, greedyAction } from '@ruin/ai';
 import type { Power, Action, GameEvent } from '@ruin/engine';
@@ -210,7 +210,9 @@ function runGame(seed: number): GameResult {
 
     let legal: Action[];
     try {
-      legal = getLegalActions(state, pending.waitingFor);
+      legal = pending.actionKind === 'battle_hit_assignment'
+        ? enumerateBattleHitStrategies(state, pending.waitingFor)
+        : getLegalActions(state, pending.waitingFor);
     } catch (err) {
       const e = captureErr(err);
       writeErrorLog({

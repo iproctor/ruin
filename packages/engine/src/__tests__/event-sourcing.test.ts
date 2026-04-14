@@ -7,7 +7,7 @@
  *
  * Run: npx tsx packages/engine/src/__tests__/event-sourcing.test.ts
  */
-import { createInitialState, applyAction, autoAdvance, getLegalActions, applyEvent, GameLog } from '../index.js';
+import { createInitialState, applyAction, autoAdvance, getLegalActions, enumerateBattleHitStrategies, applyEvent, GameLog } from '../index.js';
 import type { GameState, Power, GameEvent } from '../types.js';
 
 const NUM_GAMES = 50;
@@ -121,7 +121,9 @@ function runEventSourcingGame(game: number): string | null {
 
   while (state.winners === null && state.pendingAction !== null && actionCount < MAX_ACTIONS) {
     const { waitingFor } = state.pendingAction;
-    const legal = getLegalActions(state, waitingFor);
+    const legal = state.pendingAction.actionKind === 'battle_hit_assignment'
+      ? enumerateBattleHitStrategies(state, waitingFor)
+      : getLegalActions(state, waitingFor);
     if (legal.length === 0) break;
 
     const action = pickRandom(legal, rand);

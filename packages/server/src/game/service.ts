@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { eq, and, or, asc, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
-import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, GameLog, maskEvents } from '@ruin/engine';
+import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, enumerateBattleHitStrategies, GameLog, maskEvents } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
@@ -47,8 +47,16 @@ async function loadGameRow(gameId: string) {
 }
 
 async function loadGameWithSeq(gameId: string): Promise<{ state: GameState; seq: number }> {
-  const [row, seq] = await Promise.all([loadGameRow(gameId), getNextSeq(gameId)]);
-  return { state: row.state as unknown as GameState, seq };
+  // Single statement so state and seq come from the same snapshot.
+  // Promise.all would race: state could be read before a concurrent commit
+  // while seq is read after, producing a stale state paired with a fresh seq
+  // that the CAS check accepts, silently overwriting the committed state.
+  const [row] = await db.select({
+    state: games.state,
+    seq: sql<number>`(SELECT COALESCE(MAX(${gameEvents.seq}), -1) + 1 FROM ${gameEvents} WHERE ${gameEvents.gameId} = ${games.id})`,
+  }).from(games).where(eq(games.id, gameId)).limit(1);
+  if (!row) throw new Error(`Game ${gameId} not found`);
+  return { state: row.state as unknown as GameState, seq: Number(row.seq) };
 }
 
 async function loadPlayerMap(gameId: string): Promise<Map<string, string>> {
@@ -159,8 +167,10 @@ async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: num
       }
     } catch (err) {
       console.error(`AI failed to pick action for ${waitingFor}:`, err);
-      // Last resort: use first legal action
-      const fallback = getLegalActions(current, waitingFor)[0];
+      // Last resort: pick the first action from a cheap enumeration
+      const fallback = current.pendingAction!.actionKind === 'battle_hit_assignment'
+        ? enumerateBattleHitStrategies(current, waitingFor)[0]
+        : getLegalActions(current, waitingFor)[0];
       if (!fallback) break;
       action = fallback;
     }
@@ -240,21 +250,45 @@ export async function applyPlayerAction(
   power: Power,
   action: Action,
 ): Promise<{ state: GameState; seq: number; events: GameEvent[] }> {
-  const { state, seq: loadedSeq } = await loadGameWithSeq(gameId);
+  return applyPlayerActions(gameId, power, [action]);
+}
 
+/**
+ * Apply a batch of actions from the same player in one transactional save.
+ * Used for multi-pick dial rewards: the client collects all picks and submits
+ * them together so they commit atomically. The batch can also be partial —
+ * the engine's next awaiting_action reflects the reduced remaining count, so
+ * the client is always told what's still owed.
+ */
+export async function applyPlayerActions(
+  gameId: string,
+  power: Power,
+  actions: Action[],
+): Promise<{ state: GameState; seq: number; events: GameEvent[] }> {
+  if (actions.length === 0) throw new Error('No actions provided');
+  const { state, seq: loadedSeq } = await loadGameWithSeq(gameId);
   if (state.winners !== null) throw new Error('Game is already complete');
 
-  // Apply just the player's action (no autoAdvance) so the response is instant.
-  const actionResult = applyActionForPreview(state, action);
+  let s = state;
+  const allEvents: GameEvent[] = [];
+  for (const action of actions) {
+    if (action.power !== power) throw new Error(`Action power mismatch: ${action.power} vs ${power}`);
+    // applyAction includes autoAdvance, which drains the next dial reward pick
+    // into pendingAction (and emits its awaiting_action) before the next batch
+    // entry applies.
+    const result = applyAction(s, action);
+    s = result.state;
+    allEvents.push(...result.log.events);
+  }
 
-  // Save the immediate result
-  const seq = await saveGame(gameId, actionResult.state, actionResult.log.events, loadedSeq);
-  if (actionResult.log.events.length > 0) broadcastEvents(gameId, actionResult.log.events, seq);
+  const seq = await saveGame(gameId, s, allEvents, loadedSeq);
+  if (allEvents.length > 0) broadcastEvents(gameId, allEvents, seq);
 
-  // Continue advancing (autonomous phases + AI turns) in the background
-  continueInBackground(gameId, actionResult.state, seq);
+  // If the last autoAdvance left a non-player pending (AI turn, autonomous
+  // phase), continue in background so the batch response is still fast.
+  continueInBackground(gameId, s, seq);
 
-  return { state: actionResult.state, seq, events: actionResult.log.events };
+  return { state: s, seq, events: allEvents };
 }
 
 /**

@@ -10,7 +10,7 @@ import { followersInRegion, effectiveDefense } from '@ruin/engine';
 /**
  * Enumerate hit-assignment actions at a battle_hit_assignment decision point.
  *
- * The engine's getLegalActions only returns 3 hand-picked strategies (cultists-
+ * The engine's `enumerateBattleHitStrategies` only returns 3 hand-picked strategies (cultists-
  * first, attack-first, max-kills+peasants). For MCTS to discriminate between
  * strategically meaningful choices, we want a richer per-(power, class)
  * action space that lets the search ask "which group should I commit kills

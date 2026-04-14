@@ -7,7 +7,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
+  createInitialState, applyAction, getLegalActions, enumerateBattleHitStrategies, autoAdvance, GameLog,
 } from '@ruin/engine';
 import { runMcts, greedyAction, reportMctsStats } from '@ruin/ai';
 import type { Power, Action } from '@ruin/engine';
@@ -72,12 +72,14 @@ while (state.winners === null && state.phase !== 'completed') {
 
   const { waitingFor } = pending;
 
-  // Get legal actions
+  // Get legal actions (battle_hit_assignment has no finite set — use strategies)
   let legalActions: Action[];
   try {
-    legalActions = getLegalActions(state, waitingFor);
+    legalActions = pending.actionKind === 'battle_hit_assignment'
+      ? enumerateBattleHitStrategies(state, waitingFor)
+      : getLegalActions(state, waitingFor);
   } catch (err) {
-    console.error(`\n[ERROR] getLegalActions threw for ${waitingFor}:`, err);
+    console.error(`\n[ERROR] legal-actions lookup threw for ${waitingFor}:`, err);
     process.exit(1);
   }
 

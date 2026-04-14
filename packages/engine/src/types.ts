@@ -141,9 +141,9 @@ export interface BattleState {
 
 export type DialPendingReward =
   | { kind: 'upgrade_choice';        power: Power }
-  | { kind: 'place_token';           power: Power; tokenType: 'noble' | 'chaos_stone'; remaining: number }
-  | { kind: 'remove_corruption';     power: Power; remaining: number }
-  | { kind: 'remove_world_tokens';   power: Power; remaining: number };
+  | { kind: 'place_token';           power: Power; tokenType: 'noble' | 'chaos_stone'; remaining: number; count: number }
+  | { kind: 'remove_corruption';     power: Power; remaining: number; count: number }
+  | { kind: 'remove_world_tokens';   power: Power; remaining: number; count: number };
 
 // ─── World track ──────────────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@
  */
 
 import {
-  createInitialState, applyAction, getLegalActions, autoAdvance, GameLog,
+  createInitialState, applyAction, getLegalActions, enumerateBattleHitStrategies, autoAdvance, GameLog,
   type GameState, type Action, type Power,
 } from '@ruin/engine';
 import {
@@ -89,7 +89,11 @@ function runGame(seed: number, challengerPlays: Power, configLabel: string): Gam
     if (!pending) return { winner: 'none', rounds: state.round, error: 'no pendingAction' };
 
     let legal: Action[];
-    try { legal = getLegalActions(state, pending.waitingFor); }
+    try {
+      legal = pending.actionKind === 'battle_hit_assignment'
+        ? enumerateBattleHitStrategies(state, pending.waitingFor)
+        : getLegalActions(state, pending.waitingFor);
+    }
     catch (err) { return { winner: 'none', rounds: state.round, error: `${err}` }; }
     if (legal.length === 0) return { winner: 'none', rounds: state.round, error: 'no legal actions' };
 

@@ -114,7 +114,13 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
     }
 
     case 'battle_hit_assignment':
-      return getBattleHitAssignmentActions(state, power);
+      // There is no finite "all legal actions" for hit assignment — the space
+      // is exponential in the number of enemy figures. Callers must pick the
+      // enumeration they want: `enumerateBattleHitStrategies` (a few cheap
+      // hand-picked strategies, good for rollouts/greedy) or the AI package's
+      // `enumerateKillActions` (richer per-(power, class) enumeration, used
+      // at the MCTS root).
+      throw new Error('getLegalActions: battle_hit_assignment has no finite legal set; call enumerateBattleHitStrategies or enumerateKillActions');
 
     case 'world_choice': {
       const cardId = state.pendingAction.context['cardId'] as string;
@@ -214,7 +220,13 @@ function greedyKill(sorted: AnnotatedEnemy[], hitsRemaining: number): string[] {
   return ids;
 }
 
-function getBattleHitAssignmentActions(state: GameState, power: Power): BattleHitAssignmentAction[] {
+/**
+ * Enumerate a small set of hand-picked battle-hit-assignment strategies
+ * (cultists-first, highest-attack-first, most-kills + peasants). Used by
+ * rollouts and the greedy AI fallback where a cheap sample of "reasonable"
+ * choices is enough; MCTS at the root uses a richer enumeration instead.
+ */
+export function enumerateBattleHitStrategies(state: GameState, power: Power): BattleHitAssignmentAction[] {
   const ctx = state.pendingAction!.context;
   const regionId = ctx['regionId'] as RegionId;
   const hitsRemaining = ctx['hitsRemaining'] as number;

@@ -16,7 +16,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
 import { useEventAnimation } from '../hooks/useEventAnimation.js';
-import { getGame, submitAction, sendChat } from '../api/client.js';
+import { getGame, submitAction, submitActions, sendChat } from '../api/client.js';
 import Board from '../components/Board.js';
 import StatusBar from '../components/StatusBar.js';
 import Tableau from '../components/Tableau.js';
@@ -351,6 +351,23 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     }
   }, [gameId, syncAfterAction]);
 
+  // Submit a batch of actions (e.g. multi-pick dial rewards). Server applies
+  // them sequentially in one transactional save so the picks commit together.
+  const handleDirectActions = useCallback(async (actions: Action[]) => {
+    if (actions.length === 0) return;
+    setSubmitError('');
+    setSubmitting(true);
+    try {
+      const { state: newState, seq, events: actionEvents } = await submitActions(gameId, actions);
+      setSelectedCardId(null);
+      syncAfterAction(newState, seq, actionEvents);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Action failed');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [gameId, syncAfterAction]);
+
   const handleChatSend = useCallback(async (message: string) => {
     await sendChat(gameId, message);
   }, [gameId]);
@@ -460,6 +477,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
                     myPower={myPower}
                     selectedCardId={selectedCardId}
                     onAction={handleDirectAction}
+                    onActions={handleDirectActions}
                     onClearCard={() => setSelectedCardId(null)}
                   />
                 </div>

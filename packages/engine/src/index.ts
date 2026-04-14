@@ -23,7 +23,7 @@ export { applyEvent } from './applyEvent.js';
 export { maskEvent, maskEvents } from './maskEvent.js';
 export { GameLog, renderText } from './gameLog.js';
 
-export { getLegalActions } from './legalActions.js';
+export { getLegalActions, enumerateBattleHitStrategies } from './legalActions.js';
 export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination } from './phases/corruption.js';
 export { effectiveDefense } from './phases/battle.js';
 export { followersInRegion } from './helpers.js';

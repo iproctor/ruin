@@ -83,7 +83,10 @@
       "Bash(npx drizzle-kit:*)",
       "Bash(./scripts/push-hetzner.sh)",
       "Bash(/Users/iainap/code/chaos/node_modules/.pnpm/typescript@5.9.3/node_modules/.bin/tsc --noEmit -p packages/ai/tsconfig.json)",
-      "Bash(/Users/iainap/code/chaos/node_modules/.pnpm/typescript@5.9.3/node_modules/.bin/tsc --noEmit -p packages/client/tsconfig.json)"
+      "Bash(/Users/iainap/code/chaos/node_modules/.pnpm/typescript@5.9.3/node_modules/.bin/tsc --noEmit -p packages/client/tsconfig.json)",
+      "Bash(pnpm --filter engine exec tsc --noEmit)",
+      "Bash(pnpm --filter server exec tsc --noEmit)",
+      "Bash(pnpm --filter client exec tsc --noEmit)"
     ]
   }
 }

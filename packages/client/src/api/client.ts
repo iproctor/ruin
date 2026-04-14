@@ -125,6 +125,13 @@ export async function submitAction(gameId: string, action: Action): Promise<{ st
   });
 }
 
+export async function submitActions(gameId: string, actions: Action[]): Promise<{ state: GameState; seq: number; events: import('@ruin/engine').GameEvent[] }> {
+  return request<{ state: GameState; seq: number; events: import('@ruin/engine').GameEvent[] }>(`/games/${gameId}/action`, {
+    method: 'POST',
+    body: JSON.stringify({ actions }),
+  });
+}
+
 export async function sendChat(gameId: string, message: string): Promise<void> {
   await request(`/games/${gameId}/chat`, {
     method: 'POST',

@@ -1,5 +1,5 @@
 import type { GameState, Action, Power } from '@ruin/engine';
-import { applyAction, getLegalActions, makeRng } from '@ruin/engine';
+import { applyAction, getLegalActions, enumerateBattleHitStrategies, makeRng } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
@@ -419,7 +419,12 @@ function rollout(state: GameState, forPower: Power, seed: number, minDepth: numb
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
-    const actions = getLegalActions(current, waitingFor);
+    // Rollouts use the cheap hand-picked hit-assignment strategies rather
+    // than the richer root enumeration — fast and good enough for noisy
+    // leaf-value estimates.
+    const actions = current.pendingAction.actionKind === 'battle_hit_assignment'
+      ? enumerateBattleHitStrategies(current, waitingFor)
+      : getLegalActions(current, waitingFor);
     if (actions.length === 0) break;
     // NOTE: filterPointlessActions deliberately skipped here. Profile showed it
     // accounted for ~14% of total runtime, almost entirely inside rollouts.

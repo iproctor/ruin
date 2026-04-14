@@ -35,6 +35,7 @@ interface ActionPanelProps {
   myPower: Power;
   selectedCardId: string | null;
   onAction: (action: Action) => void;
+  onActions?: (actions: Action[]) => void;
   onClearCard: () => void;
 }
 
@@ -43,6 +44,7 @@ export default function ActionPanel({
   myPower,
   selectedCardId,
   onAction,
+  onActions,
   onClearCard,
 }: ActionPanelProps) {
   const pending = state.pendingAction;
@@ -157,6 +159,7 @@ export default function ActionPanel({
           myPower={myPower}
           context={pending.context}
           onAction={onAction}
+          onActions={onActions}
         />
       )}
 
@@ -166,6 +169,7 @@ export default function ActionPanel({
           myPower={myPower}
           context={pending.context}
           onAction={onAction}
+          onActions={onActions}
         />
       )}
 
@@ -175,6 +179,7 @@ export default function ActionPanel({
           myPower={myPower}
           context={pending.context}
           onAction={onAction}
+          onActions={onActions}
         />
       )}
     </div>
@@ -1337,42 +1342,77 @@ function DialPlaceTokenPanel({
   myPower,
   context,
   onAction,
+  onActions,
 }: {
   state: GameState;
   myPower: Power;
   context: Record<string, unknown>;
   onAction: (action: Action) => void;
+  onActions?: (actions: Action[]) => void;
 }) {
-  const [selectedRegion, setSelectedRegion] = useState<RegionId | null>(null);
   const tokenType = (context['tokenType'] as string) ?? 'noble';
   const remaining = (context['remaining'] as number) ?? 1;
+  const count = (context['count'] as number) ?? remaining;
+  const [picks, setPicks] = useState<RegionId[]>([]);
 
   const validRegions = ALL_REGIONS.filter(r => state.regions[r]!.ruinationCardIndex === null);
+
+  function addPick(r: RegionId) {
+    if (picks.length >= remaining) return;
+    setPicks(prev => [...prev, r]);
+  }
+  function removePick(i: number) {
+    setPicks(prev => prev.filter((_, idx) => idx !== i));
+  }
+  function confirm() {
+    const actions: Action[] = picks.map(r => ({ kind: 'dial_place_token', power: myPower, regionId: r }));
+    if (onActions) onActions(actions);
+    else for (const a of actions) onAction(a);
+    setPicks([]);
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — place a <strong style={{ color: '#facc15', textTransform: 'capitalize' }}>{tokenType}</strong> token
-        on any region ({remaining} remaining):
+        Dial reward — place <strong style={{ color: '#facc15', textTransform: 'capitalize' }}>{tokenType}</strong> token(s)
+        ({remaining} of {count} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {validRegions.map(r => (
           <button
             key={r}
-            className={selectedRegion === r ? 'primary' : 'secondary'}
-            onClick={() => setSelectedRegion(r)}
+            className="secondary"
+            onClick={() => addPick(r)}
+            disabled={picks.length >= remaining}
             style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
           >
             {REGION_LABELS[r]}
           </button>
         ))}
       </div>
-      {selectedRegion && (
-        <button className="primary" onClick={() => {
-          onAction({ kind: 'dial_place_token', power: myPower, regionId: selectedRegion });
-          setSelectedRegion(null);
-        }}>
-          Place {tokenType} on {REGION_LABELS[selectedRegion]}
+      {picks.length > 0 && (
+        <div style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
+          Selected: {picks.map((r, i) => (
+            <button
+              key={i}
+              className="secondary"
+              onClick={() => removePick(i)}
+              style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', marginLeft: 4 }}
+              title="Click to remove"
+            >
+              {REGION_LABELS[r]} ×
+            </button>
+          ))}
+        </div>
+      )}
+      {picks.length > 0 && (
+        <button
+          className="primary"
+          onClick={confirm}
+          disabled={picks.length !== remaining}
+          style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          Confirm ({picks.length}/{remaining})
         </button>
       )}
     </div>
@@ -1386,43 +1426,102 @@ function DialRemoveCorruptionPanel({
   myPower,
   context,
   onAction,
+  onActions,
 }: {
   state: GameState;
   myPower: Power;
   context: Record<string, unknown>;
   onAction: (action: Action) => void;
+  onActions?: (actions: Action[]) => void;
 }) {
   const remaining = (context['remaining'] as number) ?? 1;
+  const count = (context['count'] as number) ?? remaining;
   const POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+  type Pick = { regionId: RegionId; targetPower: Power };
+  const [picks, setPicks] = useState<Pick[]>([]);
+
   // Enumerate every (region, power) combination with at least one corruption token
   const candidates: Array<{ regionId: typeof ALL_REGIONS[number]; targetPower: Power; count: number }> = [];
   for (const r of ALL_REGIONS) {
     for (const tp of POWERS) {
-      const count = state.regions[r]!.corruptionTokens[tp] ?? 0;
-      if (count > 0) candidates.push({ regionId: r, targetPower: tp, count });
+      const c = state.regions[r]!.corruptionTokens[tp] ?? 0;
+      if (c > 0) candidates.push({ regionId: r, targetPower: tp, count: c });
     }
+  }
+
+  // Available = base supply minus what's already picked for (region, targetPower)
+  function availableFor(regionId: RegionId, targetPower: Power): number {
+    const base = state.regions[regionId]!.corruptionTokens[targetPower] ?? 0;
+    const taken = picks.filter(p => p.regionId === regionId && p.targetPower === targetPower).length;
+    return base - taken;
+  }
+
+  function addPick(p: Pick) {
+    if (picks.length >= remaining) return;
+    if (availableFor(p.regionId, p.targetPower) <= 0) return;
+    setPicks(prev => [...prev, p]);
+  }
+  function removePick(i: number) {
+    setPicks(prev => prev.filter((_, idx) => idx !== i));
+  }
+  function confirm() {
+    const actions: Action[] = picks.map(p => ({
+      kind: 'dial_remove_corruption', power: myPower, regionId: p.regionId, targetPower: p.targetPower,
+    }));
+    if (onActions) onActions(actions);
+    else for (const a of actions) onAction(a);
+    setPicks([]);
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — remove 1 corruption token from anywhere ({remaining} remaining):
+        Dial reward — remove corruption ({remaining} of {count} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {candidates.length === 0 && (
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No corruption to remove.</span>
         )}
-        {candidates.map(({ regionId, targetPower, count }) => (
-          <button
-            key={`${regionId}-${targetPower}`}
-            className="secondary"
-            onClick={() => onAction({ kind: 'dial_remove_corruption', power: myPower, regionId, targetPower })}
-            style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
-          >
-            {REGION_LABELS[regionId]} {targetPower} ({count})
-          </button>
-        ))}
+        {candidates.map(({ regionId, targetPower }) => {
+          const avail = availableFor(regionId, targetPower);
+          return (
+            <button
+              key={`${regionId}-${targetPower}`}
+              className="secondary"
+              onClick={() => addPick({ regionId, targetPower })}
+              disabled={avail <= 0 || picks.length >= remaining}
+              style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
+            >
+              {REGION_LABELS[regionId]} {targetPower} ({avail})
+            </button>
+          );
+        })}
       </div>
+      {picks.length > 0 && (
+        <div style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
+          Selected: {picks.map((p, i) => (
+            <button
+              key={i}
+              className="secondary"
+              onClick={() => removePick(i)}
+              style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', marginLeft: 4 }}
+              title="Click to remove"
+            >
+              {REGION_LABELS[p.regionId]} {p.targetPower} ×
+            </button>
+          ))}
+        </div>
+      )}
+      {picks.length > 0 && (
+        <button
+          className="primary"
+          onClick={confirm}
+          disabled={picks.length !== remaining}
+          style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '0.4rem 1rem' }}
+        >
+          Confirm ({picks.length}/{remaining})
+        </button>
+      )}
     </div>
   );
 }
@@ -1434,11 +1533,13 @@ function DialRemoveWorldTokenPanel({
   myPower,
   context,
   onAction,
+  onActions,
 }: {
   state: GameState;
   myPower: Power;
   context: Record<string, unknown>;
   onAction: (action: Action) => void;
+  onActions?: (actions: Action[]) => void;
 }) {
   const remaining = (context['remaining'] as number) ?? 1;
   type RemovableToken = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen';
@@ -1475,10 +1576,16 @@ function DialRemoveWorldTokenPanel({
     return selected.some(s => s.regionId === opt.regionId && s.tokenType === opt.tokenType);
   }
 
-  async function handleConfirm() {
-    for (const s of selected) {
-      onAction({ kind: 'dial_remove_world_token', power: myPower, regionId: s.regionId, tokenType: s.tokenType });
-    }
+  function handleConfirm() {
+    const actions: Action[] = selected.map(s => ({
+      kind: 'dial_remove_world_token',
+      power: myPower,
+      regionId: s.regionId,
+      tokenType: s.tokenType,
+    }));
+    if (onActions) onActions(actions);
+    else for (const a of actions) onAction(a);
+    setSelected([]);
   }
 
   // Single removal — no multi-select needed

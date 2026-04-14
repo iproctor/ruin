@@ -9,7 +9,7 @@ import {
   createMultiplayerGame,
   getGameState,
   getLobbyState,
-  applyPlayerAction,
+  applyPlayerActions,
   listGamesForUser,
   getGameHistory,
   postChat,
@@ -176,7 +176,12 @@ const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPowerEnum, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
 ]);
 
-const actionSchema = z.object({ action: zAction });
+// Accepts either a single action (`action`) or a batch (`actions`). Batches
+// are used for multi-pick dial rewards so all picks commit atomically.
+const actionSchema = z.union([
+  z.object({ action: zAction }),
+  z.object({ actions: z.array(zAction).min(1) }),
+]);
 
 router.post('/:id/action', requireAuth, async (req, res) => {
   const { id } = req.params;
@@ -188,8 +193,12 @@ router.post('/:id/action', requireAuth, async (req, res) => {
     return;
   }
 
-  const action = parsed.data.action as Action;
-  const actionPower = action.power;
+  const actions = ('actions' in parsed.data ? parsed.data.actions : [parsed.data.action]) as Action[];
+  const actionPower = actions[0]!.power;
+  if (actions.some(a => a.power !== actionPower)) {
+    res.status(400).json({ error: 'All batched actions must share the same power' });
+    return;
+  }
 
   const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
   const powerPlayer = allPlayers.find((p) => p.power === actionPower);
@@ -199,7 +208,8 @@ router.post('/:id/action', requireAuth, async (req, res) => {
   }
 
   try {
-    const { state: newState, seq, events: actionEvents } = await applyPlayerAction(id, actionPower as Power, action);
+    const { applyPlayerActions } = await import('../game/service.js');
+    const { state: newState, seq, events: actionEvents } = await applyPlayerActions(id, actionPower as Power, actions);
     const viewerPower = actionPower as import('@ruin/engine').Power;
     const maskedEvents = maskEvents(actionEvents, viewerPower);
     res.json({ state: newState, seq, events: maskedEvents });

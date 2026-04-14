@@ -1,6 +1,13 @@
 import type { GameState, Action, Power } from '@ruin/engine';
-import { applyAction, getLegalActions } from '@ruin/engine';
+import { applyAction, getLegalActions, enumerateBattleHitStrategies } from '@ruin/engine';
 import { evaluateState } from './evaluate.js';
+
+function actionsForGreedy(state: GameState, power: Power): Action[] {
+  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
+    return enumerateBattleHitStrategies(state, power);
+  }
+  return getLegalActions(state, power);
+}
 
 /**
  * Pick the action that produces the best immediate evaluation score
@@ -12,7 +19,7 @@ import { evaluateState } from './evaluate.js';
  * Falls back to legalActions[0] if only one action exists or evaluation fails.
  */
 export function greedyAction(state: GameState, power: Power): Action {
-  const actions = getLegalActions(state, power);
+  const actions = actionsForGreedy(state, power);
   if (actions.length === 0) {
     throw new Error(`greedyAction: no legal actions for ${power}`);
   }
