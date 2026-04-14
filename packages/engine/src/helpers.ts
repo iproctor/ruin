@@ -98,10 +98,13 @@ export function regionsWithFigures(state: GameState, power: Power): RegionId[] {
 export function legalPlacementRegions(state: GameState, power: Power, figureBeingMoved?: string): RegionId[] {
   const allRegions = Object.keys(state.regions) as RegionId[];
 
-  // Find all regions currently occupied by this power
+  // Find all regions currently occupied by this power — including figures
+  // this power controls via Narcotic Musk / Rapture (controlledBy === power).
   const occupied = new Set<RegionId>();
-  for (const f of state.powers[power]!.followers) {
-    if (f.regionId !== null) {
+  for (const p of state.activePowers) {
+    for (const f of state.powers[p]!.followers) {
+      if (f.regionId === null) continue;
+      if ((f.controlledBy ?? f.power) !== power) continue;
       occupied.add(f.regionId);
     }
   }

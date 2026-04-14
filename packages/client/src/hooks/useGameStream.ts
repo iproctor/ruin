@@ -78,7 +78,8 @@ export function useGameStream(gameId: string): GameStreamResult {
 
   const stateRef = useRef<GameState | null>(null);
   stateRef.current = state;
-  const queue = useRef<GameEvent[]>([]);
+  type QueueItem = { kind: 'event'; event: GameEvent } | { kind: 'sync'; state: GameState };
+  const queue = useRef<QueueItem[]>([]);
   const processing = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownSeq = useRef(0);
@@ -97,14 +98,22 @@ export function useGameStream(gameId: string): GameStreamResult {
 
     // Pause before corruption phase — but only if battles actually happened
     const peek = queue.current[0];
-    if (peek && peek.type === 'phase_start' && peek.phase === 'corruption' && !pausedRef.current && hadBattle.current) {
+    if (peek && peek.kind === 'event' && peek.event.type === 'phase_start' && peek.event.phase === 'corruption' && !pausedRef.current && hadBattle.current) {
       pausedRef.current = true;
       setPaused(true);
       return;
     }
 
+    const item = queue.current.shift()!;
 
-    const event = queue.current.shift()!;
+    if (item.kind === 'sync') {
+      setState(item.state);
+      stateRef.current = item.state;
+      Promise.resolve().then(processNext);
+      return;
+    }
+
+    const event = item.event;
 
     // Track whether battles happened this round
     if (event.type === 'battle_region_start') hadBattle.current = true;
@@ -152,26 +161,17 @@ export function useGameStream(gameId: string): GameStreamResult {
       setChat(ev.chat);
       setConn(true);
     } else if (ev.type === 'sync') {
-      // Authoritative state — apply immediately, drain queued events to log.
-      // Fire lastEvent for each drained event so animation hooks see them all
-      // (especially phase_start banners).
-      if (queue.current.length > 0) {
-        const remaining = queue.current.splice(0);
-        setEvents(prev => [...prev, ...remaining]);
-        for (const e of remaining) {
-          if (getEventDuration(e) > 0) setLastEvent(e);
-        }
-      }
-      if (timerRef.current) clearTimeout(timerRef.current);
-      processing.current = false;
-      setState(ev.state);
-      stateRef.current = ev.state;
+      // Queue the authoritative state swap so it lands after any in-flight
+      // animations play out — otherwise cross-round syncs (AI-only battle →
+      // new summoning) snap past the intervening events.
+      queue.current.push({ kind: 'sync', state: ev.state });
+      startProcessing();
     } else if (ev.type === 'events') {
       // Skip events the client already has from the action response
       if (ev.seq !== undefined && ev.seq <= knownSeq.current) return;
       // Buffer for potential replay by syncAfterAction
       if (ev.seq !== undefined) sseBuffer.current.push({ seq: ev.seq, events: ev.events });
-      queue.current.push(...ev.events);
+      for (const event of ev.events) queue.current.push({ kind: 'event', event });
       startProcessing();
     } else if (ev.type === 'chat') {
       setChat(prev => [...prev, ev.message]);
@@ -212,7 +212,7 @@ export function useGameStream(gameId: string): GameStreamResult {
     sseBuffer.current = [];
     if (ahead.length > 0) {
       for (const batch of ahead) {
-        queue.current.push(...batch.events);
+        for (const event of batch.events) queue.current.push({ kind: 'event', event });
       }
       startProcessing();
     }
