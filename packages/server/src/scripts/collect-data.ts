@@ -265,6 +265,16 @@ for (let i = 0; i < gameCount; i++) {
     continue;
   }
 
+  // Drop most games that go past 5 rounds — they correlate with weak play.
+  // Keep 20% for diversity. Deterministic per-seed so runs are reproducible.
+  if (rounds > 5) {
+    const h = ((seed * 2654435761) >>> 0) / 0xffffffff;
+    if (h >= 0.2) {
+      console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): ${rounds}r > 5, dropped (long-game filter)`);
+      continue;
+    }
+  }
+
   // Each sample gets the same soft target vector for the value head, plus
   // its own visit distribution (when present) for the policy head.
   for (const s of samples) {
