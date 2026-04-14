@@ -759,23 +759,45 @@ function evaluateGormenHandmade(state: GameState): number {
     // Populous bonus: these are the money regions for domination VP + DAC
     if (region.populous) score *= 1.5;
 
-    // Warriors add battle dice to defend the stronghold
-    score += myWarriors * conquestValue * 0.5;
+    // Cultists are the corruption engine. Each cultist places 1 token per
+    // round in populous (up to 3 — more is wasted since the DAC trigger caps
+    // the useful contribution). Target formation: 3 cultists in a populous
+    // region — that gets both the linear reward and a big shape bonus.
+    const effectiveCultists = Math.min(myCultists, 3);
+    score += effectiveCultists * conquestValue * 0.5;
+    if (region.populous && myCultists >= 3) score += 4;
 
-    // Exactly 2 cultists in a populous region = DAC trigger (2+ corruption
-    // tokens placed in populous). Sweet spot — any more is over-investment.
-    if (region.populous && myCultists === 2) score += 3;
+    // Warriors: small bonus only. They already count toward myDom above, so
+    // a big extra reward here double-counts and steers play toward "stack
+    // warriors" (which don't place corruption and don't ruin).
+    score += myWarriors * conquestValue * 0.15;
 
-    // Corruption already placed: progress toward ruination
+    // Corruption already placed: progress toward ruination. The final tokens
+    // are disproportionately valuable — they cash the stronghold into VP.
     if (myCorr > 0) {
       score += myCorr * 2;
-      // Near-ruin bonus: close to paying off
       if (totalCorr >= 8) score += (totalCorr / 12) * conquestValue;
+      if (totalCorr >= 10) score += conquestValue;           // near-ruin
     }
 
     // Pandemic: -2 resistance makes domination much easier
     const hasPandemic = region.chaosCards.some(c => c?.cardId === 'gormen_pandemic');
     if (hasPandemic && region.populous) score += 4;
+
+    // Death's Perfume: +2 corruption on successful domination — the
+    // stronghold accelerator. Cashing a 3-cultist populous region into a
+    // ruin in ~2-3 rounds hinges on this card being in play there.
+    const deathsPerfume = region.chaosCards.some(c => c?.cardId === 'gormen_deaths_perfume');
+    if (deathsPerfume && myTotal > 0) score += 4;
+
+    // Vile Consumption: at end of corruption phase, removes all Gormen figures
+    // here and places floor(removed/2) corruption. Valuable only when the
+    // burst actually triggers ruin — otherwise it destroys the stronghold.
+    const vileConsumption = region.chaosCards.some(c => c?.cardId === 'gormen_vile_consumption');
+    if (vileConsumption) {
+      const burst = Math.floor(myTotal / 2);
+      if (burst > 0 && totalCorr + burst >= 12) score += conquestValue * 1.5;
+    }
 
     // Rain of Pus / Inevitable Rot in region
     const hasRot = region.chaosCards.some(c => c?.cardId === 'gormen_inevitable_rot');
@@ -812,20 +834,30 @@ function evaluateGormenHandmade(state: GameState): number {
   // Ruination participation (already ruined regions)
   const ruinScore = Math.min(ruinParticipation / 3, 1.0);
 
-  // Warriors on board (cheap defense)
+  // Warriors on board: small incentive only. Warriors already count toward
+  // stronghold domination value; piling them on beyond that doesn't help
+  // ruin (they don't place corruption).
   const warriorsOnBoard = ps.followers.filter(
     f => f.regionId !== null && f.class === 'warrior',
   ).length;
   const warriorScore = Math.min(warriorsOnBoard / 3, 1.0);
+
+  // Cultists on board: the corruption engine. Target ~6 (two 3-cultist
+  // strongholds).
+  const cultistsOnBoard = ps.followers.filter(
+    f => f.regionId !== null && f.class === 'cultist',
+  ).length;
+  const cultistScore = Math.min(cultistsOnBoard / 6, 1.0);
 
   const raw =
     0.30 * strongholdScore +   // concentrated force in 2-3 valuable regions
     0.20 * vpProgress +        // VP is everything
     0.10 * vpLeadScore +       // relative lead
     0.10 * ruinScore +         // position in ruined regions
-    0.10 * warriorScore +      // warriors for defense + domination
+    0.05 * warriorScore +      // small — warriors are already in stronghold via myDom
+    0.10 * cultistScore +      // corruption engine — aim for 6 deployed
     0.10 * provenderScore +    // Provender of Rot
-    0.10 * Math.min(ps.followers.filter(f => f.regionId !== null).length / 8, 1.0); // figures deployed
+    0.05 * Math.min(ps.followers.filter(f => f.regionId !== null).length / 8, 1.0); // figures deployed
 
   return Math.max(0.0, Math.min(1.0, raw));
 }
