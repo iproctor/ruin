@@ -200,8 +200,10 @@ describe('card_on_play_choice', () => {
     )).toBe(true);
   });
 
-  test("Meddling of Rats returns opponent targets", () => {
+  test("Meddling of Rats returns opponent targets with figures in region", () => {
     let s = giveCards(makeState(), 'xarm', ['xarm_war_cry']);
+    // Target must have figures in the region
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = {
       ...s,
       pendingAction: {

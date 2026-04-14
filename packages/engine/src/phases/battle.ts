@@ -130,7 +130,11 @@ export function applyBattleHitAssignment(
     s = claimPeasant(s, regionId, attacker, log);
   }
 
-  // Apply kills for each chosen follower
+  // Apply kills for each chosen follower. Track remaining hits so we can't
+  // kill more than the attacker paid for (e.g. an upgraded-defense figure
+  // that the caller misjudged as defense 1).
+  const hitsRemaining = (ctx['hitsRemaining'] as number | undefined) ?? Infinity;
+  let hitsLeft = hitsRemaining - peasantsToTake;
   for (const fId of followerIds) {
     // Find figure in powers
     let figure: FollowerInstance | undefined;
@@ -139,6 +143,10 @@ export function applyBattleHitAssignment(
       if (figure) break;
     }
     if (!figure) continue;
+
+    const defense = effectiveDefense(s, regionId, figure, attacker);
+    if (hitsLeft < defense) continue; // not enough hits — skip this kill
+    hitsLeft -= defense;
 
     // Mark as tipped (battle_kill event sets tipped=true in applyEvent)
     s = log.apply(s, { type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
@@ -524,7 +532,37 @@ function pauseForHitChoice(
   return { state: s, log };
 }
 
-// ─── Hit assignment (legacy — kept for reference, no longer called) ───────────
+// ─── Hit assignment helpers ──────────────────────────────────────────────────
+
+/**
+ * Effective defense of a figure in a given region against a given attacker.
+ * Accounts for the owner's defense upgrade, Rotting Grasp (−1 non-Gormen),
+ * Blight Ward (+1 Gormen), War Frenzy partial-hit carry-over, and Changer
+ * of Fate cancellation of card effects.
+ */
+export function effectiveDefense(
+  state: GameState,
+  regionId: RegionId,
+  figure: FollowerInstance,
+  attacker: Power,
+): number {
+  const owner = figure.power as Power;
+  const def = FOLLOWERS[owner]![figure.class]!;
+  const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
+    UPGRADES.find(up => up.id === u)?.upgradeType === figure.class
+  );
+  let defense = isUpgraded ? def.upgraded.defense : def.base.defense;
+
+  const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  const hasRottingGrasp = !changerOfFateActive && regionCardActive(state, regionId, 'gormen_pestilent_touch');
+  const hasBlightWard = !changerOfFateActive && regionCardActive(state, regionId, 'gormen_rain_of_bile');
+
+  if (hasBlightWard && owner === 'gormen') defense += 1;
+  if (hasRottingGrasp && owner !== 'gormen') defense = Math.max(1, defense - 1);
+  if (attacker === 'xarm' && figure.warFrenzyHits > 0) defense = Math.max(1, defense - figure.warFrenzyHits);
+
+  return defense;
+}
 
 function getEnemyFigures(
   state: GameState,

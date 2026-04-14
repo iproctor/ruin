@@ -5,7 +5,7 @@ import type {
   Power,
   RegionId,
 } from '@ruin/engine';
-import { FOLLOWERS, followersInRegion } from '@ruin/engine';
+import { followersInRegion, effectiveDefense } from '@ruin/engine';
 
 /**
  * Enumerate hit-assignment actions at a battle_hit_assignment decision point.
@@ -40,9 +40,6 @@ function readContext(state: GameState): Ctx | null {
   };
 }
 
-function defenseOf(f: FollowerInstance): number {
-  return FOLLOWERS[f.power]?.[f.class]?.base?.defense ?? 1;
-}
 
 const MAX_ACTIONS = 30;
 
@@ -111,7 +108,7 @@ export function enumerateKillActions(
   // "kill 1 cultist (save hits)" vs "kill 3 cultists (commit hard)".
   const groupArr = Array.from(groups.values());
   for (const members of groupArr) {
-    const def = defenseOf(members[0]!);
+    const def = effectiveDefense(state, ctx.regionId, members[0]!, attacker);
     if (def <= 0) continue;
     const maxKills = Math.min(members.length, Math.floor(ctx.hitsRemaining / def));
     for (let k = 1; k <= maxKills; k++) {
@@ -125,8 +122,8 @@ export function enumerateKillActions(
     for (let j = i + 1; j < groupArr.length; j++) {
       const a = groupArr[i]!;
       const b = groupArr[j]!;
-      const defA = defenseOf(a[0]!);
-      const defB = defenseOf(b[0]!);
+      const defA = effectiveDefense(state, ctx.regionId, a[0]!, attacker);
+      const defB = effectiveDefense(state, ctx.regionId, b[0]!, attacker);
       if (defA <= 0 || defB <= 0) continue;
       const maxA = Math.min(a.length, 2);
       const maxB = Math.min(b.length, 2);
@@ -148,7 +145,7 @@ export function enumerateKillActions(
       let spent = 0;
       for (const id of a.followerIds) {
         const fig = enemies.find(e => e.id === id);
-        if (fig) spent += defenseOf(fig);
+        if (fig) spent += effectiveDefense(state, ctx.regionId, fig, attacker);
       }
       const peasants = Math.min(ctx.hitsRemaining - spent, ctx.peasantsAvailable);
       if (peasants > 0) add(a.followerIds, peasants);

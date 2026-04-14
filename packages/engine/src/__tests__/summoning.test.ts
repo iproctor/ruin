@@ -3,8 +3,7 @@
  * cost modifiers, and cards whose effects apply at summon time.
  */
 import { applyAction } from '../reducers.js';
-import { applySummonFigure, applyPlayCard, applySummoningPass, getFollowerCost } from '../phases/summoning.js';
-import { applyCardOnPlayChoice } from '../phases/cardChoices.js';
+import { applySummonFigure, applyPlayCard, applySummoningPass, getFollowerCost, applyCardOnPlayChoice } from '../phases/summoning.js';
 import { resolveCorruptionPhase } from '../phases/corruption.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
@@ -331,6 +330,8 @@ describe('Tenzen Meddling of Rats (opponent discards 2 cards)', () => {
   test('target opponent has 2 forced discards queued after Meddling of Rats resolves', () => {
     let s = giveCards(makeState(), 'xarm', ['xarm_war_cry', 'xarm_war_frenzy', 'xarm_carnage_trap']);
     s = giveCards(s, 'tenzen', ['tenzen_the_meddling_of_rats']);
+    // Target must have figures in the region — place a Xarm cultist there.
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     const { state: afterPlay } = applyPlayCard(s, {
       kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_the_meddling_of_rats',
       toRegion: 'norrsund', slotIndex: 0,

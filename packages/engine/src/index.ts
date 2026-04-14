@@ -25,6 +25,7 @@ export { GameLog, renderText } from './gameLog.js';
 
 export { getLegalActions } from './legalActions.js';
 export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination } from './phases/corruption.js';
+export { effectiveDefense } from './phases/battle.js';
 export { followersInRegion } from './helpers.js';
 export { getWorldChoiceRegions } from './phases/world.js';
 export { checkVictory } from './victory.js';
@@ -39,4 +40,4 @@ export {
   THREAT_DIALS,
   RUINATION_CARDS,
 } from './constants.js';
-export type { CardDef, WorldCardDef, UpgradeDef, DialPosition, RuinationCard } from './constants.js';
+export type { CardDef, WorldCardDef, UpgradeDef, DialPosition, DialInstruction, RuinationCard } from './constants.js';

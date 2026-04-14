@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
-import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADE_BY_ID, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
+import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADES, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 
@@ -102,6 +102,15 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
 
 import type { PowerState } from '@ruin/engine';
 
+function dialAdvancementCondition(power: Power): string {
+  switch (power) {
+    case 'xarm':   return 'Kill an enemy figure in battle.';
+    case 'gormen': return 'Place ≥2 corruption tokens in a populous region.';
+    case 'tenzen': return 'Place ≥2 corruption tokens in a region with ≥2 magic symbols + chaos stones combined.';
+    case 'lasha':  return 'Place ≥2 corruption tokens in a region with a Noble or Hero token.';
+  }
+}
+
 function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, controller }: {
   power: Power;
   ps: PowerState;
@@ -171,22 +180,27 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
               <span><span style={{ color: '#64748b' }}>Peasants: </span><strong style={{ color: '#fbbf24' }}>{ps.claimedPeasants}</strong></span>
             )}
           </div>
-          {ps.upgradesInPlay.length === 0 ? (
-            <div style={{ color: '#4b5563', fontSize: '0.73rem' }}>No upgrades</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {ps.upgradesInPlay.map(uid => {
-                const u = UPGRADE_BY_ID[uid];
-                if (!u) return null;
-                return (
-                  <div key={uid} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 4 }}>
-                    <div style={{ fontWeight: 600, color, fontSize: '0.75rem' }}>{u.name}</div>
-                    <div style={{ color: '#d1d5db', fontSize: '0.7rem' }}>{u.effect}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {UPGRADES.filter(u => u.power === power).map(u => {
+              const taken = ps.upgradesInPlay.includes(u.id);
+              return (
+                <div key={u.id} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 4, opacity: taken ? 1 : 0.45 }}>
+                  <div style={{ fontWeight: 600, color: taken ? color : '#6b7280', fontSize: '0.75rem' }}>
+                    {u.name}{taken && ' ✓'}
                   </div>
-                );
-              })}
+                  <div style={{ color: taken ? '#d1d5db' : '#6b7280', fontSize: '0.7rem' }}>{u.effect}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ borderTop: '1px solid #1e1e3a', marginTop: 6, paddingTop: 6 }}>
+            <div style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
+              Dial Advancement
             </div>
-          )}
+            <div style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>
+              {dialAdvancementCondition(power)}
+            </div>
+          </div>
         </div>,
         document.body,
       )}
@@ -354,6 +368,149 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
   );
 }
 
+// ── Dial chip with per-power threat track tooltip ───────────────────────────
+
+function describeDialInstruction(instr: import('@ruin/engine').DialInstruction): string {
+  switch (instr.type) {
+    case 'start':                return '—';
+    case 'victory':              return 'VICTORY';
+    case 'score_vp':             return `+${instr.amount} VP`;
+    case 'upgrade_card':         return 'Upgrade';
+    case 'draw_chaos_cards':     return `Draw ${instr.amount}`;
+    case 'place_nobles':         return `Place ${instr.amount} Noble`;
+    case 'place_chaos_stone':    return `Place ${instr.amount} Chaos Stone`;
+    case 'remove_corruption':    return `Remove ${instr.amount} corruption`;
+    case 'remove_world_tokens':  return `Remove ${instr.amount} world token`;
+    default:                     return '';
+  }
+}
+
+function DialChip({ state }: { state: GameState }) {
+  const [hovered, setHovered] = useState(false);
+  const chipRef = useRef<HTMLDivElement>(null);
+  const chipBottom = chipRef.current?.getBoundingClientRect().bottom ?? 0;
+
+  // Highest dial position across all active powers (for compact summary on chip)
+  let leadPower: Power | null = null;
+  let leadThreat = -1;
+  for (const p of state.activePowers) {
+    const ps = state.powers[p];
+    if (!ps) continue;
+    const pos = THREAT_DIALS[p]?.[ps.dialPosition];
+    if (!pos) continue;
+    const threat = typeof pos.threat === 'number' ? pos.threat : 99;
+    if (threat > leadThreat) { leadThreat = threat; leadPower = p; }
+  }
+
+  return (
+    <>
+      <div
+        ref={chipRef}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '3px 8px',
+          borderRadius: 4,
+          border: '1.5px solid #334155',
+          background: '#13121f',
+          cursor: 'default',
+          flexShrink: 0,
+          fontSize: '0.75rem',
+          fontWeight: 700,
+          color: leadPower ? POWER_COLORS[leadPower] : '#64748b',
+        }}
+      >
+        Dial lead: {leadPower ? `${POWER_LABELS[leadPower]} (${leadThreat})` : '—'}
+      </div>
+
+      {hovered && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            top: chipBottom + 8,
+            background: '#0d0d1f',
+            border: '1px solid #3a3a6e',
+            borderRadius: 8,
+            padding: '10px 12px',
+            pointerEvents: 'none',
+            zIndex: 9999,
+            boxShadow: '0 0 14px #3a3a6e44',
+            fontSize: '0.73rem',
+            lineHeight: 1.5,
+            color: '#e5e7eb',
+          }}
+        >
+          <div style={{ fontWeight: 700, color: '#e5e7eb', marginBottom: 6, fontSize: '0.85rem' }}>
+            Threat Dials
+          </div>
+          <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1 }}>
+                <th style={{ textAlign: 'left', padding: '2px 10px 4px 0' }}>Power</th>
+                <th style={{ textAlign: 'center', padding: '2px 6px 4px' }}>Pos</th>
+                <th style={{ textAlign: 'left', padding: '2px 10px 4px' }}>Track (threat · reward)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.activePowers.map(power => {
+                const ps = state.powers[power]!;
+                const track = THREAT_DIALS[power];
+                const currentIdx = ps.dialPosition;
+                return (
+                  <tr key={power} style={{ borderTop: '1px solid #1e1e3a' }}>
+                    <td style={{ padding: '4px 10px 4px 0', fontWeight: 700, color: POWER_COLORS[power] }}>
+                      {POWER_LABELS[power]}
+                    </td>
+                    <td style={{ textAlign: 'center', padding: '4px 6px', color: '#fbbf24', fontWeight: 700 }}>
+                      {currentIdx}/{track.length - 1}
+                    </td>
+                    <td style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>
+                      {track.map((pos, i) => {
+                        const isCurrent = i === currentIdx;
+                        const isPast = i < currentIdx;
+                        const threatLabel = typeof pos.threat === 'number' ? pos.threat : '★';
+                        return (
+                          <span
+                            key={i}
+                            style={{
+                              display: 'inline-block',
+                              padding: '1px 6px',
+                              margin: '0 2px',
+                              borderRadius: 4,
+                              background: isCurrent ? POWER_COLORS[power] : 'transparent',
+                              color: isCurrent ? '#0d0d1f' : isPast ? '#64748b' : '#cbd5e1',
+                              border: isCurrent ? 'none' : '1px solid #2a2a4a',
+                              fontWeight: isCurrent ? 700 : 500,
+                              fontSize: '0.68rem',
+                            }}
+                          >
+                            <span style={{ fontWeight: 700 }}>{threatLabel}</span>
+                            <span style={{ margin: '0 3px', opacity: 0.5 }}>·</span>
+                            <span>{describeDialInstruction(pos.instruction)}</span>
+                          </span>
+                        );
+                      })}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 6, fontSize: '0.6rem', color: '#64748b' }}>
+            Highlighted cell = current position. Reach ★ (victory) to win by dial.
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 // ── Status bar ────────────────────────────────────────────────────────────────
 
 export default function StatusBar({ state, myPower, players, events: eventLog }: StatusBarProps) {
@@ -420,6 +577,9 @@ export default function StatusBar({ state, myPower, players, events: eventLog }:
       {/* Ruination tracker */}
       <span className="text-slate-600 shrink-0">|</span>
       <RuinChip state={state} events={eventLog} />
+
+      {/* Dial tracker */}
+      <DialChip state={state} />
 
       <div className="flex-1" />
 

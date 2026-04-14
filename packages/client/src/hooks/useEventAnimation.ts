@@ -71,7 +71,6 @@ export function useEventAnimation(
   const [appearingCards, setAppearingCards] = useState<Set<string>>(new Set());
 
   // ── Battle / corruption ──
-  const [snapshot, setSnapshot] = useState<GameState | null>(null);
   const [animPhase, setAnimPhase] = useState<'battle' | 'corruption' | null>(null);
   const [activeRegion, setActiveRegion] = useState<RegionId | null>(null);
   const [killedIds, setKilledIds] = useState<Set<string>>(new Set());
@@ -88,29 +87,12 @@ export function useEventAnimation(
 
   const clearBattleState = () => {
     setAnimPhase(null);
-    setSnapshot(null);
     setActiveRegion(null);
     setKilledIds(new Set());
     setProcessedBattleEvents([]);
     setDominationLabels(new Map());
     setCorruptionOverrides(new Map());
     setCorruptionFlies([]);
-  };
-
-  const applyKillsToSnapshot = () => {
-    setSnapshot(prev => {
-      if (!prev || killedIds.size === 0) return prev;
-      const newPowers = { ...prev.powers };
-      for (const pw of Object.keys(newPowers) as Power[]) {
-        const ps = newPowers[pw];
-        if (!ps) continue;
-        if (ps.followers.some(f => killedIds.has(f.id))) {
-          newPowers[pw] = { ...ps, followers: ps.followers.map(f => killedIds.has(f.id) ? { ...f, regionId: null } : f) };
-        }
-      }
-      return { ...prev, powers: newPowers };
-    });
-    setKilledIds(new Set());
   };
 
   // ── Timed cleanup helper ──
@@ -149,7 +131,6 @@ export function useEventAnimation(
 
       // Phase transitions for battle/corruption animation
       if (lastEvent.phase === 'battle') {
-        if (serverState) setSnapshot(serverState);
         setAnimPhase('battle');
         setProcessedBattleEvents([]);
         setKilledIds(new Set());
@@ -158,7 +139,6 @@ export function useEventAnimation(
         setCorruptionOverrides(new Map());
         setCorruptionFlies([]);
       } else if (lastEvent.phase === 'corruption') {
-        if (animPhase === 'battle') applyKillsToSnapshot();
         setAnimPhase('corruption');
         setProcessedBattleEvents([]);
         setActiveRegion(null);
@@ -245,7 +225,7 @@ export function useEventAnimation(
   // ── Result ────────────────────────────────────────────────────────────────
 
   const isAnimating = animPhase !== null;
-  const displayState = isAnimating && snapshot ? snapshot : (serverState ?? null);
+  const displayState = serverState ?? null;
 
   return {
     phaseBanner,

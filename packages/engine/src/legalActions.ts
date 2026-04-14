@@ -409,12 +409,16 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
 
       for (let slot = 0; slot <= 1; slot++) {
         if (region.chaosCards[slot as 0 | 1] !== null) continue;
+        // If this card needs a follow-up choice and there's exactly one legal
+        // choice, bundle it so the play resolves without pausing.
+        const unique = uniqueOnPlayChoice(state, cardId, power, regionId);
         actions.push({
           kind: 'summoning_play_card',
           power,
           cardId,
           toRegion: regionId,
           slotIndex: slot as 0 | 1,
+          ...(unique ? { onPlayChoice: unique } : {}),
         } satisfies PlayCardAction);
         break; // Only one action per (card, region) pair — first available slot
       }
@@ -425,6 +429,40 @@ function getSummoningActions(state: GameState, power: Power): Action[] {
   actions.push({ kind: 'summoning_pass', power } satisfies SummoningPassAction);
 
   return actions;
+}
+
+/**
+ * For on-play-choice cards, returns the unique legal choice if there's only
+ * one valid option, else null. Used by getLegalActions to bundle the choice
+ * into the play-card action so the resolver can skip the pendingAction pause.
+ */
+function uniqueOnPlayChoice(
+  state: GameState,
+  cardId: string,
+  power: Power,
+  regionId: RegionId,
+): Record<string, unknown> | null {
+  switch (cardId) {
+    case 'tenzen_the_meddling_of_rats': {
+      const opponents = state.activePowers.filter(p =>
+        p !== power && followersInRegion(state, regionId, p).length > 0,
+      );
+      return opponents.length === 1 ? { targetPower: opponents[0] } : null;
+    }
+    case 'tenzen_fate_shield': {
+      const ownFigures = followersInRegion(state, regionId, power);
+      return ownFigures.length === 1 ? { followerId: ownFigures[0]!.id } : null;
+    }
+    case 'lasha_narcotic_musk': {
+      // Target an enemy cultist in the region
+      const targets = followersInRegion(state, regionId).filter(f =>
+        f.class === 'cultist' && (f.controlledBy ?? f.power) !== 'lasha',
+      );
+      return targets.length === 1 ? { followerId: targets[0]!.id } : null;
+    }
+    default:
+      return null;
+  }
 }
 
 /**
@@ -604,8 +642,10 @@ function getCardOnPlayChoiceActions(
     }
 
     case 'tenzen_the_meddling_of_rats': {
-      // Target any opponent with cards; if none, target any opponent (engine no-ops)
-      const opponents = state.activePowers.filter(p => p !== power);
+      // Per card text: must target an opponent WITH FIGURES IN THIS REGION.
+      const opponents = state.activePowers.filter(p =>
+        p !== power && followersInRegion(state, regionId, p).length > 0,
+      );
       for (const targetPower of opponents) {
         actions.push({ ...base, choices: { targetPower } });
       }

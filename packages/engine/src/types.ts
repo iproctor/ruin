@@ -321,6 +321,13 @@ export interface PlayCardAction {
   cardId: string;
   toRegion: RegionId;
   slotIndex: 0 | 1;
+  /**
+   * For cards that normally pause for a follow-up choice (Meddling of Rats,
+   * Fate Shield, Teleport, etc), when the set of legal choices has only one
+   * option, the enumeration bundles it here so the card resolves without
+   * pausing. Shape matches CardOnPlayChoiceAction.choices.
+   */
+  onPlayChoice?: Record<string, unknown>;
 }
 
 export interface SummoningPassAction {
