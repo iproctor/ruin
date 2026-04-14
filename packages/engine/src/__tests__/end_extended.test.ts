@@ -258,6 +258,58 @@ describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () =>
     // chaos_stone is exempt from removal
     expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
   });
+
+  test('double-advance (5→6→7 victory) still only queues 2 removals, not 3', () => {
+    // If Lasha is unique max-counter holder, advanceThreatDials advances twice:
+    // 5→6 (remove_world_tokens: 2) then 6→7 (victory).
+    // Victory emits dial_victory but shouldn't add extra removal rewards.
+    let s = endState();
+    s = setDial(s, 'lasha', 5, 2); // lasha unique max
+    s = setDial(s, 'xarm', 0, 1);
+    s = addToken(s, 'normagne', 'peasant');
+    s = addToken(s, 'toscavar', 'peasant');
+    s = addToken(s, 'pelascos', 'peasant');
+    s = addToken(s, 'almerida', 'peasant');
+    const before = Object.values(s.regions)
+      .flatMap(r => r.tokens)
+      .filter(t => t === 'peasant').length;
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
+    const after = Object.values(state.regions)
+      .flatMap(r => r.tokens)
+      .filter(t => t === 'peasant').length;
+    // If Lasha won via dial_victory, phase would be completed and no removals happen
+    // Otherwise, exactly 2 removals.
+    const removeCount = log.events.filter(
+      e => e.type === 'dial_remove_world_token' && e.power === 'lasha',
+    ).length;
+    expect(removeCount).toBeLessThanOrEqual(2);
+    expect(before - after).toBe(removeCount);
+  });
+
+  test('removes exactly 2 tokens when ample tokens available (regression: not 3)', () => {
+    // Lasha dial: pos 5 → pos 6 = remove_world_tokens 2
+    let s = endState();
+    s = setDial(s, 'lasha', 5, 1);
+    s = setDial(s, 'xarm', 0, 1); // tie → no bonus advance
+    // Seed 5 peasants in different regions so there's no ambiguity
+    s = addToken(s, 'normagne', 'peasant');
+    s = addToken(s, 'toscavar', 'peasant');
+    s = addToken(s, 'pelascos', 'peasant');
+    s = addToken(s, 'almerida', 'peasant');
+    s = addToken(s, 'mittelreich', 'peasant');
+    const before = Object.values(s.regions)
+      .flatMap(r => r.tokens)
+      .filter(t => t === 'peasant').length;
+    const { state, log } = autoResolveEndPhase(resolveEndPhase(s));
+    const after = Object.values(state.regions)
+      .flatMap(r => r.tokens)
+      .filter(t => t === 'peasant').length;
+    expect(before - after).toBe(2);
+    const removeCount = log.events.filter(
+      e => e.type === 'dial_remove_world_token' && e.power === 'lasha',
+    ).length;
+    expect(removeCount).toBe(2);
+  });
 });
 
 describe('dial instruction: draw_chaos_cards (Xarm pos 3, threat 14)', () => {
