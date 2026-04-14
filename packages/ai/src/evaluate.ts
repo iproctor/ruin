@@ -63,7 +63,7 @@ export function evaluateState(state: GameState, power: Power): number {
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
-  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '2', 10);
+  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '3', 10);
   if (power === 'gormen' && gormenCutoff > 0 && state.round <= gormenCutoff) {
     return evaluateGormenHandmade(state);
   }
