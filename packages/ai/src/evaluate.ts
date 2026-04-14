@@ -59,11 +59,11 @@ export function evaluateState(state: GameState, power: Power): number {
   // Power-specific handmade evaluators for early game. The learned model's
   // evaluation is too flat to guide MCTS effectively.
   // Env vars control cutoff rounds (0 = disabled).
-  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '3', 10);
+  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '2', 10);
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
-  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '3', 10);
+  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '2', 10);
   if (power === 'gormen' && gormenCutoff > 0 && state.round <= gormenCutoff) {
     return evaluateGormenHandmade(state);
   }

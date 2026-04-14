@@ -14,12 +14,7 @@ import { CHAOS_CARDS, followersInRegion } from '@ruin/engine';
  * non-summoning actions pass through untouched.
  */
 
-const MAGIC_SYMBOL_CARDS = new Set(CHAOS_CARDS.filter(c => c.hasMagicSymbol).map(c => c.id));
-
-// Cards that cost 0 PP. Playing one of these (with preconditions met) is
-// nearly always strictly better than passing or summoning a low-value figure
-// — they're free utility and they consume a card slot the opponent can't
-// use later. Used by pruneActions to always-keep these in the root sample.
+// Cards that cost 0 PP. Used by isZeroCostCardPlay for prior boost.
 const ZERO_COST_CARDS = new Set(CHAOS_CARDS.filter(c => c.cost === 0).map(c => c.id));
 
 export function isPointlessAction(state: GameState, action: Action): boolean {
@@ -197,183 +192,15 @@ export function filterPointlessActions(state: GameState, actions: Action[]): Act
 }
 
 /**
- * Returns true if `action` plays a high-value xarm DELAY card. War Cry and
- * Bloody Rebirth are the two main "delay opponents long enough for xarm to
- * dial-win" tools. Their value is mostly indirect (denied opponent VP, denied
- * future corruption placers) and not visible to a value head trained on
- * outcomes alone — so we hand-bias the search toward sampling them when their
- * preconditions look strong.
- *
- *   War Cry — blocks new corruption placement in the region for the round.
- *     Triggers:
- *       1. corruption + chaos_stones + cultists ≥ 12 — region is about to ruin
- *       2. cultists > 6 — massive incoming corruption
- *
- *   Bloody Rebirth — adds a second battle round in the region. Doubles kill
- *     potential, eradicating opponent cultists who would otherwise corrupt
- *     next round. The DAC reward caps at one per region per round, so the
- *     extra kills are "wasted" from the value head's perspective even though
- *     they materially delay opponents.
- *     Triggers:
- *       1. xarm has attack dice present AND ≥ 3 enemy figures, OR
- *       2. enemy cultists ≥ 4 (lots of next-round corruption to deny)
- */
-export function isXarmDelayPlay(state: GameState, action: Action): boolean {
-  if (action.kind !== 'summoning_play_card') return false;
-  const region = state.regions[action.toRegion];
-  if (!region) return false;
-
-  if (action.cardId === 'xarm_war_cry') {
-    const cultistCount = followersInRegion(state, action.toRegion).filter(
-      f => f.class === 'cultist' && !f.tipped,
-    ).length;
-    if (cultistCount > 6) return true;
-    const corruptionTotal = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
-    const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
-    return corruptionTotal + chaosStones + cultistCount >= 12;
-  }
-
-  if (action.cardId === 'xarm_bloody_rebirth') {
-    // Bloody Rebirth runs an extra battle in the region — does nothing
-    // unless xarm has attack dice there. The delay value comes specifically
-    // from eradicating enemy cultists (who would otherwise place corruption
-    // next round); killing warriors/incarnations is tactical but doesn't
-    // directly stall the opponent's VP race the same way.
-    const regionFigs = followersInRegion(state, action.toRegion);
-    const xarmAttackPresent = regionFigs.some(f =>
-      !f.tipped &&
-      (f.controlledBy ?? f.power) === 'xarm' &&
-      (f.class === 'warrior' || f.class === 'incarnation'),
-    );
-    if (!xarmAttackPresent) return false;
-    const enemyCultistCount = regionFigs.filter(f =>
-      !f.tipped &&
-      f.class === 'cultist' &&
-      (f.controlledBy ?? f.power) !== 'xarm',
-    ).length;
-    return enemyCultistCount >= 3;
-  }
-
-  return false;
-}
-
-// Backward-compat alias — kept so external callers don't break.
-export const isWarCryDelayPlay = isXarmDelayPlay;
-
-/**
  * Returns true if `action` plays a 0-cost chaos card whose preconditions are
- * met (i.e. the action would not be filtered as pointless). 0-cost cards are
- * essentially free utility — they cost no PP, occupy a card slot the opponent
- * can't reuse, and (when their preconditions hold) have a real positive
- * effect. Always-keep these in the root MCTS sample.
+ * met. 0-cost cards are essentially free utility — they cost no PP, occupy a
+ * card slot the opponent can't reuse, and (when their preconditions hold)
+ * have a real positive effect. Used for prior boost in MCTS root.
  */
 export function isZeroCostCardPlay(state: GameState, action: Action): boolean {
   if (action.kind !== 'summoning_play_card') return false;
   if (!ZERO_COST_CARDS.has(action.cardId)) return false;
-  // Defer to the same precondition checks used everywhere else.
   return !isPointlessAction(state, action);
-}
-
-/**
- * Returns true if `action` actively builds toward earning a Dial Advancement
- * Counter for the acting power. Used by MCTS root pruning to preferentially
- * keep these actions in the sampled set, breaking the chicken-and-egg loop
- * where non-xarm powers never earn DAC because the model doesn't know to
- * pursue the trigger conditions.
- *
- * DAC trigger reminder:
- *   xarm   — kill an enemy figure (any region)
- *   gormen — ≥2 own corruption tokens placed in a populous region
- *   tenzen — ≥2 own corruption tokens in a region with ≥2 magic symbols + chaos stones
- *   lasha  — ≥2 own corruption tokens in a region with a noble or hero token
- */
-/**
- * Tenzen defensive card plays that protect cultist piles:
- *   - Stasis Web on a region with ≥2 tenzen cultists (makes it +2 cost for enemies)
- *   - Teleport when there are enemy attackers in a region with tenzen cultists
- *     (move the attacker out, preserving the pile)
- */
-export function isTenzenDefensivePlay(state: GameState, action: Action): boolean {
-  if (action.kind !== 'summoning_play_card') return false;
-  if (action.power !== 'tenzen') return false;
-  const region = state.regions[action.toRegion];
-  if (!region) return false;
-
-  const regionFigs = followersInRegion(state, action.toRegion);
-  const tenzenCultists = regionFigs.filter(
-    f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
-  ).length;
-
-  // Stasis Web: protect a region where tenzen has a cultist pile
-  if (action.cardId === 'tenzen_stasis_web' && tenzenCultists >= 2) return true;
-
-  // Teleport: worth playing when enemy attackers threaten tenzen's cultists
-  if (action.cardId === 'tenzen_teleport' && tenzenCultists >= 1) {
-    const enemyAttackers = regionFigs.some(
-      f => !f.tipped && (f.controlledBy ?? f.power) !== 'tenzen' &&
-           (f.class === 'warrior' || f.class === 'incarnation'),
-    );
-    if (enemyAttackers) return true;
-  }
-
-  // Changer of Fate: nullify War Cry (unblocks corruption) or War Frenzy
-  // (prevents xarm bonus battle dice) in a region with tenzen cultists.
-  if (action.cardId === 'tenzen_changer_of_fate' && tenzenCultists >= 1) {
-    const hasWarCryOrFrenzy = region.chaosCards.some(
-      c => c !== null && (c.cardId === 'xarm_war_cry' || c.cardId === 'xarm_war_frenzy'),
-    );
-    if (hasWarCryOrFrenzy) return true;
-  }
-
-  return false;
-}
-
-/**
- * Tighter than actionBuildsTowardDac: returns true only for plays that are
- * one move away from arming the DAC trigger this turn, not vague "moving
- * toward" plays. Used as an always-keep bias in pruneActions.
- */
-export function isDacCompletion(state: GameState, action: Action): boolean {
-  if (action.kind === 'summoning_play_card') {
-    const region = state.regions[action.toRegion];
-    if (!region) return false;
-    // Tenzen: playing a magic-symbol card into a region that already has
-    // ≥1 chaos stone OR ≥1 magic symbol card (gets to the ≥2 threshold).
-    if (action.power === 'tenzen' && MAGIC_SYMBOL_CARDS.has(action.cardId)) {
-      const cs = region.tokens.filter(t => t === 'chaos_stone').length;
-      const ms = region.chaosCards.filter(
-        c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId),
-      ).length;
-      if (cs + ms >= 1) return true;
-    }
-    return false;
-  }
-
-  if (action.kind === 'summoning_summon_figure') {
-    if (!action.followerId.includes('_cultist_')) return false;
-    const region = state.regions[action.toRegion];
-    if (!region) return false;
-    const power = action.power;
-
-    // Tenzen only — gormen and lasha already learn their DAC paths.
-    // Tenzen: cultist into a region whose effective magic-symbol/chaos-stone
-    // count is already ≥2 (the dial-trigger threshold). Effective count
-    // includes Fatespinner upgrade if present.
-    if (power === 'tenzen') {
-      const cs = region.tokens.filter(t => t === 'chaos_stone').length;
-      const ms = region.chaosCards.filter(
-        c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId),
-      ).length;
-      const fatespinnerBonus =
-        state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-        followersInRegion(state, action.toRegion).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)
-          ? 2
-          : 0;
-      return cs + ms + fatespinnerBonus >= 2;
-    }
-  }
-
-  return false;
 }
 
 /**
@@ -437,118 +264,31 @@ export function isFeedingXarmDac(state: GameState, action: Action): boolean {
 }
 
 /**
- * Returns true if this summon moves a figure OUT of a region where xarm has
- * attackers. Humans instinctively retreat when xarm warriors arrive — this
- * always-keep bias teaches the AI the same instinct.
+ * Urgent retreat: moving a solo (≤1) cultist OUT of a region where xarm
+ * can attack INTO a region where xarm can't attack. This is the "save
+ * your only cultist from certain death" case — should get a very strong
+ * prior boost for all non-xarm powers.
  */
-export function isRetreatFromXarm(state: GameState, action: Action): boolean {
+export function isUrgentRetreatFromXarm(state: GameState, action: Action): boolean {
   if (action.kind !== 'summoning_summon_figure') return false;
   if (action.power === 'xarm') return false;
 
-  // Only applies to figures already on the board (moving, not from reserve).
-  // Figures from reserve have regionId === null in the follower list, but
-  // the action itself doesn't say — we check the follower.
   const ps = state.powers[action.power];
   if (!ps) return false;
   const follower = ps.followers.find(f => f.id === action.followerId);
   if (!follower || follower.regionId === null) return false; // from reserve
 
-  // Is the figure's CURRENT region dangerous?
+  // Source region must be Xarm-threatened
   if (!xarmCanAttackInRegion(state, follower.regionId)) return false;
+  // Must be moving to a DIFFERENT region
+  if (action.toRegion === follower.regionId) return false;
+  // Destination must be SAFE from Xarm
+  if (xarmCanAttackInRegion(state, action.toRegion)) return false;
 
-  // Don't bias retreat when the power has a large cultist pile — the
-  // corruption placement from staying is worth more than the figures lost.
+  // Only fires when this is a lone cultist (≤1 own cultists there).
+  // If there's a pile, the concentration is worth more than the losses.
   const ownCultists = followersInRegion(state, follower.regionId as import('@ruin/engine').RegionId, action.power)
     .filter(f => !f.tipped && f.class === 'cultist').length;
-  if (ownCultists > 2) return false;
-
-  // Moving to a DIFFERENT region = retreat.
-  return action.toRegion !== follower.regionId;
+  return ownCultists <= 1;
 }
 
-export function actionBuildsTowardDac(state: GameState, action: Action): boolean {
-  if (action.kind === 'summoning_summon_figure') {
-    const isCultist = action.followerId.includes('_cultist_');
-    const region = state.regions[action.toRegion];
-    if (!region) return false;
-    const power = action.power;
-
-    if (power === 'gormen') {
-      // Cultists in populous regions place corruption next phase
-      return isCultist && region.populous;
-    }
-
-    if (power === 'tenzen') {
-      // Need cultists in a region with magic symbols or chaos stones
-      if (!isCultist) return false;
-      const magicSymbols = region.chaosCards.filter(
-        c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId),
-      ).length;
-      const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
-      return magicSymbols + chaosStones >= 1;
-    }
-
-    if (power === 'lasha') {
-      // Cultists in regions with a Noble or Hero token
-      if (!isCultist) return false;
-      return region.tokens.some(t => t === 'noble' || t === 'hero');
-    }
-
-    if (power === 'xarm') {
-      // Any figure into a contested region (xarm earns DAC from kills)
-      return followersInRegion(state, action.toRegion).some(f => (f.controlledBy ?? f.power) !== 'xarm');
-    }
-  }
-
-  if (action.kind === 'summoning_play_card') {
-    const region = state.regions[action.toRegion];
-    if (!region) return false;
-    const power = action.power;
-
-    // Tenzen: playing a magic-symbol card into a region with own cultists
-    // moves toward the (≥2 magic symbols + own corruption) trigger.
-    if (power === 'tenzen' && MAGIC_SYMBOL_CARDS.has(action.cardId)) {
-      const tenzenHere = followersInRegion(state, action.toRegion).filter(
-        f => (f.controlledBy ?? f.power) === 'tenzen',
-      ).length;
-      return tenzenHere > 0;
-    }
-
-    // Lasha: Hidden Influence to bring a Noble/Hero into a region with own cultists.
-    if (power === 'lasha' && action.cardId === 'lasha_hidden_influence') {
-      const lashaHere = followersInRegion(state, action.toRegion).filter(
-        f => (f.controlledBy ?? f.power) === 'lasha',
-      ).length;
-      return lashaHere > 0;
-    }
-
-    // Gormen: corruption-enabling cards in populous regions where gormen has presence.
-    if (power === 'gormen' && region.populous) {
-      const helpfulCards = new Set([
-        'gormen_pestilent_aura',
-        'gormen_pandemic',
-        'gormen_deaths_perfume',
-      ]);
-      if (helpfulCards.has(action.cardId)) {
-        const gormenHere = followersInRegion(state, action.toRegion).filter(
-          f => (f.controlledBy ?? f.power) === 'gormen',
-        ).length;
-        return gormenHere > 0;
-      }
-    }
-
-    // Xarm: combat-buffing cards in contested regions
-    if (power === 'xarm') {
-      const combatCards = new Set([
-        'xarm_war_frenzy',
-        'xarm_call_to_war',
-        'xarm_bloody_rebirth',
-      ]);
-      if (combatCards.has(action.cardId)) {
-        return followersInRegion(state, action.toRegion).some(f => (f.controlledBy ?? f.power) !== 'xarm');
-      }
-    }
-  }
-
-  return false;
-}

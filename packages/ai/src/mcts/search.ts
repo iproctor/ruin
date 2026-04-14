@@ -1,9 +1,9 @@
 import type { GameState, Action, Power } from '@ruin/engine';
-import { applyAction, getLegalActions, makeRng, REGIONS } from '@ruin/engine';
+import { applyAction, getLegalActions, makeRng } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, isXarmDelayPlay, isZeroCostCardPlay, isDacCompletion, isFeedingXarmDac, isRetreatFromXarm, isTenzenDefensivePlay } from './filter-actions.js';
+import { filterPointlessActions, isZeroCostCardPlay, isFeedingXarmDac, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
 import { policyForState } from '../learn/evaluator.js';
@@ -76,16 +76,16 @@ function makeRootPriorsFromRaw(
     }
   }
 
-  // Tenzen: boost prior for retreating cultists from Xarm-threatened regions.
-  // Tenzen's low DAC rate means it's better to keep cultists alive for
-  // corruption/ruination VP than to lose them contesting Xarm.
-  const RETREAT_PRIOR_FLOOR = 0.08;
-  const retreatSlots = new Set<number>();
-  if (forPower === 'tenzen') {
+  // Urgent retreat: solo cultist in xarm-threatened region moving to safety.
+  // Heavy prior boost for all non-xarm powers — this is a near-certain kill
+  // for xarm if they stay, and the value head doesn't reliably see it.
+  const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
+  const urgentRetreatSlots = new Set<number>();
+  if (forPower !== 'xarm') {
     for (const a of rootActions) {
-      if (isRetreatFromXarm(state, a)) {
+      if (isUrgentRetreatFromXarm(state, a)) {
         const idx = canonicalActionIndex(a, state);
-        if (idx >= 0) retreatSlots.add(idx);
+        if (idx >= 0) urgentRetreatSlots.add(idx);
       }
     }
   }
@@ -95,7 +95,7 @@ function makeRootPriorsFromRaw(
     if (idx < 0) return 1 / rootActions.length;
     let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
     if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
-    if (retreatSlots.has(idx)) p = Math.max(p, RETREAT_PRIOR_FLOOR);
+    if (urgentRetreatSlots.has(idx)) p = Math.max(p, URGENT_RETREAT_PRIOR_FLOOR);
     return p;
   };
 }
@@ -123,10 +123,6 @@ function rolloutDepthForRound(round: number): number {
 // This biases simulations toward aggressive play and avoids pass-heavy rollouts
 // that produce unrealistically low scores, causing the AI to play too cautiously.
 const ROLLOUT_AGGRESSION = 0.92;
-
-// Maximum root-level candidates fed into MCTS tree search.
-// Pruning the action space improves tree coverage without losing quality.
-const MAX_ROOT_ACTIONS = 24;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -183,14 +179,10 @@ export function runMcts(
     return legalRoot[0]!;
   }
 
-  // If the policy head is loaded, trust PUCT to focus search — give it
-  // all legal actions and let the priors guide exploration. Without a
-  // policy head, fall back to random downsampling.
+  // Policy head guides PUCT to focus search across the full legal-action space.
   const rawPolicy = policyForState(state, forPower);
-  const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
-
-  const root = createNode(state, null, null, null, forPower, [...rootActions]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions, forPower) : null;
+  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -279,10 +271,8 @@ export function runMctsWithStats(
   }
 
   const rawPolicy = policyForState(state, forPower);
-  const rootActions = rawPolicy !== null ? legalRoot : pruneActions(state, forPower, legalRoot);
-  const root = createNode(state, null, null, null, forPower, [...rootActions]);
-
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, rootActions, forPower) : null;
+  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -528,80 +518,3 @@ function bestAction(root: MctsNode): Action {
   throw new Error('runMcts: could not determine best action — tree is empty');
 }
 
-// ─── Action pruning ───────────────────────────────────────────────────────────
-
-/**
- * Reduce a large legal-action set to at most MAX_ROOT_ACTIONS candidates.
- *
- * For summoning actions we rank by a fast heuristic:
- *   - Playing a card scores higher than summoning a figure
- *   - Actions targeting populous/high-value regions score higher
- *   - Placing into a region where I already have figures scores higher
- *   - Pass is always included but at lowest priority
- *
- * Non-summoning actions are returned as-is (sets are typically small).
- */
-function pruneActions(state: GameState, _power: Power, actions: Action[]): Action[] {
-  // Cap root branching with class-aware sampling.
-  //
-  // Sampling buckets (sample independently to ensure each kind gets
-  // explored, since otherwise the model's preference for summons would
-  // dominate the random sample):
-  //   1. always-keep:  pass + 0-cost cards + xarm-delay plays
-  //   2. card plays:   gets ~half the remaining budget
-  //   3. summons:      gets the rest
-  //
-  // The class-aware split is important because the value head systematically
-  // under-values card plays (their effects fire later, indirectly), so a
-  // uniform random sample concentrates visits on summons. By forcing cards
-  // into ~half the slots, we guarantee the policy head sees card plays in
-  // training data and can learn to value them.
-  if (actions.length <= MAX_ROOT_ACTIONS) return actions;
-  if (state.pendingAction?.actionKind !== 'summoning_action') return actions;
-
-  const passActions: Action[] = [];
-  const alwaysKeep: Action[] = [];
-  const cardPool: Action[] = [];
-  const summonPool: Action[] = [];
-  for (const a of actions) {
-    if (a.kind === 'summoning_pass') passActions.push(a);
-    else if (isRetreatFromXarm(state, a)) alwaysKeep.push(a);
-    else if (isFeedingXarmDac(state, a)) { /* drop */ }
-    else if (isZeroCostCardPlay(state, a) || isXarmDelayPlay(state, a) || isDacCompletion(state, a) || isTenzenDefensivePlay(state, a)) alwaysKeep.push(a);
-    else if (a.kind === 'summoning_play_card') cardPool.push(a);
-    else summonPool.push(a);
-  }
-
-  // Deterministic pseudo-random pick based on state.rngSeed so replay is stable.
-  let seed = state.rngSeed | 0;
-  function rand(): number {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-    return seed / 0x7fffffff;
-  }
-  function sampleN<T>(pool: T[], k: number): T[] {
-    const arr = [...pool];
-    const out: T[] = [];
-    for (let i = 0; i < k && arr.length > 0; i++) {
-      const j = Math.floor(rand() * arr.length);
-      out.push(arr[j]!);
-      arr[j] = arr[arr.length - 1]!;
-      arr.pop();
-    }
-    return out;
-  }
-
-  const budget = Math.max(0, MAX_ROOT_ACTIONS - passActions.length - alwaysKeep.length);
-  // Split budget ~half/half, but cap by what each pool can offer
-  const cardSlots = Math.min(cardPool.length, Math.ceil(budget / 2));
-  const summonSlots = Math.min(summonPool.length, budget - cardSlots);
-  // If summon pool was exhausted, top up cards with the leftover
-  const extraCardSlots = Math.min(
-    cardPool.length - cardSlots,
-    budget - cardSlots - summonSlots,
-  );
-
-  const sampledCards = sampleN(cardPool, cardSlots + extraCardSlots);
-  const sampledSummons = sampleN(summonPool, summonSlots);
-
-  return [...alwaysKeep, ...sampledCards, ...sampledSummons, ...passActions];
-}
