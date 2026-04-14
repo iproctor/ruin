@@ -20,24 +20,58 @@ export type StreamEvent =
   | { type: 'lobby_update'; players: unknown[]; invitations: unknown[] }
   | { type: 'game_started' };
 
+/**
+ * Open a reconnecting SSE stream. On network errors the connection is closed
+ * and retried after a short delay; the optional `getSinceSeq` callback lets
+ * the caller resume from the last processed seq so the server can skip the
+ * full history on reconnect.
+ */
 export function connectGameStream(
   gameId: string,
   onEvent: (event: StreamEvent) => void,
+  getSinceSeq?: () => number | null,
 ): () => void {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const params = token ? `?token=${encodeURIComponent(token)}` : '';
-  const url = `/api/games/${encodeURIComponent(gameId)}/stream${params}`;
+  let closed = false;
+  let es: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const es = new EventSource(url);
-
-  es.onmessage = (e) => {
-    try {
-      const data = JSON.parse(e.data as string) as StreamEvent;
-      onEvent(data);
-    } catch {
-      // ignore malformed messages
+  function open() {
+    if (closed) return;
+    const token = localStorage.getItem(TOKEN_KEY);
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    const since = getSinceSeq?.();
+    if (since !== null && since !== undefined && since > 0) {
+      params.set('sinceSeq', String(since));
     }
-  };
+    const qs = params.toString();
+    const url = `/api/games/${encodeURIComponent(gameId)}/stream${qs ? `?${qs}` : ''}`;
 
-  return () => es.close();
+    es = new EventSource(url);
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data as string) as StreamEvent;
+        onEvent(data);
+      } catch {
+        // ignore malformed messages
+      }
+    };
+
+    es.onerror = () => {
+      if (closed) return;
+      es?.close();
+      es = null;
+      // Backoff a bit so we don't spin on a broken server
+      retryTimer = setTimeout(open, 1000);
+    };
+  }
+
+  open();
+
+  return () => {
+    closed = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    es?.close();
+  };
 }

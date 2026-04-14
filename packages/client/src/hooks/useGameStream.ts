@@ -167,10 +167,14 @@ export function useGameStream(gameId: string): GameStreamResult {
       queue.current.push({ kind: 'sync', state: ev.state });
       startProcessing();
     } else if (ev.type === 'events') {
-      // Skip events the client already has from the action response
+      // Skip events the client already has from the action response or from
+      // an earlier batch (dedup on reconnect resume + action-response races).
       if (ev.seq !== undefined && ev.seq <= knownSeq.current) return;
       // Buffer for potential replay by syncAfterAction
-      if (ev.seq !== undefined) sseBuffer.current.push({ seq: ev.seq, events: ev.events });
+      if (ev.seq !== undefined) {
+        sseBuffer.current.push({ seq: ev.seq, events: ev.events });
+        knownSeq.current = ev.seq;
+      }
       for (const event of ev.events) queue.current.push({ kind: 'event', event });
       startProcessing();
     } else if (ev.type === 'chat') {
@@ -235,7 +239,11 @@ export function useGameStream(gameId: string): GameStreamResult {
     processing.current = false;
     knownSeq.current = 0;
 
-    const cleanup = connectGameStream(gameId, handleEvent);
+    // On reconnect, resume from the highest seq we've seen so the server can
+    // skip sending the full history again. Returns null on the first connect.
+    const getSinceSeq = () => (knownSeq.current > 0 ? knownSeq.current : null);
+
+    const cleanup = connectGameStream(gameId, handleEvent, getSinceSeq);
     return cleanup;
   }, [gameId, handleEvent]);
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, inArray, asc } from 'drizzle-orm';
+import { eq, inArray, asc, and, gte } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Power, PlayerType, Action } from '@ruin/engine';
 import { maskEvents } from '@ruin/engine';
@@ -23,7 +23,7 @@ import {
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
-import { games, gamePlayers, lobbyPlayers, invitations, users, chatMessages } from '../db/schema.js';
+import { games, gamePlayers, lobbyPlayers, invitations, users, chatMessages, gameEvents } from '../db/schema.js';
 import { createMagicLink } from '../auth/magicLink.js';
 import { sendEmail } from '../email/index.js';
 import { gameInviteEmail } from '../email/templates/gameInvite.js';
@@ -392,16 +392,37 @@ router.get('/:id/stream', optionalAuth, (req, res) => {
         return;
       }
 
-      // Active/complete game — existing flow
-      const [state, history, playerRows] = await Promise.all([
+      // Active/complete game — support resumption via ?sinceSeq for reconnects
+      const sinceSeqRaw = req.query['sinceSeq'];
+      const sinceSeq = typeof sinceSeqRaw === 'string' ? parseInt(sinceSeqRaw, 10) : NaN;
+
+      const [state, playerRows] = await Promise.all([
         getGameState(id, viewerUserId),
-        getGameHistory(id),
         db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id)),
       ]);
       const viewerRow = viewerUserId ? playerRows.find(r => r.userId === viewerUserId) : null;
       const viewerPower = (viewerRow?.power as import('@ruin/engine').Power) ?? null;
       addListener(id, res, viewerPower);
 
+      if (Number.isFinite(sinceSeq) && sinceSeq > 0) {
+        // Resume: send only events at or after sinceSeq. Client already has
+        // state + earlier events in memory.
+        const newEventRows = await db.select({ seq: gameEvents.seq, event: gameEvents.event })
+          .from(gameEvents)
+          .where(and(eq(gameEvents.gameId, id), gte(gameEvents.seq, sinceSeq)))
+          .orderBy(asc(gameEvents.seq));
+        if (newEventRows.length > 0) {
+          const newEvents = newEventRows.map(r => r.event as unknown as import('@ruin/engine').GameEvent);
+          const masked = maskEvents(newEvents, viewerPower);
+          const lastRow = newEventRows[newEventRows.length - 1]!;
+          const nextSeq = lastRow.seq + 1;
+          res.write(`data: ${JSON.stringify({ type: 'events', events: masked, seq: nextSeq })}\n\n`);
+        }
+        return;
+      }
+
+      // First connect: send full history
+      const history = await getGameHistory(id);
       res.write(`data: ${JSON.stringify({
         type: 'history',
         state,
