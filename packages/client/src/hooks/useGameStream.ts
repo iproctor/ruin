@@ -78,17 +78,14 @@ export function useGameStream(gameId: string): GameStreamResult {
 
   const stateRef = useRef<GameState | null>(null);
   stateRef.current = state;
-  type QueueItem =
-    | { kind: 'event'; event: GameEvent; batchSeq?: number }
-    | { kind: 'sync'; state: GameState };
+  type QueueItem = { kind: 'event'; event: GameEvent } | { kind: 'sync'; state: GameState };
   const queue = useRef<QueueItem[]>([]);
   const processing = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const knownSeq = useRef(0);
-  // Buffer of SSE event batches. `appended` tracks how many events in the
-  // batch have already been pushed to the log, so syncAfterAction can append
-  // only the remainder and avoid duplicates.
-  const sseBuffer = useRef<{ seq: number; events: GameEvent[]; appended: number }[]>([]);
+  // Buffer of SSE event batches, kept so syncAfterAction can replay events
+  // that arrived before the HTTP response.
+  const sseBuffer = useRef<{ seq: number; events: GameEvent[] }[]>([]);
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const hadBattle = useRef(false);
@@ -137,18 +134,6 @@ export function useGameStream(gameId: string): GameStreamResult {
     setEvents(prev => [...prev, event]);
     setLastEvent(event);
 
-    // Mark this event as logged within its SSE batch; drop the buffer entry
-    // once every event has been appended.
-    if (item.batchSeq !== undefined) {
-      const entry = sseBuffer.current.find(b => b.seq === item.batchSeq);
-      if (entry) {
-        entry.appended++;
-        if (entry.appended >= entry.events.length) {
-          sseBuffer.current = sseBuffer.current.filter(b => b.seq !== item.batchSeq);
-        }
-      }
-    }
-
     const delay = getEventDuration(event);
     if (delay > 0) {
       timerRef.current = setTimeout(processNext, delay);
@@ -184,10 +169,9 @@ export function useGameStream(gameId: string): GameStreamResult {
     } else if (ev.type === 'events') {
       // Skip events the client already has from the action response
       if (ev.seq !== undefined && ev.seq <= knownSeq.current) return;
-      // Buffer for replay/dedup by syncAfterAction
-      const batchSeq = ev.seq;
-      if (batchSeq !== undefined) sseBuffer.current.push({ seq: batchSeq, events: ev.events, appended: 0 });
-      for (const event of ev.events) queue.current.push({ kind: 'event', event, batchSeq });
+      // Buffer for potential replay by syncAfterAction
+      if (ev.seq !== undefined) sseBuffer.current.push({ seq: ev.seq, events: ev.events });
+      for (const event of ev.events) queue.current.push({ kind: 'event', event });
       startProcessing();
     } else if (ev.type === 'chat') {
       setChat(prev => [...prev, ev.message]);
@@ -202,41 +186,36 @@ export function useGameStream(gameId: string): GameStreamResult {
   }, [processNext]);
 
   /** Called by GamePage after a successful action POST.
-   *  Snaps to the authoritative state and appends any action events the SSE
-   *  batch hasn't already written to the log; then replays any SSE batches
-   *  that arrived ahead of the HTTP response (seq > actionSeq). */
+   *  Syncs to the returned state and replays any SSE events that arrived
+   *  ahead of the HTTP response (seq > actionSeq). */
   const syncAfterAction = useCallback((actionState: GameState, seq: number, actionEvents?: GameEvent[]) => {
-    // How many events from this batch were already appended by SSE — so we
-    // don't duplicate them. Remaining events are appended below.
-    const actionBatch = sseBuffer.current.find(b => b.seq === seq);
-    const alreadyAppended = actionBatch?.appended ?? 0;
-
-    // Stop any in-progress queue processing and snap to authoritative state.
-    // Snap (vs. letting the queue drain) gives an instant transition — panels
-    // and tableau reflect the post-action state immediately.
+    // Stop any in-progress queue processing
     if (timerRef.current) clearTimeout(timerRef.current);
     processing.current = false;
     queue.current = [];
 
+    // Apply authoritative action state
     knownSeq.current = seq;
     setState(actionState);
     stateRef.current = actionState;
 
-    // Append only the events not yet logged by SSE (no animation delay).
-    const toAppend = actionEvents?.slice(alreadyAppended) ?? [];
-    if (toAppend.length > 0) {
-      setEvents(prev => [...prev, ...toAppend]);
-      setLastEvent(toAppend[toAppend.length - 1]!);
+    // Add the action's events to the log (no animation delay), unless SSE
+    // already delivered this batch — in which case processNext already
+    // appended them.
+    const alreadyLogged = sseBuffer.current.some(b => b.seq >= seq);
+    if (!alreadyLogged && actionEvents && actionEvents.length > 0) {
+      setEvents(prev => [...prev, ...actionEvents]);
+      setLastEvent(actionEvents[actionEvents.length - 1]!);
     }
 
-    // Replay any SSE batches ahead of this one (later seqs) on top of actionState.
+    // Replay any SSE events that arrived ahead of the HTTP response.
+    // These have seq > actionSeq and need to be re-applied on top of
+    // the authoritative actionState.
     const ahead = sseBuffer.current.filter(b => b.seq > seq);
     sseBuffer.current = [];
     if (ahead.length > 0) {
       for (const batch of ahead) {
-        for (const event of batch.events) queue.current.push({ kind: 'event', event, batchSeq: batch.seq });
-        // Re-buffer so dedup still works if another action response races in
-        sseBuffer.current.push({ seq: batch.seq, events: batch.events, appended: 0 });
+        for (const event of batch.events) queue.current.push({ kind: 'event', event });
       }
       startProcessing();
     }
