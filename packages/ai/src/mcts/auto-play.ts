@@ -14,18 +14,49 @@ import { followersInRegion, REGION_ORDER, CHAOS_CARDS } from '@ruin/engine';
  * Returns an auto-play action if one exists, or null to fall back to MCTS.
  *
  * Currently handles:
+ *   - Tenzen upgrade priority: Apprentices first (enables chaos-stone
+ *     carrying → fast ruination), then Power of Fate (+1 PP/round).
  *   - Tenzen Siphon Power: 0-cost, steals 1 PP from each opponent with
  *     cultists in the region. Pick the region hitting the most opponents,
  *     breaking ties by highest total threat among hit opponents.
  */
 export function getAutoPlay(state: GameState, power: Power): Action | null {
   if (power !== 'tenzen') return null;
+
+  // Upgrade-choice forcing — lock in the Apprentices → +PP pick order so
+  // MCTS doesn't wander into Fractals/Fatespinner early when the ruin
+  // engine needs cultists-carrying-stones.
+  if (state.pendingAction?.actionKind === 'upgrade_choice') {
+    return bestTenzenUpgrade(state);
+  }
+
   if (state.pendingAction?.actionKind !== 'summoning_action') return null;
 
   const hand = state.powers[power]?.hand;
   if (!hand || !hand.includes('tenzen_siphon_power')) return null;
 
   return bestSiphonPlay(state);
+}
+
+// Priority order for Tenzen's three dial upgrades.
+// 1) Apprentices — cultists carry chaos stones into ruin targets.
+// 2) Power of Fate — +1 PP/round, fuels more plays and summons.
+// 3) Fatespinner — incarnation counts as 2 chaos stones for ruining.
+// 4) Flood of Magic / Fractals — fallback.
+const TENZEN_UPGRADE_PRIORITY: readonly string[] = [
+  'tenzen_apprentices_up',
+  'tenzen_power_of_fate',
+  'tenzen_fatespinner_up',
+  'tenzen_flood_of_magic',
+  'tenzen_fractals_up',
+];
+
+function bestTenzenUpgrade(state: GameState): Action | null {
+  const available = state.powers['tenzen']?.availableUpgradeIds ?? [];
+  if (available.length === 0) return null;
+  const pick = TENZEN_UPGRADE_PRIORITY.find(id => available.includes(id)) ?? available[0];
+  if (!pick) return null;
+  return { kind: 'upgrade_choice', power: 'tenzen' as Power, upgradeCardId: pick } as Action;
 }
 
 const ZERO_COST_CARD_IDS = new Set(
