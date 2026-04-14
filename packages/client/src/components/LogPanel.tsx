@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import type { ChatMessage } from '../hooks/useGameStream.js';
+import type { GamePlayerInfo } from '../api/client.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
 import type { Power, GameEvent, RegionId, FollowerClass } from '@ruin/engine';
 import { REGIONS, FOLLOWERS, CARD_BY_ID, UPGRADE_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
@@ -11,6 +12,7 @@ interface LogPanelProps {
   myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
   connected: boolean;
+  players: GamePlayerInfo[];
 }
 
 type FilterMode = 'all' | 'events' | 'chat';
@@ -302,7 +304,8 @@ function renderWorldCardEffect(event: Extract<GameEvent, { type: 'world_card_eff
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function LogPanel({ events, chat, myPower, onSendChat, connected }: LogPanelProps) {
+export default function LogPanel({ events, chat, myPower, onSendChat, connected, players }: LogPanelProps) {
+  const hasOtherHumans = players.filter(p => p.playerType === 'human').length > 1;
   const [filter, setFilter] = useState<FilterMode>('all');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -323,9 +326,10 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected 
     return aTime - bTime;
   });
 
-  const visible = filter === 'all'    ? merged
-                : filter === 'events' ? merged.filter((e) => e.kind === 'event')
-                :                       merged.filter((e) => e.kind === 'chat');
+  const effectiveFilter = hasOtherHumans ? filter : 'events';
+  const visible = effectiveFilter === 'all'    ? merged
+                : effectiveFilter === 'events' ? merged.filter((e) => e.kind === 'event')
+                :                                merged.filter((e) => e.kind === 'chat');
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView();
@@ -346,30 +350,32 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected 
   return (
     <div className="flex flex-col h-full min-h-0" style={{ background: '#13121f', borderTop: '1px solid #2d2d5e', borderRadius: 0 }}>
       {/* Header */}
-      <div className="flex items-center justify-end px-3 py-2 shrink-0">
-        {/* Filter tabs */}
-        <div className="flex gap-1" style={{ borderBottom: '1px solid #2d2d5e' }}>
-          {(['all', 'events', 'chat'] as FilterMode[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              style={{
-                fontSize: '0.65rem',
-                padding: '1px 7px',
-                borderRadius: 0,
-                fontWeight: 700,
-                cursor: 'pointer',
-                border: 'none',
-                background: filter === f ? '#312e81' : 'transparent',
-                color: filter === f ? '#c7d2fe' : '#64748b',
-                textTransform: 'capitalize',
-              }}
-            >
-              {f}
-            </button>
-          ))}
+      {hasOtherHumans && (
+        <div className="flex items-center justify-end px-3 py-2 shrink-0">
+          {/* Filter tabs */}
+          <div className="flex gap-1" style={{ borderBottom: '1px solid #2d2d5e' }}>
+            {(['all', 'events', 'chat'] as FilterMode[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                style={{
+                  fontSize: '0.65rem',
+                  padding: '1px 7px',
+                  borderRadius: 0,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  background: filter === f ? '#312e81' : 'transparent',
+                  color: filter === f ? '#c7d2fe' : '#64748b',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Entries */}
       <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0 space-y-px">
@@ -412,6 +418,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected 
       </div>
 
       {/* Chat input */}
+      {hasOtherHumans && (
       <div className="shrink-0 flex gap-1 p-2">
         <input
           type="text"
@@ -448,6 +455,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected 
           →
         </button>
       </div>
+      )}
     </div>
   );
 }

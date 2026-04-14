@@ -72,6 +72,7 @@ function CollapsibleLog(props: {
   myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
   connected: boolean;
+  players: import('../api/client.js').GamePlayerInfo[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
@@ -473,6 +474,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             myPower={myPower}
             onSendChat={handleChatSend}
             connected={connected}
+            players={players}
           />
         </div>
 
