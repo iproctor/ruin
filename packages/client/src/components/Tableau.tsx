@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
-import { CARD_BY_ID } from '@ruin/engine';
+import { CARD_BY_ID, REGIONS, FOLLOWERS } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, shortCardName } from '../lib/display.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
@@ -17,12 +17,6 @@ interface TableauProps {
   onUndo?: () => void;
   onEndTurn?: () => void;
   submitError?: string;
-  apprenticeChoice?: {
-    fromRegion: string;
-    toRegion: string;
-    onCarry: () => void;
-    onLeave: () => void;
-  };
 }
 
 // ── Draggable hand card ───────────────────────────────────────────────────────
@@ -292,16 +286,43 @@ function Stockpile({
 
 // ── Pending action summary ────────────────────────────────────────────────────
 
+function regionName(id: string): string {
+  return REGIONS[id as keyof typeof REGIONS]?.name ?? id;
+}
+
+function followerName(power: Power, followerId: string): string {
+  // Follower ids look like "xarm_warrior_1" — extract the class.
+  const parts = followerId.split('_');
+  const cls = parts[1] as FollowerClass | undefined;
+  if (cls && FOLLOWERS[power]?.[cls]) return FOLLOWERS[power][cls].name;
+  return followerId;
+}
+
+function cardName(cardId: string): string {
+  const def = CARD_BY_ID[cardId];
+  return def ? (def.shortName ?? shortCardName(def.name)) : cardId;
+}
+
 function pendingLabel(action: Action): string {
   if (action.kind === 'summoning_summon_figure') {
-    return `→ Summon to ${action.toRegion}`;
+    return `${followerName(action.power, action.followerId)} → ${regionName(action.toRegion)}`;
   }
   if (action.kind === 'summoning_play_card') {
-    const def = CARD_BY_ID[action.cardId];
-    const name = def ? (def.shortName ?? shortCardName(def.name)) : action.cardId;
-    return `→ Play ${name} to ${action.toRegion}`;
+    return `${cardName(action.cardId)} → ${regionName(action.toRegion)}`;
   }
-  return `→ ${action.kind}`;
+  if (action.kind === 'card_on_play_choice') {
+    return `${cardName(action.cardId)} → ${regionName(action.regionId)}`;
+  }
+  if (action.kind === 'world_card_effect' || action.kind === 'world_choice') {
+    return cardName(action.cardId);
+  }
+  if (action.kind === 'upgrade_choice') {
+    return `Upgrade: ${cardName(action.upgradeCardId)}`;
+  }
+  if (action.kind === 'hero_removal') {
+    return `Remove hero in ${regionName(action.regionId)}`;
+  }
+  return action.kind;
 }
 
 // ── Tableau ───────────────────────────────────────────────────────────────────
@@ -316,7 +337,6 @@ export default function Tableau({
   onUndo,
   onEndTurn,
   submitError,
-  apprenticeChoice,
 }: TableauProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
 
@@ -334,7 +354,7 @@ export default function Tableau({
     const nameB = cb?.shortName ?? cb?.name ?? b;
     return nameA.localeCompare(nameB);
   });
-  const isSummoningTurn = !!onEndTurn || !!apprenticeChoice;
+  const isSummoningTurn = !!onEndTurn;
 
   // Which card is pending (played to board)
   const pendingCardId =
@@ -352,6 +372,10 @@ export default function Tableau({
         background: '#0d0d1f',
         borderTop: `2px solid ${isSummoningTurn ? color : '#1e1e3a'}`,
         transition: 'border-color 0.3s',
+        position: 'relative',
+        paddingRight: isSummoningTurn
+          ? (pendingAction ? 340 : 200)
+          : undefined,
       }}
     >
       {/* PP counter */}
@@ -425,69 +449,67 @@ export default function Tableau({
           </p>
         )}
 
-        {/* Pending preview + undo/end turn */}
-        {isSummoningTurn && (
-          <div className="flex flex-col items-end gap-1">
-            {pendingAction && (
-              <span style={{ fontSize: '0.7rem', color: '#22c55e', fontStyle: 'italic' }}>
-                {pendingLabel(pendingAction)}
-              </span>
-            )}
-            <div className="flex gap-2">
-              {pendingAction && onUndo && (
-                <button
-                  onClick={onUndo}
-                  style={{
-                    fontSize: '0.75rem',
-                    padding: '4px 12px',
-                    borderRadius: 4,
-                    border: '1px solid #334155',
-                    background: 'transparent',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Undo
-                </button>
-              )}
-              {apprenticeChoice && (
-                <div style={{ display: 'flex', gap: 4, marginRight: 'auto' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#94a3b8', alignSelf: 'center' }}>Chaos Stone?</span>
-                  <button
-                    onClick={apprenticeChoice.onCarry}
-                    style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: 4, border: '1px solid #6366f1', background: '#312e81', color: '#c4b5fd', cursor: 'pointer' }}
-                  >
-                    Carry
-                  </button>
-                  <button
-                    onClick={apprenticeChoice.onLeave}
-                    style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: 4, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}
-                  >
-                    Leave
-                  </button>
-                </div>
-              )}
-              {onEndTurn && <button
-                onClick={onEndTurn}
-                style={{
-                  fontSize: '0.75rem',
-                  padding: '4px 14px',
-                  borderRadius: '0 0 0 4px',
-                  border: 'none',
-                  background: color,
-                  color: '#fff',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: `0 0 8px ${color}66`,
-                }}
-              >
-                {pendingAction ? 'Confirm & End Turn' : 'End Turn'}
-              </button>}
-            </div>
-          </div>
-        )}
 
       </div>
+
+      {/* Full-height Undo + Confirm/Pass buttons pinned to the tableau's right edge */}
+      {isSummoningTurn && onEndTurn && (
+        <div style={{
+          position: 'absolute', top: 0, right: 0, bottom: 0,
+          display: 'flex',
+        }}>
+          {pendingAction && onUndo && (
+            <button
+              onClick={onUndo}
+              style={{
+                padding: '0 18px',
+                border: 'none',
+                borderRadius: 0,
+                background: '#1e1e3a',
+                color: '#94a3b8',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+              }}
+            >
+              Undo
+            </button>
+          )}
+          <button
+            onClick={onEndTurn}
+            style={{
+              padding: '0 24px',
+              minWidth: 160,
+              border: 'none',
+              borderRadius: 0,
+              background: color,
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              boxShadow: `0 0 8px ${color}66`,
+              textAlign: 'center',
+              whiteSpace: 'nowrap',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              lineHeight: 1.2,
+            }}
+          >
+            {pendingAction ? (
+              <>
+                <span>Confirm</span>
+                <span style={{ fontWeight: 500, fontSize: '0.78rem', opacity: 0.95 }}>
+                  {pendingLabel(pendingAction)}
+                </span>
+              </>
+            ) : (
+              'Pass (PP → 0)'
+            )}
+          </button>
+        </div>
+      )}
 
       {tooltip && (
         <CardTooltip cardId={tooltip.cardId} x={tooltip.x} y={tooltip.y} />

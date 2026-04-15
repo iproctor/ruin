@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import type { Power, Action, RegionId, FollowerClass, GameState, GameEvent } from '@ruin/engine';
 import type { DragItem } from '../types/drag.js';
-import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID } from '@ruin/engine';
+import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID, REGIONS } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
@@ -69,7 +69,6 @@ function DragGhost({ item }: { item: DragItem }) {
 function CollapsibleLog(props: {
   events: import('@ruin/engine').GameEvent[];
   chat: import('../hooks/useGameStream.js').ChatMessage[];
-  myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
   connected: boolean;
   players: import('../api/client.js').GamePlayerInfo[];
@@ -455,7 +454,7 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           </div>
 
           {/* Middle: non-summoning action panels */}
-          {(needsOnPlayChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
+          {(needsOnPlayChoice || needsApprenticeChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
             <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
               {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
                 <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
@@ -466,6 +465,33 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
                     onAction={handleOnPlayChoice}
                     onUndo={handleUndo}
                   />
+                </div>
+              )}
+
+              {needsApprenticeChoice && myPower && afterPlayPending && (
+                <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.8rem', color: '#c4b5fd', marginBottom: 6, fontWeight: 600 }}>
+                    Chaos Stone
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: 8 }}>
+                    Carry the Chaos Stone from {REGIONS[afterPlayPending.context['fromRegion'] as RegionId].name} to {REGIONS[afterPlayPending.context['toRegion'] as RegionId].name}?
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      className="primary"
+                      onClick={() => setPendingAction(prev => prev ? { ...prev, carry: true } as typeof prev : prev)}
+                      style={{ flex: 1, fontSize: '0.85rem', padding: '0.5rem' }}
+                    >
+                      Carry
+                    </button>
+                    <button
+                      className="secondary"
+                      onClick={() => setPendingAction(prev => prev ? { ...prev, carry: false } as typeof prev : prev)}
+                      style={{ flex: 1, fontSize: '0.85rem', padding: '0.5rem' }}
+                    >
+                      Leave
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -489,7 +515,6 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           <CollapsibleLog
             events={events}
             chat={chat}
-            myPower={myPower}
             onSendChat={handleChatSend}
             connected={connected}
             players={players}
@@ -525,12 +550,6 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
             pendingAction={pendingOnPlayChoice ?? pendingAction}
             onUndo={handleUndo}
             onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) && !needsApprenticeChoice ? handleEndTurn : undefined}
-            apprenticeChoice={needsApprenticeChoice ? {
-              fromRegion: (afterPlayPending!.context['fromRegion'] as string),
-              toRegion: (afterPlayPending!.context['toRegion'] as string),
-              onCarry: () => setPendingAction(prev => prev ? { ...prev, carry: true } : prev),
-              onLeave: () => setPendingAction(prev => prev ? { ...prev, carry: false } : prev),
-            } : undefined}
             submitError={submitError}
           />
         )}

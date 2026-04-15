@@ -9,7 +9,6 @@ import CardTooltip from './CardTooltip.js';
 interface LogPanelProps {
   events: GameEvent[];
   chat: ChatMessage[];
-  myPower: Power | null;
   onSendChat: (message: string) => Promise<void>;
   connected: boolean;
   players: GamePlayerInfo[];
@@ -305,7 +304,7 @@ function renderWorldCardEffect(event: Extract<GameEvent, { type: 'world_card_eff
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function LogPanel({ events, chat, myPower, onSendChat, connected, players }: LogPanelProps) {
+export default function LogPanel({ events, chat, onSendChat, connected, players }: LogPanelProps) {
   const hasOtherHumans = players.filter(p => p.playerType === 'human').length > 1;
   const [filter, setFilter] = useState<FilterMode>('all');
   const [input, setInput] = useState('');
@@ -397,8 +396,8 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected,
             );
           }
           const { msg } = entry;
+          // Colour by the user's power (if any), but always show username.
           const color = msg.power ? (POWER_COLORS[msg.power as Power] ?? '#6366f1') : '#6366f1';
-          const label = msg.power ? (POWER_LABELS[msg.power as Power] ?? msg.username) : msg.username;
           return (
             <div
               key={`c-${msg.id}`}
@@ -410,7 +409,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected,
                 background: '#0d1a2d',
               }}
             >
-              <span style={{ color, fontWeight: 700 }}>{label}: </span>
+              <span style={{ color, fontWeight: 700 }}>{msg.username}: </span>
               <span style={{ color: '#cbd5e1' }}>{msg.message}</span>
             </div>
           );
@@ -423,8 +422,8 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected,
       <div className="shrink-0 flex gap-1 p-2">
         <input
           type="text"
-          placeholder={myPower ? 'Chat…' : 'Spectating — chat disabled'}
-          disabled={!myPower || sending}
+          placeholder="Chat…"
+          disabled={sending}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -441,7 +440,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected,
         />
         <button
           onClick={handleSend}
-          disabled={!myPower || !input.trim() || sending}
+          disabled={!input.trim() || sending}
           style={{
             fontSize: '0.75rem',
             padding: '4px 10px',
@@ -450,7 +449,7 @@ export default function LogPanel({ events, chat, myPower, onSendChat, connected,
             background: '#312e81',
             color: '#c7d2fe',
             cursor: 'pointer',
-            opacity: !myPower || !input.trim() ? 0.4 : 1,
+            opacity: !input.trim() ? 0.4 : 1,
           }}
         >
           →
