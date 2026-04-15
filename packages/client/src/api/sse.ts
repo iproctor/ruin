@@ -75,3 +75,45 @@ export function connectGameStream(
     es?.close();
   };
 }
+
+import type { LobbySnapshot, LobbyOnlineUser, LobbyChatMsg } from './client.js';
+
+export type LobbyStreamEvent =
+  | { type: 'snapshot'; snapshot: LobbySnapshot }
+  | { type: 'presence'; online: LobbyOnlineUser[] }
+  | { type: 'games_update' }
+  | { type: 'chat'; message: LobbyChatMsg }
+  | { type: 'invited'; gameId: string }
+  | { type: 'error'; message: string };
+
+export function connectLobbyStream(
+  onEvent: (e: LobbyStreamEvent) => void,
+): () => void {
+  let closed = false;
+  let es: EventSource | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function open() {
+    if (closed) return;
+    const token = localStorage.getItem(TOKEN_KEY);
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    es = new EventSource(`/api/lobby/stream?${params.toString()}`);
+    es.onmessage = (e) => {
+      try { onEvent(JSON.parse(e.data as string) as LobbyStreamEvent); } catch { /* ignore */ }
+    };
+    es.onerror = () => {
+      if (closed) return;
+      es?.close();
+      es = null;
+      retryTimer = setTimeout(open, 1000);
+    };
+  }
+
+  open();
+  return () => {
+    closed = true;
+    if (retryTimer) clearTimeout(retryTimer);
+    es?.close();
+  };
+}

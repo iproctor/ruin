@@ -145,6 +145,7 @@ export interface LobbyPlayer {
   userId: string;
   username: string;
   power: string | null;
+  locked: boolean;
   isCreator: boolean;
 }
 
@@ -155,10 +156,13 @@ export interface LobbyInvitation {
   createdAt: string;
 }
 
+export interface AiSlot { power: string | null; locked: boolean }
+
 export interface LobbyState {
   game: { id: string; name: string | null; isPublic: boolean; status: string; createdBy: string };
   players: LobbyPlayer[];
   invitations: LobbyInvitation[];
+  aiSlots: AiSlot[];
 }
 
 export async function createMultiplayerGame(name: string, isPublic?: boolean): Promise<{ gameId: string }> {
@@ -200,13 +204,77 @@ export interface PowerAssignment {
   userId?: string;
 }
 
-export async function startGame(gameId: string, powerConfig: PowerAssignment[]): Promise<void> {
-  await request(`/games/${gameId}/start`, {
+export async function assignPlayerPower(gameId: string, userId: string, power: string | null): Promise<void> {
+  await request(`/games/${gameId}/assign-player`, {
     method: 'POST',
-    body: JSON.stringify({ powerConfig }),
+    body: JSON.stringify({ userId, power }),
   });
+}
+
+export async function assignAiSlot(gameId: string, aiIndex: number, power: string | null): Promise<void> {
+  await request(`/games/${gameId}/assign-ai`, {
+    method: 'POST',
+    body: JSON.stringify({ aiIndex, power }),
+  });
+}
+
+export async function startGame(gameId: string): Promise<void> {
+  await request(`/games/${gameId}/start`, { method: 'POST' });
 }
 
 export async function revokeInvitation(gameId: string, invitationId: string): Promise<void> {
   await request(`/games/${gameId}/invitations/${invitationId}`, { method: 'DELETE' });
+}
+
+export async function cancelGame(gameId: string): Promise<void> {
+  await request(`/games/${gameId}/cancel`, { method: 'POST' });
+}
+
+export async function pickPower(gameId: string, power: string | null): Promise<void> {
+  await request(`/games/${gameId}/pick-power`, {
+    method: 'POST',
+    body: JSON.stringify({ power }),
+  });
+}
+
+// ── Global Multiplayer Lobby ───────────────────────────────────────────────
+
+export interface LobbyOnlineUser {
+  userId: string;
+  username: string;
+  inGame: boolean;
+}
+
+export interface LobbyGameSummary {
+  id: string;
+  name: string | null;
+  isPublic: boolean;
+  createdBy: string;
+  createdByUsername: string;
+  players: Array<{ userId: string; username: string }>;
+  invitedYou: boolean;
+}
+
+export interface LobbyChatMsg {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface LobbySnapshot {
+  online: LobbyOnlineUser[];
+  games: LobbyGameSummary[];
+  chat: LobbyChatMsg[];
+  myPendingGameId: string | null;
+  myActiveGameIds: string[];
+}
+
+export async function getLobbySnapshot(): Promise<LobbySnapshot> {
+  return request<LobbySnapshot>('/lobby/snapshot');
+}
+
+export async function sendLobbyChat(message: string): Promise<void> {
+  await request('/lobby/chat', { method: 'POST', body: JSON.stringify({ message }) });
 }

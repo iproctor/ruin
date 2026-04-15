@@ -30,6 +30,7 @@ export const games = pgTable('games', {
   name: text('name'),                                           // multiplayer game name
   status: text('status').notNull().default('active'),           // 'pending' | 'active' | 'complete'
   isPublic: boolean('is_public').notNull().default(false),
+  aiSlots: jsonb('ai_slots').notNull().default([]),             // Array<Power|null> — creator's AI-slot picks
 });
 
 export const gamePlayers = pgTable('game_players', {
@@ -71,7 +72,8 @@ export const lobbyPlayers = pgTable('lobby_players', {
   userId: uuid('user_id')
     .notNull()
     .references(() => users.id),
-  power: text('power'),              // nullable, assigned by creator
+  power: text('power'),              // nullable: joiner self-pick or creator assignment
+  locked: boolean('locked').notNull().default(false), // true = creator forced this pick
   isCreator: boolean('is_creator').notNull().default(false),
   joinedAt: timestamp('joined_at').defaultNow().notNull(),
 });
@@ -88,6 +90,14 @@ export const chatMessages = pgTable('chat_messages', {
   id: uuid('id').primaryKey().defaultRandom(),
   gameId: uuid('game_id').notNull().references(() => games.id),
   power: text('power'),          // null = spectator/system
+  username: text('username').notNull(),
+  message: text('message').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const lobbyChatMessages = pgTable('lobby_chat_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id),
   username: text('username').notNull(),
   message: text('message').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),

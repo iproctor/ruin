@@ -1,5 +1,8 @@
 import type { GameState, Action, Power } from '@ruin/engine';
-import { applyAction, getLegalActions, enumerateBattleHitStrategies, makeRng } from '@ruin/engine';
+import {
+  applyAction, getLegalActions, enumerateBattleHitStrategies, makeRng,
+  sampleLegalSummoningAction,
+} from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
@@ -409,31 +412,27 @@ function rollout(state: GameState, forPower: Power, seed: number, minDepth: numb
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
-    // Rollouts use the cheap hand-picked hit-assignment strategies rather
-    // than the richer root enumeration — fast and good enough for noisy
-    // leaf-value estimates.
-    const actions = current.pendingAction.actionKind === 'battle_hit_assignment'
-      ? enumerateBattleHitStrategies(current, waitingFor)
-      : getLegalActions(current, waitingFor);
-    if (actions.length === 0) break;
-    // NOTE: filterPointlessActions deliberately skipped here. Profile showed it
-    // accounted for ~14% of total runtime, almost entirely inside rollouts.
-    // Rollouts are noisy biased-random simulations — pruning "dead" plays from
-    // them barely changes leaf-value estimates but adds significant overhead.
-    // The root and tree expansion still apply the filter (see runMcts).
-
-    let action: (typeof actions)[number] | undefined;
-
-    // Biased selection: in summoning phase, strongly prefer non-pass actions.
-    if (current.pendingAction.actionKind === 'summoning_action' && actions.length > 1) {
-      const nonPass = actions.filter(a => a.kind !== 'summoning_pass');
-      if (nonPass.length > 0 && rng() < ROLLOUT_AGGRESSION) {
-        action = nonPass[Math.floor(rng() * nonPass.length)];
-      } else {
-        action = actions[Math.floor(rng() * actions.length)];
-      }
+    // Summoning is the hot path — skip the full `getLegalActions` enumeration
+    // (dedup map, onPlayChoice bundling, full materialization) and sample one
+    // action directly via the engine's rollout-specific sampler. Rollouts are
+    // noisy biased-random sims, so duplicate board states and unbundled
+    // on-play choices (engine resolves them next ply) don't affect leaf value.
+    let action: Action | undefined;
+    if (current.pendingAction.actionKind === 'summoning_action') {
+      action = sampleLegalSummoningAction(current, waitingFor, rng, ROLLOUT_AGGRESSION);
     } else {
-      // Uniform random for all other action types.
+      // Rollouts use the cheap hand-picked hit-assignment strategies rather
+      // than the richer root enumeration — fast and good enough for noisy
+      // leaf-value estimates.
+      const actions = current.pendingAction.actionKind === 'battle_hit_assignment'
+        ? enumerateBattleHitStrategies(current, waitingFor)
+        : getLegalActions(current, waitingFor);
+      if (actions.length === 0) break;
+      // NOTE: filterPointlessActions deliberately skipped here. Profile showed it
+      // accounted for ~14% of total runtime, almost entirely inside rollouts.
+      // Rollouts are noisy biased-random simulations — pruning "dead" plays from
+      // them barely changes leaf-value estimates but adds significant overhead.
+      // The root and tree expansion still apply the filter (see runMcts).
       action = actions[Math.floor(rng() * actions.length)];
     }
 

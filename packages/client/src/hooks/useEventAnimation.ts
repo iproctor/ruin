@@ -79,6 +79,17 @@ export function useEventAnimation(
   const [corruptionOverrides, setCorruptionOverrides] = useState<Map<RegionId, Partial<Record<Power, number>>>>(new Map());
   const [corruptionFlies, setCorruptionFlies] = useState<CorruptionFlyEvent[]>([]);
   const flyIdRef = useRef(0);
+  const initializedAnimPhase = useRef(false);
+
+  // Bootstrap animPhase from server state on first load so that a refresh
+  // mid-battle still treats subsequent streamed events as battle/corruption
+  // animations (otherwise the UI gates them out and they appear instantly).
+  useEffect(() => {
+    if (initializedAnimPhase.current || !serverState) return;
+    initializedAnimPhase.current = true;
+    if (serverState.phase === 'battle') setAnimPhase('battle');
+    else if (serverState.phase === 'corruption') setAnimPhase('corruption');
+  }, [serverState]);
 
   // ── Helpers ──
 

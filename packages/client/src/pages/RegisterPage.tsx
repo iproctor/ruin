@@ -20,7 +20,7 @@ export default function RegisterPage() {
     try {
       const res = await register(username, password, email || undefined);
       storeToken(res.token);
-      navigate('/games');
+      navigate('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

@@ -86,7 +86,8 @@
       "Bash(/Users/iainap/code/chaos/node_modules/.pnpm/typescript@5.9.3/node_modules/.bin/tsc --noEmit -p packages/client/tsconfig.json)",
       "Bash(pnpm --filter engine exec tsc --noEmit)",
       "Bash(pnpm --filter server exec tsc --noEmit)",
-      "Bash(pnpm --filter client exec tsc --noEmit)"
+      "Bash(pnpm --filter client exec tsc --noEmit)",
+      "Bash(pnpm remove *)"
     ]
   }
 }

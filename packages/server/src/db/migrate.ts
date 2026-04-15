@@ -99,6 +99,25 @@ export async function ensureSchema(): Promise<void> {
       );
     `);
 
+    // Joiner can self-pick a power until creator overrides with a lock.
+    await client.query(`
+      ALTER TABLE lobby_players ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE games ADD COLUMN IF NOT EXISTS ai_slots JSONB NOT NULL DEFAULT '[]'::jsonb;
+    `);
+
+    // Global multiplayer lobby chat
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS lobby_chat_messages (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id    UUID NOT NULL REFERENCES users(id),
+        username   TEXT NOT NULL,
+        message    TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lobby_chat_created_at ON lobby_chat_messages(created_at DESC);
+    `);
+
     console.log('Database schema verified/created.');
   } finally {
     client.release();

@@ -5,6 +5,7 @@ import cors from 'cors';
 import { ensureSchema } from './db/migrate.js';
 import authRouter from './routes/auth.js';
 import gamesRouter from './routes/games.js';
+import lobbyRouter from './routes/lobby.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +30,7 @@ async function main() {
 
   // ── API routes ─────────────────────────────────────────────────────────────
   app.use('/api/auth', authRouter);
+  app.use('/api/lobby', lobbyRouter);
   app.use('/api/games', gamesRouter);
 
   // ── Health check ───────────────────────────────────────────────────────────

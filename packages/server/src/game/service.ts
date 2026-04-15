@@ -7,6 +7,7 @@ import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
 import { games, gamePlayers, chatMessages, gameEvents, lobbyPlayers, invitations, users } from '../db/schema.js';
 import { broadcast, broadcastEvents } from './sse.js';
+import { broadcastGamesUpdate, notifyInvited } from '../lobby/service.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -18,6 +19,62 @@ export interface ChatMessage {
   username: string;
   message: string;
   createdAt: string;
+}
+
+// AI slot shape stored in games.ai_slots.
+// - locked=true: creator explicitly set this (to a power, or Off=null).
+//   Joiners cannot steal; auto-fill leaves it alone.
+// - locked=false: auto-filled with whatever powers aren't otherwise claimed.
+//   Joiners can "steal" by self-picking that power.
+export interface AiSlot { power: string | null; locked: boolean }
+
+const ALL_POWERS_LIST: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+
+function normalizeAiSlots(raw: unknown): AiSlot[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => {
+    if (x === null || typeof x === 'string') return { power: (x as string | null) ?? null, locked: true };
+    if (typeof x === 'object' && x !== null && 'power' in (x as object)) {
+      const obj = x as { power?: string | null; locked?: boolean };
+      return { power: obj.power ?? null, locked: !!obj.locked };
+    }
+    return { power: null, locked: false };
+  });
+}
+
+/** After any assignment change, refill unlocked AI slots with unclaimed powers
+ *  in canonical order. Returns the new slot list (length = expectedCount). */
+function autoFillAiSlots(
+  humanPowers: Array<string | null>,
+  slots: AiSlot[],
+  expectedCount: number,
+): AiSlot[] {
+  const result: AiSlot[] = slots.slice(0, expectedCount);
+  while (result.length < expectedCount) result.push({ power: null, locked: false });
+
+  const claimed = new Set<string>();
+  for (const p of humanPowers) if (p) claimed.add(p);
+  for (const s of result) if (s.locked && s.power) claimed.add(s.power);
+
+  const available = ALL_POWERS_LIST.filter((p) => !claimed.has(p));
+  let ai = 0;
+  for (let i = 0; i < result.length; i++) {
+    if (!result[i]!.locked) {
+      result[i] = { power: available[ai] ?? null, locked: false };
+      ai++;
+    }
+  }
+  return result;
+}
+
+async function recomputeAiSlots(gameId: string): Promise<void> {
+  const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!gameRow) return;
+  const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+  const slots = normalizeAiSlots(gameRow.aiSlots);
+  const expected = Math.max(0, 4 - players.length);
+  const next = autoFillAiSlots(players.map((p) => p.power), slots, expected);
+  await db.update(games).set({ aiSlots: next }).where(eq(games.id, gameId));
 }
 
 // ---------------------------------------------------------------------------
@@ -440,6 +497,7 @@ export interface LobbyPlayer {
   userId: string;
   username: string;
   power: string | null;
+  locked: boolean;
   isCreator: boolean;
 }
 
@@ -454,6 +512,7 @@ export interface LobbyState {
   game: { id: string; name: string | null; isPublic: boolean; status: string; createdBy: string };
   players: LobbyPlayer[];
   invitations: LobbyInvitation[];
+  aiSlots: AiSlot[];
 }
 
 export async function createMultiplayerGame(
@@ -488,6 +547,8 @@ export async function createMultiplayerGame(
     isCreator: true,
   });
 
+  await recomputeAiSlots(gameId);
+  void broadcastGamesUpdate();
   return gameId;
 }
 
@@ -520,6 +581,7 @@ export async function getLobbyState(gameId: string, viewerId: string): Promise<L
       userId: p.userId,
       username: usernameById.get(p.userId) ?? 'Unknown',
       power: p.power,
+      locked: p.locked,
       isCreator: p.isCreator,
     })),
     invitations: invitationRows.map(i => ({
@@ -528,6 +590,7 @@ export async function getLobbyState(gameId: string, viewerId: string): Promise<L
       status: i.invitationStatus,
       createdAt: i.createdAt.toISOString(),
     })),
+    aiSlots: normalizeAiSlots(gameRow.aiSlots),
   };
 }
 
@@ -549,6 +612,18 @@ export async function lobbyInvite(gameId: string, creatorId: string, identifier:
   }).returning();
 
   broadcastLobbyUpdate(gameId);
+
+  // Push real-time notification to the invited user (if they have an account)
+  let invitedUserId: string | null = null;
+  if (isEmail) {
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, identifier)).limit(1);
+    invitedUserId = u?.id ?? null;
+  } else {
+    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.username, identifier)).limit(1);
+    invitedUserId = u?.id ?? null;
+  }
+  if (invitedUserId) notifyInvited(invitedUserId, gameId);
+  void broadcastGamesUpdate();
   return inv!.id;
 }
 
@@ -587,7 +662,9 @@ export async function lobbyJoin(gameId: string, userId: string): Promise<void> {
       .where(and(eq(invitations.gameId, gameId), eq(invitations.invitationStatus, 'pending')));
   }
 
+  await recomputeAiSlots(gameId);
   broadcastLobbyUpdate(gameId);
+  void broadcastGamesUpdate();
 }
 
 export async function lobbyLeave(gameId: string, userId: string): Promise<void> {
@@ -600,7 +677,9 @@ export async function lobbyLeave(gameId: string, userId: string): Promise<void> 
   await db.delete(lobbyPlayers)
     .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, userId)));
 
+  await recomputeAiSlots(gameId);
   broadcastLobbyUpdate(gameId);
+  void broadcastGamesUpdate();
 }
 
 export async function lobbyKick(gameId: string, creatorId: string, targetUserId: string): Promise<void> {
@@ -612,65 +691,179 @@ export async function lobbyKick(gameId: string, creatorId: string, targetUserId:
   await db.delete(lobbyPlayers)
     .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, targetUserId)));
 
+  await recomputeAiSlots(gameId);
   broadcastLobbyUpdate(gameId);
+  void broadcastGamesUpdate();
 }
 
-export async function lobbyAssign(
+/** Creator assigns a single human's power (null = clear and unlock).
+ *  If another human holds that power, swap with them. AI slots are left to
+ *  auto-fill afterwards. */
+export async function lobbyAssignPlayer(
   gameId: string,
   creatorId: string,
-  assignments: Array<{ power: Power; type: 'human' | 'ai' | 'none'; userId?: string }>,
+  targetUserId: string,
+  power: Power | null,
 ): Promise<void> {
   const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!gameRow || gameRow.status !== 'pending') throw new Error('Game not in lobby');
   if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can assign');
 
-  // Clear all power assignments first
-  await db.update(lobbyPlayers)
-    .set({ power: null })
-    .where(eq(lobbyPlayers.gameId, gameId));
+  const [target] = await db.select().from(lobbyPlayers)
+    .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, targetUserId)))
+    .limit(1);
+  if (!target) throw new Error('Target user is not in the lobby');
 
-  // Set new assignments
-  for (const a of assignments) {
-    if (a.type === 'human' && a.userId) {
+  const prevPower = target.power;
+
+  if (power !== null) {
+    // If another human holds this power, swap them onto the target's prev.
+    // Locked AI slots get reshuffled by auto-fill afterwards (creator is
+    // explicitly overriding, so unlocking would be surprising — instead we
+    // just let auto-fill re-balance unlocked slots around the new claim).
+    const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+    const otherHuman = players.find((p) => p.userId !== targetUserId && p.power === power);
+    if (otherHuman) {
       await db.update(lobbyPlayers)
-        .set({ power: a.power })
-        .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, a.userId)));
+        .set({ power: prevPower })
+        .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, otherHuman.userId)));
+    } else {
+      // If a LOCKED AI slot holds this power, the creator is overriding it:
+      // unlock the slot and let auto-fill re-distribute.
+      const slots = normalizeAiSlots(gameRow.aiSlots);
+      const lockedAi = slots.findIndex((s) => s.locked && s.power === power);
+      if (lockedAi !== -1) {
+        slots[lockedAi] = { power: null, locked: false };
+        await db.update(games).set({ aiSlots: slots }).where(eq(games.id, gameId));
+      }
     }
   }
 
+  await db.update(lobbyPlayers)
+    .set({ power, locked: power !== null })
+    .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, targetUserId)));
+
+  await recomputeAiSlots(gameId);
   broadcastLobbyUpdate(gameId);
 }
 
-export async function lobbyStart(gameId: string, creatorId: string): Promise<void> {
+/** Creator assigns an AI slot. Any click LOCKS the slot to the chosen value.
+ *  Clicking the slot's current locked value again UNLOCKS it (back to
+ *  auto-fill). Null = locked to Off. */
+export async function lobbyAssignAiSlot(
+  gameId: string,
+  creatorId: string,
+  aiIndex: number,
+  power: Power | null,
+): Promise<void> {
   const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!gameRow || gameRow.status !== 'pending') throw new Error('Game not in lobby');
-  if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can start');
+  if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can assign');
 
   const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+  const expectedAiCount = Math.max(0, 4 - players.length);
+  if (aiIndex < 0 || aiIndex >= expectedAiCount) {
+    throw new Error(`AI slot index out of range (0..${expectedAiCount - 1})`);
+  }
 
-  // The caller passes assignments via lobbyAssign first — read them from lobby_players + infer AI.
-  // We need the full assignment map. Read it from the request context or reconstruct:
-  // Players with power != null are human. Remaining powers are AI (passed via a prior assign call).
-  // For now, we require lobbyAssign to have been called, and we read the state.
+  const slots = normalizeAiSlots(gameRow.aiSlots);
+  while (slots.length < expectedAiCount) slots.push({ power: null, locked: false });
+  slots.length = expectedAiCount;
 
-  // Actually we need the full picture. Let's accept assignments in the start call body too.
-  // But the plan says "creator calls assign then start". Let's keep it simple:
-  // lobbyStart receives the final power config.
+  const prev = slots[aiIndex]!;
+  // Toggle-off: clicking the same locked value again unlocks it.
+  if (prev.locked && prev.power === power) {
+    slots[aiIndex] = { power: null, locked: false };
+  } else {
+    if (power !== null) {
+      // Steal from whoever holds it. Humans keep their locked flag but move
+      // off to prev.power; other AI slots (locked or not) go to prev.power.
+      const humanHolder = players.find((p) => p.power === power);
+      if (humanHolder) {
+        await db.update(lobbyPlayers)
+          .set({ power: prev.power })
+          .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, humanHolder.userId)));
+      } else {
+        const otherAi = slots.findIndex((s, i) => i !== aiIndex && s.power === power);
+        if (otherAi !== -1) {
+          slots[otherAi] = { ...slots[otherAi]!, power: prev.power };
+        }
+      }
+    }
+    slots[aiIndex] = { power, locked: true };
+  }
 
-  throw new Error('Use startMultiplayerGame instead');
+  await db.update(games).set({ aiSlots: slots }).where(eq(games.id, gameId));
+  await recomputeAiSlots(gameId);
+  broadcastLobbyUpdate(gameId);
+}
+
+/** Joiner picks their own power. Rejected if creator has already locked them. */
+export async function lobbyPickPower(
+  gameId: string,
+  userId: string,
+  power: Power | null,
+): Promise<void> {
+  const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!gameRow || gameRow.status !== 'pending') throw new Error('Game not in lobby');
+
+  const [me] = await db.select().from(lobbyPlayers)
+    .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, userId)))
+    .limit(1);
+  if (!me) throw new Error('Not in lobby');
+  if (me.locked) throw new Error('The creator has assigned your power — you cannot change it');
+
+  // Reject only if a LOCKED slot (human or AI) already holds this power.
+  // Unlocked AI slots will give way via auto-fill.
+  if (power !== null) {
+    const allPlayers = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+    const humanHolder = allPlayers.find((p) => p.userId !== userId && p.power === power);
+    if (humanHolder) throw new Error('That power is already taken');
+    const slots = normalizeAiSlots(gameRow.aiSlots);
+    if (slots.some((s) => s.locked && s.power === power)) {
+      throw new Error('That power is locked to an AI slot by the host');
+    }
+  }
+
+  await db.update(lobbyPlayers)
+    .set({ power })
+    .where(and(eq(lobbyPlayers.gameId, gameId), eq(lobbyPlayers.userId, userId)));
+
+  await recomputeAiSlots(gameId);
+  broadcastLobbyUpdate(gameId);
 }
 
 export async function startMultiplayerGame(
   gameId: string,
   creatorId: string,
-  powerConfig: Array<{ power: Power; type: 'human' | 'ai' | 'none'; userId?: string }>,
 ): Promise<void> {
   const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!gameRow || gameRow.status !== 'pending') throw new Error('Game not in lobby');
   if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can start');
 
-  const activePowers = powerConfig.filter(p => p.type !== 'none').map(p => p.power);
+  // Build powerConfig from current lobby state
+  const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+  const aiSlots = normalizeAiSlots(gameRow.aiSlots);
+
+  // Every human in the lobby must have a power assigned before starting
+  const missing = players.filter((p) => !p.power);
+  if (missing.length > 0) {
+    throw new Error('All players must have a power assigned before starting');
+  }
+
+  const powerConfig: Array<{ power: Power; type: 'human' | 'ai' | 'none'; userId?: string }> = [];
+  for (const p of players) {
+    powerConfig.push({ power: p.power as Power, type: 'human', userId: p.userId });
+  }
+  for (const slot of aiSlots) {
+    if (slot.power) powerConfig.push({ power: slot.power as Power, type: 'ai' });
+  }
+
+  const activePowers = powerConfig.map((p) => p.power);
   if (activePowers.length < 2) throw new Error('Need at least 2 active powers');
+  if (new Set(activePowers).size !== activePowers.length) {
+    throw new Error('Duplicate power assignment — check player and AI slot picks');
+  }
 
   const playerTypes: Record<Power, PlayerType> = {} as Record<Power, PlayerType>;
   const playerUserIds: Partial<Record<Power, string>> = {};
@@ -718,10 +911,34 @@ export async function startMultiplayerGame(
     });
   }
 
-  // Broadcast game started to lobby SSE listeners
+  // Broadcast game started to per-game SSE listeners
   broadcast(gameId, { type: 'game_started' });
+  // Game leaves the public lobby pool
+  void broadcastGamesUpdate();
 
   await maybeRunAiTurns(gameId, state, initialSeq);
+}
+
+export async function cancelMultiplayerGame(gameId: string, creatorId: string): Promise<void> {
+  const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!gameRow) throw new Error('Game not found');
+  if (gameRow.status !== 'pending') throw new Error('Only pending games can be cancelled');
+  if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can cancel');
+
+  // Notify per-game listeners (joiners) before we delete the game so their
+  // client's kick-detection effect can navigate them away. We broadcast an
+  // empty lobby roster, which the UI interprets as "you were removed".
+  broadcast(gameId, { type: 'lobby_update', players: [], invitations: [] });
+
+  // Delete child rows first to satisfy FKs. Pending games have no
+  // game_players or game_events, so we only need chat_messages, invitations,
+  // and lobby_players.
+  await db.delete(chatMessages).where(eq(chatMessages.gameId, gameId));
+  await db.delete(invitations).where(eq(invitations.gameId, gameId));
+  await db.delete(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+  await db.delete(games).where(eq(games.id, gameId));
+
+  void broadcastGamesUpdate();
 }
 
 export async function revokeInvitation(gameId: string, creatorId: string, invitationId: string): Promise<void> {
@@ -733,10 +950,12 @@ export async function revokeInvitation(gameId: string, creatorId: string, invita
     .where(and(eq(invitations.id, invitationId), eq(invitations.gameId, gameId)));
 
   broadcastLobbyUpdate(gameId);
+  void broadcastGamesUpdate();
 }
 
 async function broadcastLobbyUpdate(gameId: string): Promise<void> {
   // Load current lobby state and broadcast to all listeners
+  const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
   const userIds = players.map(p => p.userId);
   const userRows = userIds.length
@@ -752,6 +971,7 @@ async function broadcastLobbyUpdate(gameId: string): Promise<void> {
       userId: p.userId,
       username: usernameById.get(p.userId) ?? 'Unknown',
       power: p.power,
+      locked: p.locked,
       isCreator: p.isCreator,
     })),
     invitations: invitationRows.map(i => ({
@@ -760,5 +980,6 @@ async function broadcastLobbyUpdate(gameId: string): Promise<void> {
       status: i.invitationStatus,
       createdAt: i.createdAt.toISOString(),
     })),
+    aiSlots: normalizeAiSlots(gameRow?.aiSlots),
   });
 }

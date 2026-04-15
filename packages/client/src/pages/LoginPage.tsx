@@ -24,7 +24,7 @@ export default function LoginPage() {
     try {
       const res = await login(username, password);
       storeToken(res.token);
-      navigate('/games');
+      navigate('/home');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

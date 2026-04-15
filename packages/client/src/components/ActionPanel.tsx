@@ -53,7 +53,7 @@ export default function ActionPanel({
   const myState = state.powers[myPower];
 
   return (
-    <div>
+    <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
       <div style={{ fontSize: '0.8rem', color: '#818cf8', fontWeight: 700, marginBottom: '0.5rem' }}>
         Your turn — {formatId(pending.actionKind)}
       </div>
@@ -1268,7 +1268,7 @@ function BattleHitAssignmentPanel({
           <button
             className="secondary"
             style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}
-            disabled={selectedPeasants >= peasantsAvailable || selectedPeasants >= hitsLeft}
+            disabled={selectedPeasants >= peasantsAvailable || hitsLeft <= 0}
             onClick={() => setSelectedPeasants(p => p + 1)}
           >+</button>
         </div>

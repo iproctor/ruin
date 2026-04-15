@@ -522,8 +522,8 @@ export default function StatusBar({ state, myPower, players, events: eventLog }:
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #3a3a6e', fontSize: '0.875rem', flexShrink: 0, overflowX: 'auto' }}>
       {/* Nav */}
-      <Link to="/games" className="text-slate-400 hover:text-white shrink-0 text-xs">
-        ← Games
+      <Link to="/home" className="text-slate-400 hover:text-white shrink-0 text-xs">
+        ← Home
       </Link>
       <span className="text-slate-600 shrink-0">|</span>
 

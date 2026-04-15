@@ -17,9 +17,12 @@ import {
   lobbyJoin,
   lobbyLeave,
   lobbyKick,
-  lobbyAssign,
+  lobbyAssignPlayer,
+  lobbyAssignAiSlot,
+  lobbyPickPower,
   startMultiplayerGame,
   revokeInvitation,
+  cancelMultiplayerGame,
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
@@ -310,34 +313,57 @@ router.post('/:id/kick', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/:id/assign', requireAuth, async (req, res) => {
-  const parsed = z.object({
-    assignments: z.array(z.object({
-      power: zPowerEnum,
-      type: z.enum(['human', 'ai', 'none']),
-      userId: z.string().uuid().optional(),
-    })),
-  }).safeParse(req.body);
+router.post('/:id/pick-power', requireAuth, async (req, res) => {
+  const parsed = z.object({ power: zPowerEnum.nullable() }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
   try {
-    await lobbyAssign(req.params.id!, req.userId!, parsed.data.assignments as any);
+    await lobbyPickPower(req.params.id!, req.userId!, parsed.data.power);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
 
-router.post('/:id/start', requireAuth, async (req, res) => {
+router.post('/:id/assign-player', requireAuth, async (req, res) => {
   const parsed = z.object({
-    powerConfig: z.array(z.object({
-      power: zPowerEnum,
-      type: z.enum(['human', 'ai', 'none']),
-      userId: z.string().uuid().optional(),
-    })),
+    userId: z.string().uuid(),
+    power: zPowerEnum.nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
   try {
-    await startMultiplayerGame(req.params.id!, req.userId!, parsed.data.powerConfig as any);
+    await lobbyAssignPlayer(req.params.id!, req.userId!, parsed.data.userId, parsed.data.power);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/assign-ai', requireAuth, async (req, res) => {
+  const parsed = z.object({
+    aiIndex: z.number().int().min(0).max(3),
+    power: zPowerEnum.nullable(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Invalid input' }); return; }
+  try {
+    await lobbyAssignAiSlot(req.params.id!, req.userId!, parsed.data.aiIndex, parsed.data.power);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/start', requireAuth, async (_req, res) => {
+  try {
+    await startMultiplayerGame(_req.params.id!, _req.userId!);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.post('/:id/cancel', requireAuth, async (req, res) => {
+  try {
+    await cancelMultiplayerGame(req.params.id!, req.userId!);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });

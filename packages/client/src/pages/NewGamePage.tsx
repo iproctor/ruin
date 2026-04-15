@@ -80,7 +80,7 @@ export default function NewGamePage() {
     setLoading(true);
     try {
       const res = await createMultiplayerGame(gameName.trim(), isPublic);
-      navigate(`/games/${res.gameId}/lobby`);
+      navigate(`/lobby/g/${res.gameId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create game');
     } finally {
@@ -94,7 +94,7 @@ export default function NewGamePage() {
   return (
     <div className="page" style={{ maxWidth: 560 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-        <Link to="/games" style={{ color: '#aaa', fontSize: '0.9rem' }}>← Back</Link>
+        <Link to="/home" style={{ color: '#aaa', fontSize: '0.9rem' }}>← Back</Link>
         <h1 style={{ margin: 0 }}>New Game</h1>
       </div>
 

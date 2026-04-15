@@ -196,20 +196,37 @@ export function useGameStream(gameId: string): GameStreamResult {
     // Stop any in-progress queue processing
     if (timerRef.current) clearTimeout(timerRef.current);
     processing.current = false;
+
+    // Drain unprocessed events from the queue before wiping it. The queue can
+    // hold events that SSE delivered ahead of the HTTP response but that
+    // processNext never reached — typically because it paused at a phase
+    // boundary (e.g. battle → corruption). Without draining, those events are
+    // silently dropped from the log.
+    const drainedEvents: GameEvent[] = [];
+    for (const item of queue.current) {
+      if (item.kind === 'event') drainedEvents.push(item.event);
+    }
     queue.current = [];
+    pausedRef.current = false;
+    setPaused(false);
+    hadBattle.current = false;
 
     // Apply authoritative action state
     knownSeq.current = seq;
     setState(actionState);
     stateRef.current = actionState;
 
-    // Add the action's events to the log (no animation delay), unless SSE
-    // already delivered this batch — in which case processNext already
-    // appended them.
-    const alreadyLogged = sseBuffer.current.some(b => b.seq >= seq);
-    if (!alreadyLogged && actionEvents && actionEvents.length > 0) {
-      setEvents(prev => [...prev, ...actionEvents]);
-      setLastEvent(actionEvents[actionEvents.length - 1]!);
+    // Pick the source of truth for the log: if SSE already buffered the
+    // action's exact batch (seq matches), prefer the drained queue — it's
+    // exactly the events processNext hadn't yet appended. Otherwise the
+    // action's batch wasn't on the wire yet, so use actionEvents from the
+    // HTTP response. (>= was wrong: an unrelated higher-seq background
+    // batch shouldn't gate the action's own events.)
+    const sseBatchedThis = sseBuffer.current.some(b => b.seq === seq);
+    const toLog = sseBatchedThis ? drainedEvents : (actionEvents ?? []);
+    if (toLog.length > 0) {
+      setEvents(prev => [...prev, ...toLog]);
+      setLastEvent(toLog[toLog.length - 1]!);
     }
 
     // Replay any SSE events that arrived ahead of the HTTP response.

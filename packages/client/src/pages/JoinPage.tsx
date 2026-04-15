@@ -19,7 +19,7 @@ export default function JoinPage() {
       .then((res) => {
         if (cancelled) return;
         storeToken(res.token);
-        navigate(res.gameId ? `/games/${res.gameId}` : '/games', { replace: true });
+        navigate(res.gameId ? `/lobby/g/${res.gameId}` : '/home', { replace: true });
       })
       .catch((err) => {
         if (!cancelled) {

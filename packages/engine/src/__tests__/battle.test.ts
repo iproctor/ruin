@@ -514,6 +514,111 @@ describe('Xarm Heartrippers upgrade (place 1 corruption on kill)', () => {
   });
 });
 
+// ─── Regression: WF + Heartripper + Raver in same region ────────────────────
+
+describe('regression: War Frenzy + Heartripper + Raver in same region', () => {
+  // Reported scenario: Norrsund had War Frenzy, an Xarm warrior with the
+  // Heartrippers upgrade, and Lasha had a Raver (warrior with Ravers upgrade)
+  // plus 2 cultists. War Frenzy fired and killed 2 figures, but the user
+  // reported that no other rolls happened — neither Heartripper-driven
+  // corruption nor a normal battle round between the surviving warriors.
+  function setupScenario(seed: number) {
+    let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+    s = withUpgrade(s, 'xarm', 'xarm_heartrippers_up');
+    s = withUpgrade(s, 'lasha', 'lasha_ravers_up');
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');   // the Raver
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+    return s;
+  }
+
+  test('War Frenzy still fires its log line', () => {
+    const { log } = autoResolveBattle(resolveBattlePhase(setupScenario(42)));
+    expect(log.entries.some(l => /norrsund.*war frenzy/i.test(l))).toBe(true);
+  });
+
+  test('a normal battle round runs after War Frenzy resolves', () => {
+    // After War Frenzy, the surviving Xarm warrior and Lasha warrior should
+    // each get to roll in a normal battle round.
+    const { log } = autoResolveBattle(resolveBattlePhase(setupScenario(42)));
+    const wfLine = log.entries.find(l => /war frenzy/i.test(l));
+    const xarmNormal = log.entries.find(l => /norrsund: xarm rolls/i.test(l) && !/war frenzy/i.test(l));
+    const lashaNormal = log.entries.find(l => /norrsund: lasha rolls/i.test(l));
+    // Print the full log for diagnosis if this fails
+    if (!xarmNormal || !lashaNormal) {
+      // eslint-disable-next-line no-console
+      console.log('Norrsund battle log:\n' + log.entries.filter(l => /norrsund/i.test(l)).join('\n'));
+    }
+    expect(wfLine).toBeDefined();
+    expect(xarmNormal).toBeDefined();
+    expect(lashaNormal).toBeDefined();
+  });
+
+  test('diagnostic: dump the Norrsund battle log for the reported scenario', () => {
+    // Pure diagnostic — always passes. Run with --verbose to see what the
+    // engine actually emits in the WF + Heartripper + Raver + 2 cultist setup,
+    // so we can compare against the in-game log the user reported.
+    const { log } = autoResolveBattle(resolveBattlePhase(setupScenario(42)));
+    const norrsundLines = log.entries.filter(l => /norrsund/i.test(l));
+    // eslint-disable-next-line no-console
+    console.log('--- Norrsund log (seed=42, with-xarm-warrior) ---\n' + norrsundLines.join('\n'));
+    expect(norrsundLines.length).toBeGreaterThan(0);
+  });
+
+  test('diagnostic: scan seeds for a 2-hit War Frenzy roll matching the report', () => {
+    // The reported in-game roll was "6,2,5 → 2 hit(s)" — find any seed that
+    // produces a 2-hit WF and dump the full Norrsund log so we can verify the
+    // engine still runs Heartrippers + normal battle in that case.
+    for (let seed = 0; seed < 200; seed++) {
+      const { log } = autoResolveBattle(resolveBattlePhase(setupScenario(seed)));
+      const wf = log.entries.find(l => /war frenzy.*xarm rolls.* 2 hit/i.test(l));
+      if (wf) {
+        const norrsundLines = log.entries.filter(l => /norrsund/i.test(l));
+        // eslint-disable-next-line no-console
+        console.log(`--- Norrsund log (seed=${seed}, 2-hit WF) ---\n` + norrsundLines.join('\n'));
+        return;
+      }
+    }
+  });
+
+  test('diagnostic: same scenario but no Xarm warrior present (only WF card)', () => {
+    // Variant — what if Xarm has NO warrior in the region (heartripper upgrade
+    // active but no figure to wield it). Does the normal battle round still
+    // happen for the surviving Lasha raver?
+    let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 42 });
+    s = withUpgrade(s, 'xarm', 'xarm_heartrippers_up');
+    s = withUpgrade(s, 'lasha', 'lasha_ravers_up');
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+    const { log } = autoResolveBattle(resolveBattlePhase(s));
+    const norrsundLines = log.entries.filter(l => /norrsund/i.test(l));
+    // eslint-disable-next-line no-console
+    console.log('--- Norrsund log (seed=42, no-xarm-warrior) ---\n' + norrsundLines.join('\n'));
+    expect(norrsundLines.length).toBeGreaterThan(0);
+  });
+
+  test('Heartrippers fires when the Xarm warrior (Heartripper) makes a kill', () => {
+    // Try a few seeds — we just need any seed where Xarm's normal-battle roll
+    // produces at least one hit and the auto-resolver kills the Lasha warrior.
+    let triggered = false;
+    let lastLog: string[] = [];
+    for (let seed = 0; seed < 50 && !triggered; seed++) {
+      const { log } = autoResolveBattle(resolveBattlePhase(setupScenario(seed)));
+      lastLog = log.entries.filter(l => /norrsund/i.test(l));
+      if (log.entries.some(l => /heartrippers/i.test(l))) triggered = true;
+    }
+    if (!triggered) {
+      // eslint-disable-next-line no-console
+      console.log('No seed in [0,50) triggered Heartrippers. Last log:\n' + lastLog.join('\n'));
+    }
+    expect(triggered).toBe(true);
+  });
+});
+
 // ─── Lasha Addicts upgrade: defense 2 ────────────────────────────────────────
 
 describe('Lasha Addicts upgrade (defense 2)', () => {

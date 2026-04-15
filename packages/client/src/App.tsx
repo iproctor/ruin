@@ -1,13 +1,13 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import LoginPage from './pages/LoginPage.js';
 import RegisterPage from './pages/RegisterPage.js';
 import JoinPage from './pages/JoinPage.js';
-import GameListPage from './pages/GameListPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
-import LobbyPage from './pages/LobbyPage.js';
+import HomePage from './pages/HomePage.js';
+import MultiplayerLobbyPage from './pages/MultiplayerLobbyPage.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -15,9 +15,14 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function LobbyRedirect() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/lobby/g/${id}`} replace />;
+}
+
 function RootRedirect() {
   const { token } = useAuth();
-  return <Navigate to={token ? '/games' : '/login'} replace />;
+  return <Navigate to={token ? '/home' : '/login'} replace />;
 }
 
 function AppRoutes() {
@@ -27,10 +32,10 @@ function AppRoutes() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/join/:token" element={<JoinPage />} />
       <Route
-        path="/games"
+        path="/home"
         element={
           <ProtectedRoute>
-            <GameListPage />
+            <HomePage />
           </ProtectedRoute>
         }
       />
@@ -43,10 +48,26 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/lobby"
+        element={
+          <ProtectedRoute>
+            <MultiplayerLobbyPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/lobby/g/:gameId"
+        element={
+          <ProtectedRoute>
+            <MultiplayerLobbyPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/games/:id/lobby"
         element={
           <ProtectedRoute>
-            <LobbyPage />
+            <LobbyRedirect />
           </ProtectedRoute>
         }
       />
