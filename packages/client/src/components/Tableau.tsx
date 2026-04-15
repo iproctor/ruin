@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
 import { CARD_BY_ID, REGIONS, FOLLOWERS } from '@ruin/engine';
@@ -355,6 +355,24 @@ export default function Tableau({
     return nameA.localeCompare(nameB);
   });
   const isSummoningTurn = !!onEndTurn;
+
+  // Enter confirms the staged action during summoning (equivalent to clicking
+  // the Confirm button). Ignored when there's no pending action (don't turn
+  // Enter into an accidental Pass) or when focus is in an input (so chat
+  // typing isn't hijacked).
+  useEffect(() => {
+    if (!isSummoningTurn || !onEndTurn || !pendingAction) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      onEndTurn();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isSummoningTurn, onEndTurn, pendingAction]);
 
   // Which card is pending (played to board)
   const pendingCardId =

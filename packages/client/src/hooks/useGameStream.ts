@@ -190,54 +190,37 @@ export function useGameStream(gameId: string): GameStreamResult {
   }, [processNext]);
 
   /** Called by GamePage after a successful action POST.
-   *  Syncs to the returned state and replays any SSE events that arrived
-   *  ahead of the HTTP response (seq > actionSeq). */
+   *
+   *  Routes the action's events through the animation queue so phase banners
+   *  fire and the log populates in step with per-event animations. State
+   *  evolves via `processNext` and converges to `actionState`.
+   *
+   *  Two races are handled:
+   *  - **SSE-first** (the batch with `seq` is already in the buffer): the
+   *    queue is the source of truth — processNext is mid-flight or paused
+   *    at a phase boundary with the tail still pending. Do nothing; just
+   *    advance `knownSeq` past every buffered seq and drop the buffer.
+   *  - **HTTP-first**: the action's SSE batch hasn't arrived yet. Queue
+   *    `actionEvents` so they animate on top of the current (pre-action)
+   *    state, with a trailing `sync` to `actionState` as a safety net in
+   *    case `applyEvent` skipped anything. */
   const syncAfterAction = useCallback((actionState: GameState, seq: number, actionEvents?: GameEvent[]) => {
-    // Stop any in-progress queue processing
-    if (timerRef.current) clearTimeout(timerRef.current);
-    processing.current = false;
+    const sseBatchedThis = sseBuffer.current.some((b) => b.seq === seq);
 
-    // Drain unprocessed events from the queue before wiping it. The queue can
-    // hold events that SSE delivered ahead of the HTTP response but that
-    // processNext never reached — typically because it paused at a phase
-    // boundary (e.g. battle → corruption). Without draining, those events are
-    // silently dropped from the log.
-    const drainedEvents: GameEvent[] = [];
-    for (const item of queue.current) {
-      if (item.kind === 'event') drainedEvents.push(item.event);
-    }
-    queue.current = [];
-    pausedRef.current = false;
-    setPaused(false);
-    hadBattle.current = false;
-
-    // Apply authoritative action state
-    knownSeq.current = seq;
-    setState(actionState);
-    stateRef.current = actionState;
-
-    // Pick the source of truth for the log: if SSE already buffered the
-    // action's exact batch (seq matches), prefer the drained queue — it's
-    // exactly the events processNext hadn't yet appended. Otherwise the
-    // action's batch wasn't on the wire yet, so use actionEvents from the
-    // HTTP response. (>= was wrong: an unrelated higher-seq background
-    // batch shouldn't gate the action's own events.)
-    const sseBatchedThis = sseBuffer.current.some(b => b.seq === seq);
-    const toLog = sseBatchedThis ? drainedEvents : (actionEvents ?? []);
-    if (toLog.length > 0) {
-      setEvents(prev => [...prev, ...toLog]);
-      setLastEvent(toLog[toLog.length - 1]!);
+    if (!sseBatchedThis && actionEvents && actionEvents.length > 0) {
+      for (const event of actionEvents) queue.current.push({ kind: 'event', event });
+      queue.current.push({ kind: 'sync', state: actionState });
     }
 
-    // Replay any SSE events that arrived ahead of the HTTP response.
-    // These have seq > actionSeq and need to be re-applied on top of
-    // the authoritative actionState.
-    const ahead = sseBuffer.current.filter(b => b.seq > seq);
+    // Advance knownSeq past the action seq and every buffered seq so future
+    // SSE messages for those batches (shouldn't normally happen, but
+    // harmless) are correctly skipped.
+    const maxBufSeq = sseBuffer.current.reduce((m, b) => Math.max(m, b.seq), seq);
+    knownSeq.current = maxBufSeq;
     sseBuffer.current = [];
-    if (ahead.length > 0) {
-      for (const batch of ahead) {
-        for (const event of batch.events) queue.current.push({ kind: 'event', event });
-      }
+
+    // Nudge the processor in case it was idle.
+    if (!processing.current && queue.current.length > 0 && !pausedRef.current) {
       startProcessing();
     }
   }, [startProcessing]);

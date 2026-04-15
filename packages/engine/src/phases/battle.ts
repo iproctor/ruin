@@ -289,7 +289,11 @@ function resolveRegion(
     if (hits > 0) {
       const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
       const enemiesWF = getEnemyFigures(s, regionId, 'xarm', changerOfFateActive);
-      if (peasantsAvailableWF > 0 || enemiesWF.length > 0) {
+      // Only pause if at least one kill is actually possible OR a peasant can
+      // be claimed. Otherwise the hits would be wasted and there's nothing
+      // for the human to decide.
+      const canKillWF = enemiesWF.some((e) => e.defense <= hits);
+      if (peasantsAvailableWF > 0 || canKillWF) {
         return pauseForHitChoice(
           s, regionId, 'xarm', hits, changerOfFateActive,
           { type: 'normal_battle', powerIndex: 0, clearTipped: true },
@@ -359,8 +363,9 @@ function runNormalBattle(
     if (hits > 0) {
       const peasantsAvailable = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
       const enemies = getEnemyFigures(s, regionId, power, changerOfFateActive);
+      const canKill = enemies.some((e) => e.defense <= hits);
 
-      if (peasantsAvailable > 0 || enemies.length > 0) {
+      if (peasantsAvailable > 0 || canKill) {
         // Determine what to do after this choice is resolved
         const isLastPower = i === activePowers.length - 1 ||
           !activePowers.slice(i + 1).some(p => {
@@ -440,7 +445,8 @@ function runUndyingFury(
     if (hits > 0) {
       const peasantsAvailableUF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
       const enemiesUF = getEnemyFigures(s, regionId, power, changerOfFateActive);
-      if (peasantsAvailableUF > 0 || enemiesUF.length > 0) {
+      const canKillUF = enemiesUF.some((e) => e.defense <= hits);
+      if (peasantsAvailableUF > 0 || canKillUF) {
         const isLastPower = i === activePowers.length - 1 ||
           !activePowers.slice(i + 1).some(p => getTotalAttack(s, regionId, p) > 0);
         const nextStep: BattleNextStep = isLastPower

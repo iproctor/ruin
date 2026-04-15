@@ -1101,9 +1101,20 @@ function ForcedDiscardPanel({
 }) {
   // Track by index to handle duplicate card IDs correctly
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
+  // Show in the same order as the hand tableau: cost asc, then name asc.
   const visibleEntries = hand
     .map((cardId, i) => ({ cardId, i }))
-    .filter(e => e.cardId !== '?');
+    .filter(e => e.cardId !== '?')
+    .sort((a, b) => {
+      const ca = CARD_BY_ID[a.cardId];
+      const cb = CARD_BY_ID[b.cardId];
+      const costA = ca?.cost ?? 0;
+      const costB = cb?.cost ?? 0;
+      if (costA !== costB) return costA - costB;
+      const nameA = ca?.shortName ?? ca?.name ?? a.cardId;
+      const nameB = cb?.shortName ?? cb?.name ?? b.cardId;
+      return nameA.localeCompare(nameB);
+    });
 
   function toggle(idx: number) {
     setSelectedIndices(prev => {

@@ -11,6 +11,18 @@
 import type { GameState, GameEvent, Power, RegionId } from './types.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
+  const next = applyEventInner(state, event);
+  // Invariant: `pendingAction` only persists between `awaiting_action` events.
+  // Any other event means the engine is mid-resolution (autonomous phases,
+  // events flowing from a resolver that has already cleared pendingAction
+  // server-side) — reflect that on the client by clearing it. Without this
+  // the UI thinks the prior pauser is still acting through the whole batch
+  // until the final awaiting_action lands.
+  if (event.type === 'awaiting_action') return next;
+  return next.pendingAction !== null ? { ...next, pendingAction: null } : next;
+}
+
+function applyEventInner(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     // ── Lifecycle ─────────────────────────────────────────────────────────
     case 'phase_start':

@@ -284,6 +284,78 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
   });
 });
 
+// ─── No pause when no kill is possible ──────────────────────────────────────
+
+describe('regression: no pause when no enemy can be killed and no peasants', () => {
+  // If the attacker's hit total is smaller than every enemy's effective
+  // defense AND no peasant is present, there is nothing for the human to
+  // decide — the engine should drop the hits and move on without pausing.
+  test('normal battle: 1 hit vs defense-2 enemy, no peasant → no pause', () => {
+    // Gormen warrior (attack 1) vs an upgraded Lasha Addict (cultist at
+    // defense 2, attack 0 — so no counter-attack to trip other pauses).
+    // When Gormen rolls 1 hit, there's no killable target and no peasant,
+    // so the engine should NOT pause for a hit-assignment choice.
+    let found = false;
+    for (let seed = 0; seed < 400 && !found; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      s = withUpgrade(s, 'lasha', 'lasha_addicts_up');
+      s = placeFollower(s, 'gormen', 'warrior', 'norrsund');  // attacker, 1 die
+      s = placeFollower(s, 'lasha', 'cultist', 'norrsund');   // enemy, defense 2, no attack
+      const raw = resolveBattlePhase(s);
+      const gormenHit = raw.log.entries.find(
+        (l) => /norrsund: gormen rolls .* 1 hit/i.test(l) && !/war frenzy/i.test(l),
+      );
+      if (!gormenHit) continue;
+      expect(raw.state.pendingAction).toBeNull();
+      found = true;
+    }
+    if (!found) throw new Error('No seed in [0,400) produced a 1-hit normal roll');
+  });
+
+  test('normal battle: 1 hit vs defense-2 enemy + peasant → pauses (peasant claimable)', () => {
+    // Sanity check the opposite direction: a peasant token keeps the pause
+    // because the hit can still be spent claiming it.
+    let found = false;
+    for (let seed = 0; seed < 400 && !found; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      s = withUpgrade(s, 'lasha', 'lasha_addicts_up');
+      s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+      s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+      s = addToken(s, 'norrsund', 'peasant');
+      const raw = resolveBattlePhase(s);
+      const gormenHit = raw.log.entries.find(
+        (l) => /norrsund: gormen rolls .* 1 hit/i.test(l) && !/war frenzy/i.test(l),
+      );
+      if (!gormenHit) continue;
+      expect(raw.state.pendingAction?.actionKind).toBe('battle_hit_assignment');
+      found = true;
+    }
+    if (!found) throw new Error('No seed in [0,400) produced a 1-hit normal roll');
+  });
+
+  test('War Frenzy: 1 hit vs defense-2 enemy, no peasant → no pause', () => {
+    // WF rolls 2 dice. Only enemy is an upgraded Lasha Addict (defense 2,
+    // attack 0 — so no counter-attack creates a spurious pause). On any
+    // seed where WF yields exactly 1 hit, the engine must skip the
+    // hit-choice pause.
+    let found = false;
+    for (let seed = 0; seed < 400 && !found; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      s = withUpgrade(s, 'lasha', 'lasha_addicts_up');
+      s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+      s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+      const raw = resolveBattlePhase(s);
+      const wfHit = raw.log.entries.find(
+        (l) => /war frenzy.*xarm rolls .* 1 hit/i.test(l),
+      );
+      if (!wfHit) continue;
+      expect(raw.state.pendingAction).toBeNull();
+      found = true;
+    }
+    if (!found) throw new Error('No seed in [0,400) produced a 1-hit WF roll');
+  });
+});
+
 // ─── Undying Fury: second battle round ───────────────────────────────────────
 
 describe('Undying Fury (second battle round)', () => {

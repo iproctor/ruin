@@ -69,102 +69,147 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('useGameStream.syncAfterAction', () => {
-  test('HTTP-first: action events are appended to the log', () => {
+  test('HTTP-first: action events animate through the queue into the log', () => {
     const { result } = renderHook(() => useGameStream('g1'));
-    // Establish initial state via a history snapshot (no prior events)
     act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
 
-    const actionEvents = [evKill(), evPhase('corruption'), evCorruptionPlacement()];
+    const actionEvents = [evKill(), evKill('gormen_warrior_3')];
     act(() => result.current.syncAfterAction(fakeState(), 5, actionEvents));
-
-    expect(result.current.events).toEqual(actionEvents);
-  });
-
-  test('SSE-first fully processed: syncAfterAction does not duplicate events', () => {
-    const { result } = renderHook(() => useGameStream('g1'));
-    act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
-
-    // SSE delivers a batch with no battle-phase pause — processNext drains it.
-    const events = [evKill(), evKill('gormen_warrior_3')];
-    act(() => deliver!({ type: 'events', events, seq: 5 }));
+    // processNext runs on timers; advance to let the queue drain.
     act(() => { vi.advanceTimersByTime(10000); });
 
-    expect(result.current.events).toEqual(events);
-
-    // HTTP response arrives with the same batch + seq. Should NOT duplicate.
-    act(() => result.current.syncAfterAction(fakeState(), 5, events));
-    expect(result.current.events).toEqual(events);
+    expect(result.current.events.map((e) => e.type))
+      .toEqual(['battle_kill', 'battle_kill']);
   });
 
-  test('REGRESSION: SSE-first paused at corruption — drained events still land in log', () => {
-    // This is the bug we just fixed. SSE delivers a big batch spanning
-    // battle → corruption. processNext processes a couple of battle events,
-    // then pauses at phase_start: corruption. The HTTP response arrives and
-    // syncAfterAction must drain the unprocessed tail into the log instead
-    // of wiping the queue.
+  test('HTTP-first: cross-phase batch still pauses at corruption', () => {
+    // This is the scenario the user reported: the action returned a batch
+    // spanning battle → corruption → end → world in one response. Routing
+    // the events through the animation queue (instead of log-appending)
+    // lets the corruption pause banner still fire.
     const { result } = renderHook(() => useGameStream('g1'));
     act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
 
     const batch: GameEvent[] = [
-      evRegionStart(),                    // sets hadBattle=true
-      evKill(),                           // logged before pause
-      evPhase('corruption'),              // pauses processing here
-      evCorruptionPlacement(),            // ⚠️ would be lost without drain
+      evRegionStart(),           // hadBattle=true
+      evKill('k1'),
+      evPhase('corruption'),     // processNext should pause here
+      evCorruptionPlacement(),
+      evPhase('end'),
+    ];
+    act(() => result.current.syncAfterAction(fakeState(), 10, batch));
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    // Battle events processed; queue paused before the corruption phase.
+    expect(result.current.events.map((e) => e.type))
+      .toEqual(['battle_region_start', 'battle_kill']);
+    expect(result.current.paused).toBe(true);
+
+    // User clicks Continue → queue drains the rest.
+    act(() => { result.current.resume(); });
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(result.current.events.map((e) => e.type)).toEqual([
+      'battle_region_start', 'battle_kill',
+      'phase_start', 'corruption_placement', 'phase_start',
+    ]);
+  });
+
+  test('SSE-first fully processed: syncAfterAction is a no-op (no duplicates)', () => {
+    const { result } = renderHook(() => useGameStream('g1'));
+    act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
+
+    const events = [evKill(), evKill('gormen_warrior_3')];
+    act(() => deliver!({ type: 'events', events, seq: 5 }));
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(result.current.events.map((e) => e.type)).toEqual(['battle_kill', 'battle_kill']);
+
+    // HTTP response arrives with the same batch + seq. syncAfterAction
+    // detects sseBuffer has seq=5 and skips the queueing path; no dupes.
+    act(() => result.current.syncAfterAction(fakeState(), 5, events));
+    act(() => { vi.advanceTimersByTime(10000); });
+    expect(result.current.events.map((e) => e.type)).toEqual(['battle_kill', 'battle_kill']);
+  });
+
+  test('REGRESSION: SSE-first paused at corruption, HTTP arrives — no duplicates, tail still animates on resume', () => {
+    const { result } = renderHook(() => useGameStream('g1'));
+    act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
+
+    const batch: GameEvent[] = [
+      evRegionStart(),
+      evKill(),
+      evPhase('corruption'),
+      evCorruptionPlacement(),
       evCorruptionPlacement(),
       evPhase('end'),
     ];
     act(() => deliver!({ type: 'events', events: batch, seq: 10 }));
-    // Run microtasks/timers far enough for processNext to reach the pause.
     act(() => { vi.advanceTimersByTime(10000); });
 
-    // Only the pre-pause events should be in the log; we paused before
-    // shifting the corruption phase_start.
     expect(result.current.events.map((e) => e.type)).toEqual([
       'battle_region_start', 'battle_kill',
     ]);
     expect(result.current.paused).toBe(true);
 
-    // HTTP response arrives with the same batch + seq. The fix drains the
-    // queued tail (events not yet shifted) and writes them to the log.
+    // HTTP response for the same batch. syncAfterAction should NOT re-queue
+    // (queue already holds the unprocessed tail).
     act(() => result.current.syncAfterAction(fakeState(), 10, batch));
+    // Before resume, state hasn't changed — still paused with same log.
+    expect(result.current.events.map((e) => e.type)).toEqual([
+      'battle_region_start', 'battle_kill',
+    ]);
 
+    // Resume; tail animates through the queue once.
+    act(() => { result.current.resume(); });
+    act(() => { vi.advanceTimersByTime(10000); });
     expect(result.current.events.map((e) => e.type)).toEqual([
       'battle_region_start', 'battle_kill',
       'phase_start', 'corruption_placement', 'corruption_placement', 'phase_start',
     ]);
-    // Pause is cleared so the UI doesn't get stuck.
-    expect(result.current.paused).toBe(false);
   });
 
-  test('ahead-of-action SSE batches are re-queued after sync', () => {
-    // SSE delivers a batch with seq HIGHER than the action's seq (e.g. a
-    // background AI step that landed between action submit and HTTP response).
-    // syncAfterAction should re-queue those events for processing on top of
-    // the authoritative actionState.
+  test('REGRESSION: SSE action batch + ahead AI batch pre-HTTP — events logged exactly once', () => {
+    // Server broadcasts the action's events (seq=N), then continueInBackground
+    // broadcasts AI follow-up events (seq=M > N). Both arrive before the
+    // HTTP response. Used to duplicate the AI chunk because drain-then-
+    // requeue ran both paths.
     const { result } = renderHook(() => useGameStream('g1'));
     act(() => deliver!({ type: 'history', state: fakeState(), events: [], chat: [] }));
 
-    const aheadBatch = [evKill('extra_kill_1')];
-    act(() => deliver!({ type: 'events', events: aheadBatch, seq: 20 }));
-    // Let processNext drain the ahead batch into the log
-    act(() => { vi.advanceTimersByTime(10000); });
-    expect(result.current.events.map((e) => e.type)).toEqual(['battle_kill']);
-
-    // Now the HTTP response for an EARLIER action arrives at seq=10.
-    const actionEvents = [evKill('action_kill')];
-    act(() => result.current.syncAfterAction(fakeState(), 10, actionEvents));
-
-    // Action events appended (HTTP-first path: sseBuffer has seq=20 > 10, so
-    // sseBatchedThis is false → log actionEvents from the response).
-    // Then ahead batch (seq=20) is re-queued and processed again on top of
-    // the authoritative state.
+    const actionBatch: GameEvent[] = [
+      evRegionStart(),
+      evKill('kill_a'),
+      evPhase('corruption'),
+      evCorruptionPlacement(),
+    ];
+    const aiBatch: GameEvent[] = [
+      evKill('ai_kill_1'),
+      evKill('ai_kill_2'),
+    ];
+    act(() => deliver!({ type: 'events', events: actionBatch, seq: 10 }));
+    act(() => deliver!({ type: 'events', events: aiBatch, seq: 20 }));
     act(() => { vi.advanceTimersByTime(10000); });
 
-    // Expected log: prior aheadBatch (from initial drain) + actionEvents +
-    // re-queued aheadBatch (replayed).
     expect(result.current.events.map((e) => e.type)).toEqual([
-      'battle_kill', 'battle_kill', 'battle_kill',
+      'battle_region_start', 'battle_kill',
     ]);
+    expect(result.current.paused).toBe(true);
+
+    // HTTP arrives with the action seq=10. With sseBatchedThis=true it must
+    // be a no-op — don't re-queue ahead batches.
+    act(() => result.current.syncAfterAction(fakeState(), 10, actionBatch));
+    act(() => { result.current.resume(); });
+    act(() => { vi.advanceTimersByTime(10000); });
+
+    expect(result.current.events.map((e) => e.type)).toEqual([
+      'battle_region_start', 'battle_kill',
+      'phase_start', 'corruption_placement',
+      'battle_kill', 'battle_kill',
+    ]);
+    const aiKills = result.current.events
+      .filter((e) => e.type === 'battle_kill' && (e as { targetId: string }).targetId.startsWith('ai_kill_'));
+    expect(aiKills.map((e) => (e as { targetId: string }).targetId))
+      .toEqual(['ai_kill_1', 'ai_kill_2']);
   });
 
   test('cleanup runs when the hook unmounts', () => {
