@@ -337,7 +337,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim, onSlotClick, slotPlayable }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -353,6 +353,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   corruptionOverride?: Partial<Record<Power, number>>;
   myPower?: Power | null;
   summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
+  onSlotClick?: (regionId: RegionId, slotIndex: 0 | 1, x: number, y: number) => void;
+  slotPlayable?: (regionId: RegionId, slotIndex: 0 | 1) => boolean;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -516,6 +518,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         {[0, 1].map((si) => {
           const card = displayCards[si];
           const isPending = pendingCardSlot?.slotIndex === si;
+          const slotIdx = si as 0 | 1;
+          const canClick = !card && !!onSlotClick && (slotPlayable?.(regionId, slotIdx) ?? false);
           return (
             <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
               {card ? (
@@ -524,7 +528,16 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
                   isAppearing={summoningAnim?.appearingCards.has(`${regionId}-${si}`) ?? false} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
-                  fill="none" stroke="#2a2a4e" strokeWidth={0.75} strokeDasharray="3 2" />
+                  fill={canClick ? '#1e1e3a' : 'none'}
+                  stroke={canClick ? '#7c3aed' : '#2a2a4e'}
+                  strokeWidth={canClick ? 1 : 0.75}
+                  strokeDasharray="3 2"
+                  style={canClick ? { cursor: 'pointer' } : undefined}
+                  onClick={canClick ? (e) => {
+                    e.stopPropagation();
+                    onSlotClick!(regionId, slotIdx, e.clientX, e.clientY);
+                  } : undefined}
+                />
               )}
             </g>
           );
@@ -675,9 +688,11 @@ interface BoardProps {
   corruptionOverrides?: Map<RegionId, Partial<Record<Power, number>>>;
   corruptionFlies?: Array<{ id: number; regionId: RegionId; power: Power; tokens: number; startedAt: number }>;
   summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
+  onSlotClick?: (regionId: RegionId, slotIndex: 0 | 1, x: number, y: number) => void;
+  slotPlayable?: (regionId: RegionId, slotIndex: 0 | 1) => boolean;
 }
 
-export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim }: BoardProps) {
+export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim, onSlotClick, slotPlayable }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [regionTooltip, setRegionTooltip] = useState<{ regionId: RegionId; x: number; y: number } | null>(null);
   const [tokenTooltip, setTokenTooltip] = useState<{ token: TokenType; x: number; y: number } | null>(null);
@@ -784,6 +799,8 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               corruptionOverride={corruptionOverrides?.get(regionId)}
               myPower={myPower}
               summoningAnim={summoningAnim}
+              onSlotClick={onSlotClick}
+              slotPlayable={slotPlayable}
             />
           ),
         )}

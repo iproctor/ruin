@@ -235,6 +235,62 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         .filter((r) => !validDropRegions.has(r))
     : undefined;
 
+  // ── Play-card popup (click-to-play from hand via slot) ───────────────────
+  const [slotPopup, setSlotPopup] = useState<
+    { regionId: RegionId; slotIndex: 0 | 1; x: number; y: number } | null
+  >(null);
+
+  // All legal summoning_play_card actions for myPower right now — used both
+  // to decide if a slot is clickable and to fill the popup dropdown.
+  const legalPlayCardActions = useMemo(() => {
+    if (!displayState || !myPowerEarly) return [];
+    return getLegalActions(displayState, myPowerEarly)
+      .filter((a) => a.kind === 'summoning_play_card') as Array<
+        Extract<Action, { kind: 'summoning_play_card' }>
+      >;
+  }, [displayState, myPowerEarly]);
+
+  const slotPlayable = useCallback(
+    (regionId: RegionId, slotIndex: 0 | 1) =>
+      legalPlayCardActions.some((a) => a.toRegion === regionId && a.slotIndex === slotIndex),
+    [legalPlayCardActions],
+  );
+
+  const handleSlotClick = useCallback(
+    (regionId: RegionId, slotIndex: 0 | 1, x: number, y: number) => {
+      setSlotPopup({ regionId, slotIndex, x, y });
+    },
+    [],
+  );
+
+  // Deduped list of cards playable in the currently-open slot.
+  const slotChoices = useMemo(() => {
+    if (!slotPopup) return [];
+    const ids = new Set<string>();
+    const list: string[] = [];
+    for (const a of legalPlayCardActions) {
+      if (a.toRegion !== slotPopup.regionId || a.slotIndex !== slotPopup.slotIndex) continue;
+      if (ids.has(a.cardId)) continue;
+      ids.add(a.cardId);
+      list.push(a.cardId);
+    }
+    return list;
+  }, [slotPopup, legalPlayCardActions]);
+
+  function stageFromSlotPopup(cardId: string) {
+    if (!slotPopup || !myPowerEarly) return;
+    const action: Action = {
+      kind: 'summoning_play_card',
+      power: myPowerEarly,
+      cardId,
+      toRegion: slotPopup.regionId,
+      slotIndex: slotPopup.slotIndex,
+    };
+    setPendingAction(action);
+    setSelectedCardId(cardId);
+    setSlotPopup(null);
+  }
+
   // ── DnD sensors ─────────────────────────────────────────────────────────────
 
   const sensors = useSensors(
@@ -474,6 +530,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               corruptionOverrides={anim.animationPhase === 'corruption' ? anim.corruptionOverrides : undefined}
               corruptionFlies={anim.animationPhase === 'corruption' ? anim.corruptionFlies : undefined}
               summoningAnim={{ appearingFigures: anim.appearingFigures, movingFigures: anim.movingFigures, appearingCards: anim.appearingCards }}
+              onSlotClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSlotClick : undefined}
+              slotPlayable={isSummoningTurn && !pendingAction && !anim.animationPhase ? slotPlayable : undefined}
             />
           </div>
 
@@ -583,6 +641,61 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       <DragOverlay dropAnimation={null}>
         {activeDrag ? <DragGhost item={activeDrag} /> : null}
       </DragOverlay>
+
+      {/* Play-card popup: pick a card to play into a clicked slot */}
+      {slotPopup && (
+        <div
+          onClick={() => setSlotPopup(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 250 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: Math.min(slotPopup.y + 6, window.innerHeight - 260),
+              left: Math.min(slotPopup.x + 6, window.innerWidth - 200),
+              background: '#0d1a2d', border: '1px solid #3a3a6e', borderRadius: 6,
+              minWidth: 180, padding: 6,
+              boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+            }}
+          >
+            <div style={{
+              fontSize: '0.7rem', color: '#94a3b8',
+              padding: '2px 6px 6px', textTransform: 'uppercase', letterSpacing: '0.05em',
+            }}>
+              Play a card
+            </div>
+            {slotChoices.length === 0 && (
+              <div style={{ padding: '6px', fontSize: '0.78rem', color: '#64748b' }}>
+                No playable cards.
+              </div>
+            )}
+            {slotChoices.map((cardId) => {
+              const def = CARD_BY_ID[cardId];
+              const name = def?.name ?? cardId;
+              const cost = def?.cost ?? 0;
+              return (
+                <button
+                  key={cardId}
+                  onClick={() => stageFromSlotPopup(cardId)}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = '#1e1e3a')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                    width: '100%', padding: '6px 8px',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    color: '#cbd5e1', fontSize: '0.82rem', textAlign: 'left',
+                    borderRadius: 4,
+                  }}
+                >
+                  <span>{name}</span>
+                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>PP {cost}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Submitting overlay */}
       {submitting && (
