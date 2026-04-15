@@ -45,6 +45,7 @@ interface WorkerMetrics {
   completed: number;
   winRates: Record<string, number>;
   dacRatePerPower: Record<string, number>;
+  doubleTickRatePerPower?: Record<string, number>;
   avgRounds: number;
   winConditions: Record<string, number>;
   errors: number;
@@ -111,6 +112,7 @@ const totalErrors = results.reduce((a, r) => a + r.errors, 0);
 
 const totalWins: Record<string, number> = {};
 const totalDac: Record<string, number> = {};
+const totalDoubleTick: Record<string, number> = {};
 const totalConds: Record<string, number> = {};
 let totalRoundsSum = 0;
 let totalCompletedAcc = 0;
@@ -134,12 +136,14 @@ for (const p of POWERS) vpAgg[p] = { sum: 0, sumSqDev: 0, n: 0, min: Infinity, m
 let spreadSum = 0;
 let spreadN = 0;
 
-for (const p of POWERS) { totalWins[p] = 0; totalDac[p] = 0; }
+for (const p of POWERS) { totalWins[p] = 0; totalDac[p] = 0; totalDoubleTick[p] = 0; }
 
 for (const r of results) {
   for (const p of POWERS) {
     totalWins[p] = (totalWins[p] ?? 0) + (r.winRates[p] ?? 0) * r.completed;
     totalDac[p]  = (totalDac[p]  ?? 0) + (r.dacRatePerPower[p] ?? 0) * r.avgRounds * r.completed;
+    totalDoubleTick[p] = (totalDoubleTick[p] ?? 0)
+      + ((r.doubleTickRatePerPower?.[p] ?? 0) * r.avgRounds * r.completed);
   }
   totalRoundsSum += r.avgRounds * r.completed;
   totalCompletedAcc += r.completed;
@@ -201,6 +205,13 @@ for (const p of POWERS) {
   console.log(`  ${p.padEnd(8)} ${(rate * 100).toFixed(1).padStart(5)}%  ${bar}${marker}`);
 }
 
+console.log(`\nDOUBLE TICK RATE (rounds with ≥2 dial advances / total-rounds):`);
+for (const p of POWERS) {
+  const rate = totalRoundsSum > 0 ? totalDoubleTick[p]! / totalRoundsSum : 0;
+  const bar = '█'.repeat(Math.round(rate * 20));
+  console.log(`  ${p.padEnd(8)} ${(rate * 100).toFixed(1).padStart(5)}%  ${bar}`);
+}
+
 const avgRounds = totalCompleted > 0 ? totalRoundsSum / totalCompleted : 0;
 
 console.log(`\nPLAY INDICATORS (per game avg):`);
@@ -243,6 +254,7 @@ if (finalOut) {
     completed: totalCompleted,
     winRates: Object.fromEntries(sortedWins),
     dacRatePerPower: Object.fromEntries(POWERS.map(p => [p, totalRoundsSum > 0 ? totalDac[p]! / totalRoundsSum : 0])),
+    doubleTickRatePerPower: Object.fromEntries(POWERS.map(p => [p, totalRoundsSum > 0 ? totalDoubleTick[p]! / totalRoundsSum : 0])),
     playIndicators: {
       lashaNobleMovesPerGame: totalCompleted > 0 ? aggInd.lashaNobleMoves / totalCompleted : 0,
       lashaRuinScoresPerGame: totalCompleted > 0 ? aggInd.lashaRuinScores / totalCompleted : 0,

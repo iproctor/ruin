@@ -6,6 +6,7 @@
  *   - DAC-per-round per power, capped at 1 per round per power (to reward
  *     engagement without biasing toward dial-rush strategies)
  *   - Xarm DAC rate (special metric — if near 0, xarm isn't attacking)
+ *   - Double-tick rate: fraction of rounds where a power got ≥2 dial advances
  *   - Game completion rate
  *
  * Usage (from repo root):
@@ -80,6 +81,9 @@ interface GameResult {
   rounds: number;
   // Round → Power → true if power earned ≥1 DAC that round (capped at 1)
   dacByRound: Record<number, Partial<Record<Power, boolean>>>;
+  // Round → Power → raw count of dial_advance events that round.
+  // A "double tick" is a round where this count is ≥ 2 for a given power.
+  dialAdvancesByRound: Record<number, Partial<Record<Power, number>>>;
   indicators: PlayIndicators;
   finalVP: Record<Power, number>;
   error?: string;
@@ -135,6 +139,20 @@ function scanLogForDac(
   }
 }
 
+function scanLogForDialAdvances(
+  events: GameEvent[],
+  round: number,
+  dialAdvancesByRound: Record<number, Partial<Record<Power, number>>>,
+): void {
+  for (const event of events) {
+    if (event.type === 'dial_advance') {
+      if (!dialAdvancesByRound[round]) dialAdvancesByRound[round] = {};
+      const bucket = dialAdvancesByRound[round]!;
+      bucket[event.power] = (bucket[event.power] ?? 0) + 1;
+    }
+  }
+}
+
 function scanLogForIndicators(events: GameEvent[], indicators: PlayIndicators): void {
   for (const event of events) {
     // Noble moves via Hidden Influence
@@ -169,6 +187,7 @@ function scanLogForIndicators(events: GameEvent[], indicators: PlayIndicators): 
 
 function runGame(seed: number): GameResult {
   const dacByRound: Record<number, Partial<Record<Power, boolean>>> = {};
+  const dialAdvancesByRound: Record<number, Partial<Record<Power, number>>> = {};
   const indicators = emptyIndicators();
 
   let { state, log: initialLog } = autoAdvance({
@@ -183,6 +202,7 @@ function runGame(seed: number): GameResult {
 
   // Scan initial setup log too
   scanLogForDac(initialLog.events, state.round, dacByRound);
+  scanLogForDialAdvances(initialLog.events, state.round, dialAdvancesByRound);
   scanLogForIndicators(initialLog.events, indicators);
 
   // Sample tenzen cultist count at game start
@@ -201,11 +221,11 @@ function runGame(seed: number): GameResult {
 
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) {
-      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `maxActions` };
+      return { winners: [], winCondition: 'timeout', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `maxActions` };
     }
     const pending = state.pendingAction;
     if (!pending) {
-      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `no pendingAction` };
+      return { winners: [], winCondition: 'stuck', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `no pendingAction` };
     }
 
     let legal: Action[];
@@ -222,7 +242,7 @@ function runGame(seed: number): GameResult {
         context: pending.context,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `getLegalActions: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `getLegalActions: ${e.message}` };
     }
     if (legal.length === 0) {
       writeErrorLog({
@@ -231,7 +251,7 @@ function runGame(seed: number): GameResult {
         actionKind: pending.actionKind, power: pending.waitingFor,
         context: pending.context,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: 'no legal actions' };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: 'no legal actions' };
     }
 
     let action: Action;
@@ -269,7 +289,7 @@ function runGame(seed: number): GameResult {
         legalCount: legal.length,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `select: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `select: ${e.message}` };
     }
 
     // War Cry prevented: compute BEFORE applying — count enemy cultists
@@ -300,7 +320,10 @@ function runGame(seed: number): GameResult {
     try {
       const result = applyAction(state, action);
       const prevRound = state.round;
+      // Dial advances happen at end-of-round; use the round BEFORE the
+      // transition so the advance is attributed to the round it summed from.
       scanLogForDac(result.log.events, state.round, dacByRound);
+      scanLogForDialAdvances(result.log.events, state.round, dialAdvancesByRound);
       scanLogForIndicators(result.log.events, indicators);
       state = result.state;
       // Sample tenzen cultists on every round transition (post-end-phase
@@ -315,7 +338,7 @@ function runGame(seed: number): GameResult {
         action,
         message: e.message, stack: e.stack,
       });
-      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `apply: ${e.message}` };
+      return { winners: [], winCondition: 'error', rounds: state.round, dacByRound, dialAdvancesByRound, indicators, finalVP: { xarm: state.powers.xarm!.victoryPoints, gormen: state.powers.gormen!.victoryPoints, tenzen: state.powers.tenzen!.victoryPoints, lasha: state.powers.lasha!.victoryPoints }, error: `apply: ${e.message}` };
     }
 
     actionCount++;
@@ -332,6 +355,7 @@ function runGame(seed: number): GameResult {
     winCondition: state.winCondition ?? 'unknown',
     rounds: state.round,
     dacByRound,
+    dialAdvancesByRound,
     indicators,
     finalVP: {
       xarm: state.powers.xarm!.victoryPoints,
@@ -354,6 +378,8 @@ const winConditions: Record<string, number> = {};
 const roundCounts: number[] = [];
 // Sum of "rounds where power earned ≥1 DAC" across all games:
 const dacRoundsByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+// Sum of "rounds where power earned ≥2 dial advances" across all games:
+const doubleTickRoundsByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 // Per-power play indicators aggregated across games (sums; averaged below)
 const vpSamples: Record<Power, number[]> = { xarm: [], gormen: [], tenzen: [], lasha: [] };
 const spreadSamples: number[] = []; // winner VP minus last-place VP, per game
@@ -418,6 +444,14 @@ for (let i = 0; i < gameCount; i++) {
     }
   }
 
+  // Tally double-tick rounds (dial advanced ≥ 2 in the same round)
+  for (const roundKey of Object.keys(result.dialAdvancesByRound)) {
+    const bucket = result.dialAdvancesByRound[parseInt(roundKey, 10)]!;
+    for (const p of activePowers) {
+      if ((bucket[p] ?? 0) >= 2) doubleTickRoundsByPower[p]++;
+    }
+  }
+
   // Short per-game DAC string: x/g/t/l counts over this game
   const thisGameDac: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
   for (const roundKey of Object.keys(result.dacByRound)) {
@@ -452,6 +486,13 @@ for (const p of activePowers) {
   const bar = '█'.repeat(Math.round(rate * 20));
   const marker = p === 'xarm' ? ' ← xarm is critical' : '';
   console.log(`  ${p.padEnd(8)} ${(rate * 100).toFixed(1).padStart(5)}%  ${bar}${marker}`);
+}
+
+console.log(`\nDOUBLE TICK RATE (rounds with ≥2 dial advances / total-rounds):`);
+for (const p of activePowers) {
+  const rate = totalRounds > 0 ? doubleTickRoundsByPower[p] / totalRounds : 0;
+  const bar = '█'.repeat(Math.round(rate * 20));
+  console.log(`  ${p.padEnd(8)} ${(rate * 100).toFixed(1).padStart(5)}%  ${bar}`);
 }
 
 console.log(`\nPLAY INDICATORS (per game avg, ${completed} games):`);
@@ -512,6 +553,9 @@ if (outPath) {
     ),
     dacRatePerPower: Object.fromEntries(
       Object.entries(dacRoundsByPower).map(([p, r]) => [p, totalRounds > 0 ? r / totalRounds : 0])
+    ),
+    doubleTickRatePerPower: Object.fromEntries(
+      Object.entries(doubleTickRoundsByPower).map(([p, r]) => [p, totalRounds > 0 ? r / totalRounds : 0])
     ),
     playIndicators: {
       lashaNobleMovesPerGame: completed > 0 ? aggIndicators.lashaNobleMoves / completed : 0,

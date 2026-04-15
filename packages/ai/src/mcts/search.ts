@@ -6,7 +6,7 @@ import {
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
+import { filterPointlessActions, isZeroCostCardPlay } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
 import { policyForState } from '../learn/evaluator.js';
@@ -79,26 +79,11 @@ function makeRootPriorsFromRaw(
     }
   }
 
-  // Urgent retreat: solo cultist in xarm-threatened region moving to safety.
-  // Heavy prior boost for all non-xarm powers — this is a near-certain kill
-  // for xarm if they stay, and the value head doesn't reliably see it.
-  const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
-  const urgentRetreatSlots = new Set<number>();
-  if (forPower !== 'xarm') {
-    for (const a of rootActions) {
-      if (isUrgentRetreatFromXarm(state, a)) {
-        const idx = canonicalActionIndex(a, state);
-        if (idx >= 0) urgentRetreatSlots.add(idx);
-      }
-    }
-  }
-
   return (action: Action) => {
     const idx = canonicalActionIndex(action, state);
     if (idx < 0) return 1 / rootActions.length;
     let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
     if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
-    if (urgentRetreatSlots.has(idx)) p = Math.max(p, URGENT_RETREAT_PRIOR_FLOOR);
     return p;
   };
 }
