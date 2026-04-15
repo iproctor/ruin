@@ -72,7 +72,7 @@ function HandCard({
       onMouseLeave={() => onHover(null, 0, 0)}
       style={{
         position: 'relative',
-        width: 71,
+        width: 77,
         height: 76,
         background: isSelected ? '#1e1433' : '#13121f',
         border: `1.5px ${isPending ? 'dashed' : 'solid'} ${borderColor}`,

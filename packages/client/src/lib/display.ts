@@ -1,4 +1,4 @@
-import type { Power } from '@ruin/engine';
+import type { Power, TokenType } from '@ruin/engine';
 
 /** Power accent colors — single source of truth for the client. */
 export const POWER_COLORS: Record<Power, string> = {
@@ -20,6 +20,15 @@ export const POWER_LABELS: Record<Power, string> = {
   gormen: 'Gormen',
   tenzen: 'Tenzen',
   lasha:  'Lasha',
+};
+
+export const TOKEN_LABELS: Record<TokenType, string> = {
+  event:       'Event',
+  hero:        'Hero',
+  noble:       'Noble',
+  peasant:     'Peasant',
+  ratmen:      'Ratmen',
+  chaos_stone: 'Chaos Stone',
 };
 
 export const PHASE_LABELS: Record<string, string> = {

@@ -91,12 +91,7 @@ export function layoutFigureCluster(
   baseX: number,
   baseY: number,
 ): FigurePosition[] {
-  const sorted = [...figures].sort((a, b) => {
-    const pa = FIGURE_POWER_ORDER[a.power] ?? 99;
-    const pb = FIGURE_POWER_ORDER[b.power] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return (FIGURE_RANK_ORDER[a.class] ?? 0) - (FIGURE_RANK_ORDER[b.class] ?? 0);
-  });
+  const sorted = sortFigures(figures);
   const positions: FigurePosition[] = [];
   const limit = Math.min(sorted.length, FIGURE_MAX);
   for (let i = 0; i < limit; i++) {
@@ -113,16 +108,102 @@ export function layoutFigureCluster(
   return positions;
 }
 
+function sortFigures(figures: FollowerInstance[]): FollowerInstance[] {
+  return [...figures].sort((a, b) => {
+    const pa = FIGURE_POWER_ORDER[a.power] ?? 99;
+    const pb = FIGURE_POWER_ORDER[b.power] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return (FIGURE_RANK_ORDER[a.class] ?? 0) - (FIGURE_RANK_ORDER[b.class] ?? 0);
+  });
+}
+
+/** A slot in the figure cluster — either a single figure, or a collapsed group
+ *  of ≥ 5 identical ones displayed as one symbol plus an "×N" badge. Shielded
+ *  or enthralled figures form their own group so they don't hide in the stack. */
+export type FigureSlot =
+  | { kind: 'single'; figure: FollowerInstance }
+  | { kind: 'group'; representative: FollowerInstance; count: number; members: FollowerInstance[] };
+
+const GROUP_THRESHOLD = 3;
+
+function figureGroupKey(f: FollowerInstance): string {
+  return `${f.power}|${f.class}|${f.controlledBy ?? ''}|${f.protected ? 1 : 0}|${f.tipped ? 1 : 0}`;
+}
+
+/** Build cluster slots, collapsing identical figures into groups when > 4. */
+export function buildFigureSlots(figures: FollowerInstance[]): FigureSlot[] {
+  const sorted = sortFigures(figures);
+  const byKey = new Map<string, FollowerInstance[]>();
+  const order: string[] = [];
+  for (const f of sorted) {
+    const k = figureGroupKey(f);
+    if (!byKey.has(k)) { byKey.set(k, []); order.push(k); }
+    byKey.get(k)!.push(f);
+  }
+  const slots: FigureSlot[] = [];
+  for (const k of order) {
+    const grp = byKey.get(k)!;
+    if (grp.length > GROUP_THRESHOLD) {
+      slots.push({ kind: 'group', representative: grp[0]!, count: grp.length, members: grp });
+    } else {
+      for (const f of grp) slots.push({ kind: 'single', figure: f });
+    }
+  }
+  return slots;
+}
+
+export interface FigureSlotPosition { slot: FigureSlot; index: number; cx: number; cy: number }
+
+/** A collapsed group reserves two cells so its "×N" badge doesn't overlap
+ *  the next figure to the right. */
+function slotCellWidth(slot: FigureSlot): 1 | 2 {
+  return slot.kind === 'group' ? 2 : 1;
+}
+
+/** Total cells occupied by a slot list (used to place the "+" button). */
+export function slotsCellCount(slots: FigureSlot[]): number {
+  return slots.reduce((acc, s) => acc + slotCellWidth(s), 0);
+}
+
+/** Position slots in the grid. Groups claim two adjacent cells and wrap to
+ *  the next row if they wouldn't fit on the current one. */
+export function layoutFigureSlots(
+  slots: FigureSlot[],
+  baseX: number,
+  baseY: number,
+): FigureSlotPosition[] {
+  const out: FigureSlotPosition[] = [];
+  let cursor = 0;
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!;
+    const width = slotCellWidth(slot);
+    const col = cursor % FIGURE_COLS;
+    if (col + width > FIGURE_COLS) {
+      // Wrap — skip to start of next row
+      cursor = (Math.floor(cursor / FIGURE_COLS) + 1) * FIGURE_COLS;
+    }
+    if (cursor >= FIGURE_MAX) break;
+    const finalCol = cursor % FIGURE_COLS;
+    const finalRow = Math.floor(cursor / FIGURE_COLS);
+    out.push({
+      slot, index: i,
+      cx: baseX + finalCol * FIGURE_STEP + FIGURE_CENTER_OFFSET,
+      cy: baseY + finalRow * FIGURE_STEP + FIGURE_CENTER_OFFSET,
+    });
+    cursor += width;
+  }
+  return out;
+}
+
 // ── Figure cluster ────────────────────────────────────────────────────────────
 
-function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledIds, hideKilled, myPower, summoningAnim }: {
+function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, myPower, summoningAnim }: {
   figures: FollowerInstance[];
   x: number;
   y: number;
   powers: GameState['powers'];
   myPower?: Power | null;
   summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
-  highlightSince: number | null;
   animationKilledIds?: Set<string>;
   hideKilled?: boolean;
 }) {
@@ -130,27 +211,29 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
   const filteredFigures = hideKilled && animationKilledIds
     ? figures.filter(f => !animationKilledIds.has(f.id))
     : figures;
-  const positions = layoutFigureCluster(filteredFigures, x, y);
-  const overflow = filteredFigures.length - positions.length;
+  const slots = buildFigureSlots(filteredFigures);
+  const positions = layoutFigureSlots(slots, x, y);
+  const overflow = slots.length - positions.length;
+  void myPower;
 
   return (
     <g>
-      {positions.map(({ figure: fig, cx: fx, cy: fy }) => {
+      {positions.map(({ slot, cx: fx, cy: fy, index }) => {
+        const fig = slot.kind === 'single' ? slot.figure : slot.representative;
+        const members = slot.kind === 'group' ? slot.members : [fig];
         const color = POWER_COLORS[fig.power];
-        const isAnimKilled = animationKilledIds?.has(fig.id) ?? false;
+        const isAnimKilled = members.every((m) => animationKilledIds?.has(m.id) ?? false);
         const op = (fig.tipped || isAnimKilled) ? 0.3 : 0.9;
-        const isNew = highlightSince !== null && fig.placedAt > highlightSince
-          && (fig.controlledBy ?? fig.power) !== myPower;
         const controlledColor = fig.controlledBy ? POWER_COLORS[fig.controlledBy] : undefined;
         const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : controlledColor;
-        // When both controlled and has a glow (protected/killed), show controlled border as outer ring
         const needsOuterRing = !!controlledColor && glowStroke !== controlledColor;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
-        const isAppearing = summoningAnim?.appearingFigures.has(fig.id) ?? false;
-        const isMoving = summoningAnim?.movingFigures.has(fig.id) ?? false;
+        const isAppearing = members.some((m) => summoningAnim?.appearingFigures.has(m.id) ?? false);
+        const isMoving = members.some((m) => summoningAnim?.movingFigures.has(m.id) ?? false);
         const animStyle = (isAppearing || isMoving) ? 'summoning-appear' : undefined;
+        const key = slot.kind === 'single' ? slot.figure.id : `grp-${index}-${figureGroupKey(fig)}`;
         return (
-          <g key={fig.id}>
+          <g key={key}>
             {(isAppearing || isMoving) && (
               <circle
                 cx={fx} cy={fy}
@@ -163,7 +246,6 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
             <g
               className={animStyle}
               style={{ cursor: 'default' }}
-              filter={isNew && !fig.protected ? 'url(#new-glow)' : undefined}
               onMouseEnter={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
               onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
               onMouseLeave={() => setHovered(null)}
@@ -174,6 +256,17 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
               {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
               {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
               {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
+              {slot.kind === 'group' && (
+                <text
+                  x={fx + 7} y={fy + 3}
+                  fill="#f1f5f9" fontSize="8" fontWeight={700}
+                  style={{ userSelect: 'none', paintOrder: 'stroke' }}
+                  stroke="#0d0d1f" strokeWidth={2}
+                  strokeLinejoin="round"
+                >
+                  ×{slot.count}
+                </text>
+              )}
             </g>
           </g>
         );
@@ -196,11 +289,10 @@ function FigureCluster({ figures, x, y, powers, highlightSince, animationKilledI
 
 // ── Mini card ─────────────────────────────────────────────────────────────────
 
-function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearing }: {
+function MiniCard({ cardId, width, height, onHover, isPending, isAppearing }: {
   cardId: string; width: number; height: number;
   onHover: (id: string | null, x: number, y: number) => void;
   isPending?: boolean;
-  isNew?: boolean;
   isAppearing?: boolean;
 }) {
   const def = CARD_BY_ID[cardId] ?? WORLD_CARD_BY_ID[cardId];
@@ -232,11 +324,10 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearin
       >
         <rect width={width} height={height} rx={3}
           fill={isPending ? '#1a2a1a' : '#1a1433'}
-        stroke={isPending ? '#22c55e' : isPersistent ? accentColor : '#3a3a6e'}
-        strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
-        strokeDasharray={isPending ? '3 2' : undefined}
-        filter={isNew ? 'url(#new-glow)' : undefined}
-      />
+          stroke={isPending ? '#22c55e' : isPersistent ? accentColor : '#3a3a6e'}
+          strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
+          strokeDasharray={isPending ? '3 2' : undefined}
+        />
       <rect width={width} height={3} rx={1} fill={accentColor} opacity={0.85} />
       <text x={3} y={12} fill="#e5e7eb" fontSize="8" fontWeight="700" style={{ userSelect: 'none' }}>
         {name.slice(0, 10)}
@@ -335,7 +426,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim, onSlotClick, slotPlayable, onSummonClick, canSummon }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim, onSlotClick, slotPlayable, onSummonClick, canSummon }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -344,7 +435,6 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   pendingCardSlot: { slotIndex: number; cardId: string } | null;
   onCardHover: (id: string | null, x: number, y: number) => void;
   onTokenHover: (token: TokenType | null, x: number, y: number) => void;
-  highlightSince: number | null;
   isAnimationTarget: boolean;
   animationKilledIds?: Set<string>;
   hideKilled?: boolean;
@@ -510,12 +600,12 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Followers */}
       {(() => { const figures = followersInRegion(state, regionId); return figures.length > 0 && (
-        <FigureCluster figures={figures} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
+        <FigureCluster figures={figures} x={x + 4} y={y + 46} powers={state.powers} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
       ); })()}
 
       {/* Summon (+) button — placed in the figure cluster after all followers */}
       {!isRuined && onSummonClick && canSummon?.(regionId) && (() => {
-        const count = followersInRegion(state, regionId).length;
+        const count = slotsCellCount(buildFigureSlots(followersInRegion(state, regionId)));
         const col = count % FIGURE_COLS;
         const row = Math.floor(count / FIGURE_COLS);
         const cx = (x + 4) + col * FIGURE_STEP + FIGURE_CENTER_OFFSET;
@@ -550,7 +640,6 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
               {card ? (
                 <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending}
-                  isNew={highlightSince !== null && card.placedAt > highlightSince && card.playedBy !== myPower}
                   isAppearing={summoningAnim?.appearingCards.has(`${regionId}-${si}`) ?? false} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
@@ -763,12 +852,6 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
   }
 
   // During summoning phase, highlight figures/cards placed since the acting power's last turn.
-  // The human player's own power is excluded from the glow so their own placements don't flash.
-  const actingPower = state.pendingAction?.waitingFor ?? null;
-  const highlightSince = (state.phase === 'summoning' && actingPower)
-    ? state.powers[actingPower]?.lastSummonTurnAt ?? null
-    : null;
-
   const isDragging = (highlightRegions !== undefined || dimmedRegions !== undefined);
 
   return (
@@ -778,11 +861,6 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         viewBox="0 0 800 615"
         style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: '#0d0d1f' }}
       >
-        <defs>
-          <filter id="new-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#facc15" floodOpacity="0.6" />
-          </filter>
-        </defs>
         {/* Connection lines between adjacent regions */}
         <g>
           {(() => {
@@ -820,7 +898,6 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               pendingCardSlot={getPendingCard(regionId)}
               onCardHover={handleCardHover}
               onTokenHover={handleTokenHover}
-              highlightSince={highlightSince}
               isAnimationTarget={animationRegion === regionId}
               animationKilledIds={animationKilledIds}
               hideKilled={hideKilled}
@@ -851,32 +928,24 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
         )}
       </div>
 
-      {/* Draggable HTML overlays for on-board figures belonging to myPower */}
+      {/* Draggable HTML overlays for on-board figures belonging to myPower.
+          Positions mirror the SVG figure cluster — one overlay per cluster
+          slot (collapsed groups get a single overlay, dragging spawns the
+          representative figure which is equivalent to any member). */}
       {myPower && (
         <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {(Object.entries(REGION_POSITIONS) as [RegionId, typeof REGION_POSITIONS[RegionId]][]).flatMap(
             ([regionId, pos]) => {
               const region = state.regions[regionId];
               if (!region) return [];
-              const POWER_ORDER: Record<string, number> = { xarm: 0, gormen: 1, tenzen: 2, lasha: 3 };
-              const RANK_ORDER: Record<string, number> = { incarnation: 0, warrior: 1, cultist: 2 };
-              const sorted = [...followersInRegion(state, regionId)].sort((a, b) => {
-                const pa = POWER_ORDER[a.power] ?? 99;
-                const pb = POWER_ORDER[b.power] ?? 99;
-                if (pa !== pb) return pa - pb;
-                return (RANK_ORDER[a.class] ?? 9) - (RANK_ORDER[b.class] ?? 9);
-              });
-              const figX = pos.x + 4;
-              const figY = pos.y + 46;
-              return sorted.slice(0, 20).flatMap((fig, i) => {
+              const slots = buildFigureSlots(followersInRegion(state, regionId));
+              const positions = layoutFigureSlots(slots, pos.x + 4, pos.y + 46);
+              return positions.flatMap(({ slot, cx: svgX, cy: svgY }) => {
+                const fig = slot.kind === 'single' ? slot.figure : slot.representative;
                 if ((fig.controlledBy ?? fig.power) !== myPower) return [];
-                const col = i % 10;
-                const row = Math.floor(i / 10);
-                const svgX = figX + col * 15 + 8;
-                const svgY = figY + row * 15 + 8;
                 return [
                   <DraggableFigureOverlay
-                    key={fig.id}
+                    key={slot.kind === 'single' ? slot.figure.id : `grp-${svgX}-${svgY}`}
                     fig={fig}
                     fromRegion={regionId}
                     svgX={svgX}

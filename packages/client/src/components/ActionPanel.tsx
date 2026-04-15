@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { POWER_COLORS } from '../lib/display.js';
+import { POWER_COLORS, TOKEN_LABELS } from '../lib/display.js';
 import type {
   GameState,
   Power,
@@ -876,8 +876,8 @@ function InvisibleHandPanel({
         {sourceTokens.map(t => (
           <button key={t} className={chosenToken === t ? 'primary' : 'secondary'}
             onClick={() => { setChosenToken(t); setChosenRegion(null); }}
-            style={{ fontSize: '0.8rem', textTransform: 'capitalize' }}
-          >{t}</button>
+            style={{ fontSize: '0.8rem' }}
+          >{TOKEN_LABELS[t]}</button>
         ))}
       </div>
       {chosenToken && (
@@ -896,7 +896,7 @@ function InvisibleHandPanel({
               onClick={() => onSubmit({ token: chosenToken, fromRegion: regionId, toRegion: chosenRegion })}
               style={{ fontSize: '0.8rem' }}
             >
-              Move {chosenToken} → {REGION_LABELS[chosenRegion]}
+              Move {TOKEN_LABELS[chosenToken as keyof typeof TOKEN_LABELS] ?? chosenToken} → {REGION_LABELS[chosenRegion]}
             </button>
           )}
         </>
@@ -1354,6 +1354,7 @@ function DialPlaceTokenPanel({
   onActions?: (actions: Action[]) => void;
 }) {
   const tokenType = (context['tokenType'] as string) ?? 'noble';
+  const tokenLabel = TOKEN_LABELS[tokenType as keyof typeof TOKEN_LABELS] ?? tokenType;
   const remaining = (context['remaining'] as number) ?? 1;
   const count = (context['count'] as number) ?? remaining;
   const [picks, setPicks] = useState<RegionId[]>([]);
@@ -1377,7 +1378,7 @@ function DialPlaceTokenPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — place <strong style={{ color: '#facc15', textTransform: 'capitalize' }}>{tokenType}</strong> token(s)
+        Dial reward — place <strong style={{ color: '#facc15' }}>{tokenLabel}</strong> token(s)
         ({remaining} of {count} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
@@ -1547,7 +1548,11 @@ function DialRemoveWorldTokenPanel({
   const remaining = (context['remaining'] as number) ?? 1;
   type RemovableToken = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen';
   const TOKEN_NAMES: Record<RemovableToken, string> = {
-    event: 'Event', hero: 'Hero', noble: 'Noble', peasant: 'Peasant', ratmen: 'Ratmen',
+    event: TOKEN_LABELS.event,
+    hero: TOKEN_LABELS.hero,
+    noble: TOKEN_LABELS.noble,
+    peasant: TOKEN_LABELS.peasant,
+    ratmen: TOKEN_LABELS.ratmen,
   };
 
   type Selection = { regionId: RegionId; tokenType: RemovableToken };

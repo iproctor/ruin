@@ -240,9 +240,7 @@ export function applyTenzenApprenticeChoice(
 // ─── Turn advancement ─────────────────────────────────────────────────────────
 
 export function advanceSummoningTurn(state: GameState, justActed: Power, log: GameLog): GameState {
-  // Record when this power's turn ended, so next time it's their turn
-  // the client can highlight everything placed since this point.
-  let base = updatePower(state, justActed, { lastSummonTurnAt: state.actionCount });
+  let base = state;
   const activePowers = base.summoningOrder;
 
   // Check if all are done (power points = 0 or passedSummoning)
