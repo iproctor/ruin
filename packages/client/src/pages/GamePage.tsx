@@ -291,6 +291,70 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
     setSlotPopup(null);
   }
 
+  // ── Summon popup (click the + on a region) ──────────────────────────────
+  const [summonPopup, setSummonPopup] = useState<
+    { regionId: RegionId; x: number; y: number } | null
+  >(null);
+
+  const legalSummonActions = useMemo(() => {
+    if (!displayState || !myPowerEarly) return [];
+    return getLegalActions(displayState, myPowerEarly)
+      .filter((a) => a.kind === 'summoning_summon_figure') as Array<
+        Extract<Action, { kind: 'summoning_summon_figure' }>
+      >;
+  }, [displayState, myPowerEarly]);
+
+  const canSummon = useCallback(
+    (regionId: RegionId) =>
+      legalSummonActions.some((a) => {
+        if (a.toRegion !== regionId) return false;
+        const fig = displayState ? findFollower(displayState, a.followerId) : null;
+        return fig?.regionId === null;
+      }),
+    [legalSummonActions, displayState],
+  );
+
+  const handleSummonClick = useCallback(
+    (regionId: RegionId, x: number, y: number) => {
+      setSummonPopup({ regionId, x, y });
+    },
+    [],
+  );
+
+  // Choices for the open region — deduped by (class, source region, controlledBy, protected).
+  // getLegalActions already dedupes equivalent followers, but we also need a
+  // label, so we pair each action with a human-readable descriptor.
+  const summonChoices = useMemo(() => {
+    if (!summonPopup || !displayState) return [] as Array<{
+      action: Extract<Action, { kind: 'summoning_summon_figure' }>;
+      label: string;
+      cost: number;
+    }>;
+    const out: Array<{
+      action: Extract<Action, { kind: 'summoning_summon_figure' }>;
+      label: string;
+      cost: number;
+    }> = [];
+    for (const a of legalSummonActions) {
+      if (a.toRegion !== summonPopup.regionId) continue;
+      const fig = findFollower(displayState, a.followerId);
+      if (!fig) continue;
+      // Reserve-only: don't show on-board figures being moved.
+      if (fig.regionId !== null) continue;
+      const label = fig.class.charAt(0).toUpperCase() + fig.class.slice(1);
+      const cost = (a as { cost?: number }).cost
+        ?? (displayState.powers[myPowerEarly!]!.powerPoints
+            - (applyActionForPreview(displayState, a).state.powers[myPowerEarly!]!.powerPoints));
+      out.push({ action: a, label, cost });
+    }
+    return out;
+  }, [summonPopup, displayState, legalSummonActions, myPowerEarly]);
+
+  function stageFromSummonPopup(action: Extract<Action, { kind: 'summoning_summon_figure' }>) {
+    setPendingAction(action);
+    setSummonPopup(null);
+  }
+
   // ── DnD sensors ─────────────────────────────────────────────────────────────
 
   const sensors = useSensors(
@@ -532,6 +596,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               summoningAnim={{ appearingFigures: anim.appearingFigures, movingFigures: anim.movingFigures, appearingCards: anim.appearingCards }}
               onSlotClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSlotClick : undefined}
               slotPlayable={isSummoningTurn && !pendingAction && !anim.animationPhase ? slotPlayable : undefined}
+              onSummonClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSummonClick : undefined}
+              canSummon={isSummoningTurn && !pendingAction && !anim.animationPhase ? canSummon : undefined}
             />
           </div>
 
@@ -693,6 +759,56 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Summon popup: pick a follower to summon into a clicked region */}
+      {summonPopup && (
+        <div
+          onClick={() => setSummonPopup(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 250 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: Math.min(summonPopup.y + 6, window.innerHeight - 260),
+              left: Math.min(summonPopup.x + 6, window.innerWidth - 220),
+              background: '#0d1a2d', border: '1px solid #3a3a6e', borderRadius: 6,
+              minWidth: 200, padding: 6,
+              boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+            }}
+          >
+            <div style={{
+              fontSize: '0.7rem', color: '#94a3b8',
+              padding: '2px 6px 6px', textTransform: 'uppercase', letterSpacing: '0.05em',
+            }}>
+              Summon a follower
+            </div>
+            {summonChoices.length === 0 && (
+              <div style={{ padding: '6px', fontSize: '0.78rem', color: '#64748b' }}>
+                No summon options.
+              </div>
+            )}
+            {summonChoices.map(({ action, label, cost }, i) => (
+              <button
+                key={`${action.followerId}-${i}`}
+                onClick={() => stageFromSummonPopup(action)}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#1e1e3a')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                  width: '100%', padding: '6px 8px',
+                  background: 'transparent', border: 'none', cursor: 'pointer',
+                  color: '#cbd5e1', fontSize: '0.82rem', textAlign: 'left',
+                  borderRadius: 4,
+                }}
+              >
+                <span>{label}</span>
+                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>PP {cost}</span>
+              </button>
+            ))}
           </div>
         </div>
       )}

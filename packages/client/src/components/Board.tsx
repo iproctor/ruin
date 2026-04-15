@@ -244,7 +244,7 @@ function MiniCard({ cardId, width, height, onHover, isPending, isNew, isAppearin
       {cost !== null && (
         <g transform={`translate(${width - 13}, ${height - 13})`}>
           <circle cx={6} cy={6} r={6} fill={accentColor} opacity={0.9} />
-          <text x={6} y={10} textAnchor="middle" fill="#fff" fontSize="8" fontWeight="700">{cost}</text>
+          <text x={6} y={9} textAnchor="middle" fill="#fff" fontSize="8" fontWeight="700">{cost}</text>
         </g>
       )}
       {hasMagic && <text x={3} y={height - 3} fill="#a78bfa" fontSize="8">✦</text>}
@@ -324,8 +324,6 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
         transform: 'translate(-50%, -50%)',
         cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0 : 1,
-        borderRadius: fig.class === 'cultist' ? '50%' : fig.class === 'incarnation' ? '2px' : '0',
-        border: `1.5px solid ${POWER_COLORS[fig.controlledBy ?? fig.power]}`,
         background: 'transparent',
         zIndex: 5,
         touchAction: 'none',
@@ -337,7 +335,7 @@ function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
 
 // ── Region SVG content ────────────────────────────────────────────────────────
 
-function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim, onSlotClick, slotPlayable }: {
+function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingCardSlot, onCardHover, onTokenHover, highlightSince, isAnimationTarget, animationKilledIds, hideKilled, corruptionOverride, myPower, summoningAnim, onSlotClick, slotPlayable, onSummonClick, canSummon }: {
   regionId: RegionId;
   pos: typeof REGION_POSITIONS[RegionId];
   state: GameState;
@@ -355,6 +353,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
   summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
   onSlotClick?: (regionId: RegionId, slotIndex: 0 | 1, x: number, y: number) => void;
   slotPlayable?: (regionId: RegionId, slotIndex: 0 | 1) => boolean;
+  onSummonClick?: (regionId: RegionId, x: number, y: number) => void;
+  canSummon?: (regionId: RegionId) => boolean;
 }) {
   const region = state.regions[regionId];
   if (!region) return null;
@@ -512,6 +512,32 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
       {(() => { const figures = followersInRegion(state, regionId); return figures.length > 0 && (
         <FigureCluster figures={figures} x={x + 4} y={y + 46} powers={state.powers} highlightSince={highlightSince} animationKilledIds={animationKilledIds} hideKilled={hideKilled} myPower={myPower} summoningAnim={summoningAnim} />
       ); })()}
+
+      {/* Summon (+) button — placed in the figure cluster after all followers */}
+      {!isRuined && onSummonClick && canSummon?.(regionId) && (() => {
+        const count = followersInRegion(state, regionId).length;
+        const col = count % FIGURE_COLS;
+        const row = Math.floor(count / FIGURE_COLS);
+        const cx = (x + 4) + col * FIGURE_STEP + FIGURE_CENTER_OFFSET;
+        const cy = (y + 46) + row * FIGURE_STEP + FIGURE_CENTER_OFFSET;
+        return (
+          <g
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => { e.stopPropagation(); onSummonClick(regionId, e.clientX, e.clientY); }}
+          >
+            <circle cx={cx} cy={cy} r={6}
+              fill="#1e1e3a" stroke="#7c3aed" strokeWidth={1.1} />
+            <text
+              x={cx + 0.25} y={cy-0.6}
+              textAnchor="middle" dominantBaseline="central"
+              fill="#c4b5fd" fontSize="10" fontWeight={800}
+              style={{ userSelect: 'none', pointerEvents: 'none' }}
+            >
+              +
+            </text>
+          </g>
+        );
+      })()}
 
       {/* Card slots — hidden when region is ruined */}
       {!isRuined && <g transform={`translate(${x + 4}, ${cardSlotY})`}>
@@ -690,9 +716,11 @@ interface BoardProps {
   summoningAnim?: { appearingFigures: Set<string>; movingFigures: Map<string, { fromRegion: string; toRegion: string }>; appearingCards: Set<string> };
   onSlotClick?: (regionId: RegionId, slotIndex: 0 | 1, x: number, y: number) => void;
   slotPlayable?: (regionId: RegionId, slotIndex: 0 | 1) => boolean;
+  onSummonClick?: (regionId: RegionId, x: number, y: number) => void;
+  canSummon?: (regionId: RegionId) => boolean;
 }
 
-export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim, onSlotClick, slotPlayable }: BoardProps) {
+export default function Board({ state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion, animationKilledIds, hideKilled, battlePaneEvents, dominationLabels, corruptionOverrides, corruptionFlies, summoningAnim, onSlotClick, slotPlayable, onSummonClick, canSummon }: BoardProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const [regionTooltip, setRegionTooltip] = useState<{ regionId: RegionId; x: number; y: number } | null>(null);
   const [tokenTooltip, setTokenTooltip] = useState<{ token: TokenType; x: number; y: number } | null>(null);
@@ -801,6 +829,8 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
               summoningAnim={summoningAnim}
               onSlotClick={onSlotClick}
               slotPlayable={slotPlayable}
+              onSummonClick={onSummonClick}
+              canSummon={canSummon}
             />
           ),
         )}
