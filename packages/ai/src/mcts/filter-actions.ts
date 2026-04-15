@@ -25,12 +25,11 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
   if (action.kind === 'summoning_pass') {
     const ps = state.powers[action.power];
     if (!ps) return false;
-    if (ps.powerPoints <= 0) return false;       // out of PP, pass is fine
-    // Hand or reserve followers available?
-    const hasReserve = ps.followers.some(f => f.regionId === null);
-    const hasHand = ps.hand.length > 0;
-    if (!hasReserve && !hasHand) return false;   // nothing to spend on
-    return true;                                  // resources + things to do = wasteful pass
+    // Only block pass as clearly wasteful when you have plenty of PP AND
+    // reserve figures to summon. Saving cards in hand for a better round is
+    // legitimate; low-PP passes are fine even with resources lying around.
+    if (ps.powerPoints <= 2) return false;
+    return ps.followers.some(f => f.regionId === null);
   }
 
   // Summoning into a ruined region is almost always pointless — no corruption,
@@ -236,31 +235,6 @@ function xarmCanAttackInRegion(state: GameState, regionId: string): boolean {
     if (f.class === 'cultist' && xarmHasHeartseekers) return true;
     return false;
   });
-}
-
-/**
- * Returns true if this summon FEEDS xarm a free DAC. Specifically: a non-xarm
- * power summoning a figure FROM RESERVE into a region where xarm has
- * warriors/incarnation AND the summoning power has no other figures there.
- * The lone figure will get killed for a free dial advancement counter.
- * Used to deprioritize (not hard-block) these actions in pruneActions.
- */
-export function isFeedingXarmDac(state: GameState, action: Action): boolean {
-  if (action.kind !== 'summoning_summon_figure') return false;
-  if (action.power === 'xarm') return false;
-
-  const region = state.regions[action.toRegion];
-  if (!region) return false;
-
-  if (!xarmCanAttackInRegion(state, action.toRegion)) return false;
-
-  // Would the summoning power's figure be alone (straggler)?
-  const ownFigsThere = followersInRegion(state, action.toRegion).filter(
-    f => !f.tipped && (f.controlledBy ?? f.power) === action.power,
-  ).length;
-  // Only flag if going from 0 own figures → 1 (the straggler pattern).
-  // If there are already own figures there, reinforcing is fine.
-  return ownFigsThere === 0;
 }
 
 /**

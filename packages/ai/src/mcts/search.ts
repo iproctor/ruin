@@ -3,7 +3,7 @@ import { applyAction, getLegalActions, enumerateBattleHitStrategies, makeRng } f
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct } from './node.js';
-import { filterPointlessActions, isZeroCostCardPlay, isFeedingXarmDac, isUrgentRetreatFromXarm } from './filter-actions.js';
+import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
 import { policyForState } from '../learn/evaluator.js';
@@ -169,12 +169,6 @@ export function runMcts(
   // Tenzen: force 0-cost card plays when PP is low to cycle the hand
   legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
 
-  // Tenzen: hard-filter actions that feed Xarm a free DAC.
-  if (forPower === 'tenzen') {
-    const filtered = legalRoot.filter(a => !isFeedingXarmDac(state, a));
-    if (filtered.length > 0) legalRoot = filtered;
-  }
-
   if (legalRoot.length === 1) {
     return legalRoot[0]!;
   }
@@ -259,10 +253,6 @@ export function runMctsWithStats(
   }
   let legalRoot = filterPointlessActions(state, legalRootRaw);
   legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
-  if (forPower === 'tenzen') {
-    const filtered = legalRoot.filter(a => !isFeedingXarmDac(state, a));
-    if (filtered.length > 0) legalRoot = filtered;
-  }
   if (legalRoot.length === 1) {
     return {
       action: legalRoot[0]!,
