@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { POWER_COLORS, TOKEN_LABELS } from '../lib/display.js';
+import { POWER_COLORS, POWER_LABELS, TOKEN_LABELS } from '../lib/display.js';
 import type {
   GameState,
   Power,
@@ -1496,7 +1496,11 @@ function DialRemoveCorruptionPanel({
               disabled={avail <= 0 || picks.length >= remaining}
               style={{ fontSize: '0.75rem', padding: '0.3rem 0.5rem' }}
             >
-              {REGION_LABELS[regionId]} {targetPower} ({avail})
+              {REGION_LABELS[regionId]}{' '}
+              <span style={{ color: POWER_COLORS[targetPower], fontWeight: 600 }}>
+                {POWER_LABELS[targetPower]}
+              </span>{' '}
+              ({avail})
             </button>
           );
         })}
@@ -1511,7 +1515,11 @@ function DialRemoveCorruptionPanel({
               style={{ fontSize: '0.7rem', padding: '0.15rem 0.4rem', marginLeft: 4 }}
               title="Click to remove"
             >
-              {REGION_LABELS[p.regionId]} {p.targetPower} ×
+              {REGION_LABELS[p.regionId]}{' '}
+              <span style={{ color: POWER_COLORS[p.targetPower], fontWeight: 600 }}>
+                {POWER_LABELS[p.targetPower]}
+              </span>{' '}
+              ×
             </button>
           ))}
         </div>
