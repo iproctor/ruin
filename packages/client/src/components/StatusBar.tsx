@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
 import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADES, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
@@ -13,6 +13,94 @@ interface StatusBarProps {
   myPower: Power | null;
   players?: GamePlayerInfo[];
   events?: GameEvent[];
+  onLeave?: () => void;
+  leaveLabel?: string;
+}
+
+// ── Nav menu (Back / Leave) ──────────────────────────────────────────────────
+
+function NavMenu({ onLeave, leaveLabel = 'Leave Game' }: { onLeave?: () => void; leaveLabel?: string }) {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
+  const navigate = useNavigate();
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (
+        (menuRef.current && menuRef.current.contains(e.target as Node)) ||
+        (btnRef.current && btnRef.current.contains(e.target as Node))
+      ) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  function toggle() {
+    if (open) { setOpen(false); return; }
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setAnchor({ top: r.bottom + 2, left: r.left });
+    }
+    setOpen(true);
+  }
+
+  return (
+    <div className="shrink-0">
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        aria-label="Menu"
+        className="text-slate-400 hover:text-white"
+        style={{
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <svg width="16" height="14" viewBox="0 0 16 14" fill="none" aria-hidden="true">
+          <path d="M1 2h14M1 7h14M1 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </button>
+      {open && anchor && createPortal(
+        <div
+          ref={menuRef}
+          style={{
+            position: 'fixed', top: anchor.top, left: anchor.left,
+            background: '#0f1b33', border: '1px solid #3a3a6e', borderRadius: 4,
+            minWidth: 140, zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+          }}
+        >
+          <button
+            onClick={() => { setOpen(false); navigate('/home'); }}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              padding: '6px 10px', color: '#cbd5e1', fontSize: '0.78rem',
+            }}
+          >
+            Back to Home
+          </button>
+          {onLeave && (
+            <button
+              onClick={() => { setOpen(false); onLeave(); }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left',
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                padding: '6px 10px', color: '#f87171', fontSize: '0.78rem',
+                borderTop: '1px solid #1e1e3a',
+              }}
+            >
+              {leaveLabel}
+            </button>
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
 }
 
 // ── World card mini chip ──────────────────────────────────────────────────────
@@ -513,18 +601,16 @@ function DialChip({ state }: { state: GameState }) {
 
 // ── Status bar ────────────────────────────────────────────────────────────────
 
-export default function StatusBar({ state, myPower, players, events: eventLog }: StatusBarProps) {
+export default function StatusBar({ state, myPower, players, events: eventLog, onLeave, leaveLabel }: StatusBarProps) {
   const playerByPower = new Map((players ?? []).map((p) => [p.power, p]));
   const waiting = state.pendingAction?.waitingFor ?? null;
   const phaseLabel = PHASE_LABELS[state.phase] ?? state.phase;
   const { slot1, slot2, discardCard } = state.worldTrack;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #3a3a6e', fontSize: '0.875rem', flexShrink: 0, overflowX: 'auto' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #3a3a6e', fontSize: '0.875rem', flexShrink: 0, overflow: 'visible' }}>
       {/* Nav */}
-      <Link to="/home" className="text-slate-400 hover:text-white shrink-0 text-xs">
-        ← Home
-      </Link>
+      <NavMenu onLeave={onLeave} leaveLabel={leaveLabel ?? 'Leave Game'} />
       <span className="text-slate-600 shrink-0">|</span>
 
       {/* Round + Phase */}

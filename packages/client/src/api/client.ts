@@ -98,7 +98,7 @@ export interface GameSummary {
   isComplete: boolean;
   createdAt: string;
   updatedAt: string;
-  powers: Array<{ power: string; playerType: string; userId: string | null }>;
+  powers: Array<{ power: string; playerType: string; userId: string | null; username: string | null }>;
   name: string | null;
   status: string;
 }
@@ -114,8 +114,8 @@ export interface GamePlayerInfo {
   username: string | null;
 }
 
-export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[] }> {
-  return request<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[] }>(`/games/${gameId}`);
+export async function getGame(gameId: string): Promise<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[]; name: string | null }> {
+  return request<{ state: GameState; myPower: string | null; myPowers: string[]; players: GamePlayerInfo[]; name: string | null }>(`/games/${gameId}`);
 }
 
 export async function submitAction(gameId: string, action: Action): Promise<{ state: GameState; seq: number; events: import('@ruin/engine').GameEvent[] }> {

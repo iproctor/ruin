@@ -223,7 +223,7 @@ export default function MultiplayerLobbyPage() {
     voluntaryLeaveRef.current = true;
     try {
       await leaveGame(routeGameId);
-      navigate('/home');
+      navigate('/lobby');
     } catch (err) {
       voluntaryLeaveRef.current = false;
       setError(err instanceof Error ? err.message : 'Failed to leave');
@@ -497,30 +497,41 @@ function ChatHistory({
   onInviteByUserId: (userId: string) => void;
   bottomRef: React.RefObject<HTMLDivElement>;
 }) {
+  const globalRows: React.ReactNode[] = [];
+  let prevGlobalTs = 0;
+  for (const m of global) {
+    const ts = new Date(m.createdAt).getTime();
+    if (ts - prevGlobalTs >= TEN_MIN_MS) {
+      globalRows.push(
+        <ChatTimestampSeparator key={`sep-${m.id}`} ts={ts} />,
+      );
+    }
+    prevGlobalTs = ts;
+    const onlineUser = online.find((o) => o.userId === m.userId);
+    const isMe = m.userId === currentUserId;
+    const clickable = canInvite && !isMe && onlineUser && !onlineUser.inGame;
+    globalRows.push(
+      <div key={m.id} style={{ marginBottom: '0.2rem' }}>
+        <span
+          onClick={() => clickable && onInviteByUserId(m.userId)}
+          title={clickable ? 'Click to invite to your game' : ''}
+          style={{
+            fontWeight: 600,
+            color: isMe ? '#a78bfa' : '#7dd3fc',
+            cursor: clickable ? 'pointer' : 'default',
+            textDecoration: clickable ? 'underline dotted' : 'none',
+          }}
+        >
+          {m.username}:
+        </span>{' '}
+        <span style={{ color: '#cbd5e1' }}>{m.message}</span>
+      </div>,
+    );
+  }
+
   return (
     <div style={{ overflowY: 'auto', fontSize: '0.8rem', paddingRight: '0.25rem' }}>
-      {tab === 'global' && global.map((m) => {
-        const onlineUser = online.find((o) => o.userId === m.userId);
-        const isMe = m.userId === currentUserId;
-        const clickable = canInvite && !isMe && onlineUser && !onlineUser.inGame;
-        return (
-          <div key={m.id} style={{ marginBottom: '0.2rem' }}>
-            <span
-              onClick={() => clickable && onInviteByUserId(m.userId)}
-              title={clickable ? 'Click to invite to your game' : ''}
-              style={{
-                fontWeight: 600,
-                color: isMe ? '#a78bfa' : '#7dd3fc',
-                cursor: clickable ? 'pointer' : 'default',
-                textDecoration: clickable ? 'underline dotted' : 'none',
-              }}
-            >
-              {m.username}:
-            </span>{' '}
-            <span style={{ color: '#cbd5e1' }}>{m.message}</span>
-          </div>
-        );
-      })}
+      {tab === 'global' && globalRows}
       {tab === 'game' && game.map((m) => (
         <div key={m.id} style={{ marginBottom: '0.2rem' }}>
           <span style={{
@@ -533,6 +544,32 @@ function ChatHistory({
         </div>
       ))}
       <div ref={bottomRef} />
+    </div>
+  );
+}
+
+const TEN_MIN_MS = 10 * 60 * 1000;
+
+function ChatTimestampSeparator({ ts }: { ts: number }) {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  const label = sameDay
+    ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div style={{
+      textAlign: 'center',
+      fontSize: '0.65rem',
+      color: '#64748b',
+      textTransform: 'uppercase',
+      letterSpacing: '0.06em',
+      margin: '0.5rem 0 0.3rem',
+    }}>
+      {label}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import {
   startMultiplayerGame,
   revokeInvitation,
   cancelMultiplayerGame,
+  leaveActiveGame,
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
@@ -126,28 +127,35 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/:id', optionalAuth, async (req, res) => {
   const { id } = req.params;
   if (!id) { res.status(400).json({ error: 'Game ID required' }); return; }
-  const state = await getGameState(id, req.userId ?? null);
-  // Tell the client which power(s) they control so detection works even with
-  // an empty hand (empty hands are indistinguishable from masked empty hands).
-  let myPower: string | null = null;
-  let myPowers: string[] = [];
-  const playerRows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
-  if (req.userId) {
-    myPowers = playerRows.filter((r) => r.userId === req.userId).map((r) => r.power);
-    myPower = myPowers[0] ?? null;
+  try {
+    // Short-circuit with 404 when the game no longer exists (e.g. cancelled
+    // or the last human left an active game). Without this, getGameState
+    // throws and the async handler crashes the process.
+    const [gameRow] = await db.select({ name: games.name }).from(games).where(eq(games.id, id)).limit(1);
+    if (!gameRow) { res.status(404).json({ error: 'Game not found' }); return; }
+    const state = await getGameState(id, req.userId ?? null);
+    let myPower: string | null = null;
+    let myPowers: string[] = [];
+    const playerRows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, id));
+    if (req.userId) {
+      myPowers = playerRows.filter((r) => r.userId === req.userId).map((r) => r.power);
+      myPower = myPowers[0] ?? null;
+    }
+    const userIds = Array.from(new Set(playerRows.map((r) => r.userId).filter((u): u is string => !!u)));
+    const userRows = userIds.length
+      ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, userIds))
+      : [];
+    const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
+    const players = playerRows.map((r) => ({
+      power: r.power,
+      playerType: r.playerType,
+      username: r.userId ? (usernameById.get(r.userId) ?? null) : null,
+    }));
+    res.json({ state, myPower, myPowers, players, name: gameRow.name ?? null });
+  } catch (err) {
+    console.error(`[GET /games/${id}]`, err);
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Internal error' });
   }
-  // Build per-power player descriptors with usernames for human players
-  const userIds = Array.from(new Set(playerRows.map((r) => r.userId).filter((u): u is string => !!u)));
-  const userRows = userIds.length
-    ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, userIds))
-    : [];
-  const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
-  const players = playerRows.map((r) => ({
-    power: r.power,
-    playerType: r.playerType,
-    username: r.userId ? (usernameById.get(r.userId) ?? null) : null,
-  }));
-  res.json({ state, myPower, myPowers, players });
 });
 
 // ---------------------------------------------------------------------------
@@ -295,8 +303,15 @@ router.post('/:id/join', requireAuth, async (req, res) => {
 
 router.post('/:id/leave', requireAuth, async (req, res) => {
   try {
-    await lobbyLeave(req.params.id!, req.userId!);
-    res.json({ ok: true });
+    const [gameRow] = await db.select({ status: games.status }).from(games).where(eq(games.id, req.params.id!)).limit(1);
+    if (!gameRow) throw new Error('Game not found');
+    if (gameRow.status === 'pending') {
+      await lobbyLeave(req.params.id!, req.userId!);
+      res.json({ ok: true, deleted: false });
+    } else {
+      const result = await leaveActiveGame(req.params.id!, req.userId!);
+      res.json({ ok: true, deleted: result.deleted });
+    }
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
   }

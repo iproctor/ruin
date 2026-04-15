@@ -444,7 +444,7 @@ export interface GameListEntry {
   isComplete: boolean;
   createdAt: Date;
   updatedAt: Date;
-  powers: Array<{ power: string; playerType: string; userId: string | null }>;
+  powers: Array<{ power: string; playerType: string; userId: string | null; username: string | null }>;
   name: string | null;
   status: string;
 }
@@ -473,6 +473,11 @@ export async function listGamesForUser(userId: string): Promise<GameListEntry[]>
     const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
     if (!gameRow) continue;
     const allPlayers = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
+    const humanIds = allPlayers.map((p) => p.userId).filter((u): u is string => !!u);
+    const userRows = humanIds.length
+      ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, humanIds))
+      : [];
+    const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
     result.push({
       id: gameRow.id,
       round: gameRow.round,
@@ -480,7 +485,12 @@ export async function listGamesForUser(userId: string): Promise<GameListEntry[]>
       isComplete: gameRow.isComplete,
       createdAt: gameRow.createdAt,
       updatedAt: gameRow.updatedAt,
-      powers: allPlayers.map((p) => ({ power: p.power, playerType: p.playerType, userId: p.userId ?? null })),
+      powers: allPlayers.map((p) => ({
+        power: p.power,
+        playerType: p.playerType,
+        userId: p.userId ?? null,
+        username: p.userId ? (usernameById.get(p.userId) ?? null) : null,
+      })),
       name: gameRow.name ?? null,
       status: gameRow.status,
     });
@@ -917,6 +927,61 @@ export async function startMultiplayerGame(
   void broadcastGamesUpdate();
 
   await maybeRunAiTurns(gameId, state, initialSeq);
+}
+
+/** A player leaves an in-progress game. Their power is taken over by AI. If
+ *  they were the last human, the game is deleted entirely. Returns true when
+ *  the game was deleted. */
+export async function leaveActiveGame(gameId: string, userId: string): Promise<{ deleted: boolean }> {
+  const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+  if (!gameRow) throw new Error('Game not found');
+  if (gameRow.status === 'pending') throw new Error('Game is still in lobby — use the lobby Leave');
+
+  const players = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
+  const myRow = players.find((p) => p.userId === userId);
+  if (!myRow) throw new Error('You are not a player in this game');
+
+  const remainingHumans = players.filter((p) => p.userId && p.userId !== userId && p.playerType === 'human');
+
+  if (remainingHumans.length === 0) {
+    // Last human — delete the game and all related rows.
+    await db.delete(chatMessages).where(eq(chatMessages.gameId, gameId));
+    await db.delete(gameEvents).where(eq(gameEvents.gameId, gameId));
+    await db.delete(gamePlayers).where(eq(gamePlayers.gameId, gameId));
+    await db.delete(invitations).where(eq(invitations.gameId, gameId));
+    await db.delete(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
+    await db.delete(games).where(eq(games.id, gameId));
+    broadcast(gameId, { type: 'game_deleted' });
+    return { deleted: true };
+  }
+
+  // Convert the leaver's row to AI: detach the user, switch playerType.
+  await db
+    .update(gamePlayers)
+    .set({ userId: null, playerType: 'ai' })
+    .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.power, myRow.power)));
+
+  // Update engine state so the engine runs the power as AI going forward.
+  const state = gameRow.state as unknown as GameState;
+  const powerKey = myRow.power as Power;
+  const nextState: GameState = {
+    ...state,
+    powers: {
+      ...state.powers,
+      [powerKey]: { ...state.powers[powerKey]!, playerType: 'ai' },
+    },
+  };
+  await db.update(games)
+    .set({ state: nextState as unknown as Record<string, unknown>, updatedAt: new Date() })
+    .where(eq(games.id, gameId));
+
+  // Clients need the fresh state + playerType. A sync event is the simplest.
+  broadcast(gameId, { type: 'sync', state: nextState });
+
+  // If the AI is now on the clock, drive their turns.
+  const seq = await getNextSeq(gameId);
+  await maybeRunAiTurns(gameId, nextState, seq);
+  return { deleted: false };
 }
 
 export async function cancelMultiplayerGame(gameId: string, creatorId: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   DndContext,
   DragOverlay,
@@ -16,7 +16,7 @@ import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
 import { useEventAnimation } from '../hooks/useEventAnimation.js';
-import { getGame, submitAction, submitActions, sendChat } from '../api/client.js';
+import { getGame, submitAction, submitActions, sendChat, leaveGame } from '../api/client.js';
 import Board from '../components/Board.js';
 import StatusBar from '../components/StatusBar.js';
 import Tableau from '../components/Tableau.js';
@@ -121,6 +121,7 @@ interface GameInnerProps {
   gameId: string;
   myPowers: Power[];
   players: import('../api/client.js').GamePlayerInfo[];
+  isMultiplayer: boolean;
 }
 
 /** Find a follower by ID across all powers. */
@@ -132,7 +133,7 @@ function findFollower(state: GameState, followerId: string) {
   return null;
 }
 
-function GameInner({ gameId, myPowers, players }: GameInnerProps) {
+function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
   const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume } = useGameStream(gameId);
 
@@ -371,6 +372,22 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
     await sendChat(gameId, message);
   }, [gameId]);
 
+  const navigate = useNavigate();
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const handleLeaveGame = useCallback(async () => {
+    setLeaving(true);
+    try {
+      await leaveGame(gameId);
+      navigate('/home');
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to leave');
+      setLeaveConfirmOpen(false);
+    } finally {
+      setLeaving(false);
+    }
+  }, [gameId, navigate]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   if (!displayState) {
@@ -423,7 +440,14 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
-        <StatusBar state={statusState} myPower={myPower} players={players} events={events} />
+        <StatusBar
+          state={statusState}
+          myPower={myPower}
+          players={players}
+          events={events}
+          onLeave={myPowers.length > 0 ? () => setLeaveConfirmOpen(true) : undefined}
+          leaveLabel={isMultiplayer ? 'Leave Game' : 'Delete Game'}
+        />
 
         {/* Main area */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
@@ -566,6 +590,59 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
           <span style={{ color: '#e2e8f0', fontWeight: 600 }}>Submitting…</span>
         </div>
       )}
+
+      {/* Leave game confirmation */}
+      {leaveConfirmOpen && (
+        <div
+          onClick={() => !leaving && setLeaveConfirmOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#16213e', border: '1px solid #3a3a6e', borderRadius: 8,
+              padding: '1.25rem 1.5rem', maxWidth: 420, width: '92%',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
+            }}
+          >
+            <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem', color: '#f87171' }}>
+              {isMultiplayer ? 'Leave this game?' : 'Delete this game?'}
+            </h2>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+              {isMultiplayer ? (
+                <>
+                  Your power will be taken over by AI and the game will continue without you.
+                  You'll be permanently removed from this game — it won't appear in your game list any more.
+                  If you're the last human, the game will be deleted entirely. This cannot be undone.
+                </>
+              ) : (
+                <>This will permanently delete the game. This cannot be undone.</>
+              )}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button
+                className="secondary"
+                onClick={() => setLeaveConfirmOpen(false)}
+                disabled={leaving}
+              >
+                Cancel
+              </button>
+              <button
+                className="danger"
+                onClick={handleLeaveGame}
+                disabled={leaving}
+              >
+                {leaving
+                  ? (isMultiplayer ? 'Leaving…' : 'Deleting…')
+                  : (isMultiplayer ? 'Leave Game' : 'Delete Game')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 }
@@ -575,21 +652,25 @@ function GameInner({ gameId, myPowers, players }: GameInnerProps) {
 export default function GamePage() {
   const { id } = useParams<{ id: string }>();
   const { userId } = useAuth();
+  const navigate = useNavigate();
   const [myPowers, setMyPowers] = useState<Power[]>([]);
   const [players, setPlayers] = useState<import('../api/client.js').GamePlayerInfo[]>([]);
   const [initialState, setInitialState] = useState<GameState | null>(null);
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (!id || !userId) return;
     let cancelled = false;
     getGame(id)
-      .then(({ state, myPower, myPowers, players }) => {
+      .then(({ state, myPower, myPowers, players, name }) => {
         if (cancelled) return;
         // Seed the display with the HTTP state so the board is visible immediately,
         // before the SSE 'history' event arrives.
         setInitialState(state);
         setPlayers(players ?? []);
+        // Multiplayer games always have a name (set by createMultiplayerGame).
+        setIsMultiplayer(name !== null);
         // Server returns every power this user controls (hot-seat: one user can own multiple).
         if (myPowers && myPowers.length > 0) {
           setMyPowers(myPowers as Power[]);
@@ -598,10 +679,18 @@ export default function GamePage() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load game');
+        if (cancelled) return;
+        const msg = err instanceof Error ? err.message : 'Failed to load game';
+        // Stale game links (cancelled or last-human-left) no longer resolve —
+        // bounce to /home instead of showing a dead-end error screen.
+        if (/not found/i.test(msg)) {
+          navigate('/home', { replace: true });
+          return;
+        }
+        setError(msg);
       });
     return () => { cancelled = true; };
-  }, [id, userId]);
+  }, [id, userId, navigate]);
 
   if (!id) return <p className="error-msg" style={{ padding: '2rem' }}>No game ID</p>;
   if (error) return <p className="error-msg" style={{ padding: '2rem' }}>{error}</p>;
@@ -609,7 +698,7 @@ export default function GamePage() {
   return (
     <GameProvider gameId={id} myPower={myPowers[0] ?? null} initialState={initialState}>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <GameInner gameId={id} myPowers={myPowers} players={players} />
+        <GameInner gameId={id} myPowers={myPowers} players={players} isMultiplayer={isMultiplayer} />
       </div>
     </GameProvider>
   );
