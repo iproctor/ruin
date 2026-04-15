@@ -242,8 +242,11 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   // All legal summoning_play_card actions for myPower right now — used both
   // to decide if a slot is clickable and to fill the popup dropdown.
+  // Only meaningful during a player's summoning turn; guard getLegalActions
+  // which throws for non-enumerable action kinds (battle hit assignment, etc).
   const legalPlayCardActions = useMemo(() => {
     if (!displayState || !myPowerEarly) return [];
+    if (displayState.pendingAction?.actionKind !== 'summoning_action') return [];
     return getLegalActions(displayState, myPowerEarly)
       .filter((a) => a.kind === 'summoning_play_card') as Array<
         Extract<Action, { kind: 'summoning_play_card' }>
@@ -298,6 +301,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   const legalSummonActions = useMemo(() => {
     if (!displayState || !myPowerEarly) return [];
+    if (displayState.pendingAction?.actionKind !== 'summoning_action') return [];
     return getLegalActions(displayState, myPowerEarly)
       .filter((a) => a.kind === 'summoning_summon_figure') as Array<
         Extract<Action, { kind: 'summoning_summon_figure' }>

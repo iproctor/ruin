@@ -678,7 +678,7 @@ const TOKEN_DESCRIPTIONS: Record<TokenType, string> = {
   hero: 'At the End Phase, a hero will remove a figure of the highest threat player present. Lasha gains dial advancement when corrupting this region.',
   noble: 'Adds +1 to the region\'s VP reward when conquered. Lasha gains dial advancement when corrupting this region.',
   peasant: 'Potential target of attacks. May tie in with events.',
-  ratmen: 'Hostile tokens that consume Peasants and may interfere with player figures. Reduce influence in the region until removed.',
+  ratmen: "Lowers the region's resistance by 1 while present.",
   chaos_stone: 'Counts as +1 corruption in this region during the corruption phase. Tenzen gains dial advancement when corrupting a region with 2 chaos stones/magic symbols.',
 };
 
