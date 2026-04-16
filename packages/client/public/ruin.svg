@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Ruin emblem, simplified for favicon use — four yin-yang commas in the
+       canonical god colours, framed by a thin brass ring. No gradients or
+       jewel effects: they disappear at 16×16 and just smear the pixels. -->
+  <circle cx="16" cy="16" r="14" fill="#0a0806"/>
+  <g transform="translate(16 16)">
+    <path d="M 0 -14 A 14 14 0 0 1 14 0 A 7 7 0 0 0 0 0 A 7 7 0 0 1 0 -14 Z" fill="#ef4444"/>
+    <path d="M 0 -14 A 14 14 0 0 1 14 0 A 7 7 0 0 0 0 0 A 7 7 0 0 1 0 -14 Z" fill="#9ebe48" transform="rotate(90)"/>
+    <path d="M 0 -14 A 14 14 0 0 1 14 0 A 7 7 0 0 0 0 0 A 7 7 0 0 1 0 -14 Z" fill="#2daade" transform="rotate(180)"/>
+    <path d="M 0 -14 A 14 14 0 0 1 14 0 A 7 7 0 0 0 0 0 A 7 7 0 0 1 0 -14 Z" fill="#a855f7" transform="rotate(270)"/>
+  </g>
+  <circle cx="16" cy="16" r="14" fill="none" stroke="#c68c5a" stroke-width="1.5"/>
+</svg>

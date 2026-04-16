@@ -72,6 +72,25 @@
   padding: clamp(0.5rem, 2vh, 1.5rem) 0;
 }
 
+/* Ruin emblem — four overlapping rings above the wordmark */
+.landing-emblem {
+  display: block;
+  width: clamp(92px, 10vw, 132px);
+  height: clamp(92px, 10vw, 132px);
+  margin: 0 auto clamp(0.4rem, 1vh, 0.9rem);
+  opacity: 0;
+  transform: rotate(-18deg) scale(0.85);
+  animation: landing-emblem-in 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s forwards;
+  filter: drop-shadow(0 0 14px rgba(169, 113, 64, 0.25));
+}
+
+@keyframes landing-emblem-in {
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+
 .landing-wordmark {
   margin: 0;
   font-family: 'Cinzel', serif;
