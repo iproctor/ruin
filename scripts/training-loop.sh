@@ -25,6 +25,13 @@ ITERATIONS=${ITERATIONS:-100}
 GAMES=${GAMES:-200}
 WORKERS=${WORKERS:-6}
 EPSILON=${EPSILON:-0.15}
+# League training (AlphaStar-lite): non-zero LEAGUE_SIZE enables it.
+# Per game, one power is the learner (on current model); each other power,
+# with probability LEAGUE_MIX, is assigned a random model from the last
+# LEAGUE_SIZE snapshots as its opponent policy. Only the learner's decision
+# points produce training samples — so expect ~4x fewer samples per game.
+LEAGUE_SIZE=${LEAGUE_SIZE:-0}
+LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-12}
 WINDOW=${WINDOW:-6}            # rolling-window size in iterations
@@ -75,8 +82,9 @@ for i in $(seq $START_ITER $END_ITER); do
   COLLECT_SEED=$((SEED_BASE + i * 1000))
   if ! pnpm collect:parallel --games "$GAMES" --seed "$COLLECT_SEED" \
       --workers "$WORKERS" --epsilon "$EPSILON" \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|.*ERROR)" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →|.*ERROR|\[league\])" | tee -a "$LOG_FILE"; then
     iteration_failed "$i" "collection failed"
     continue
   fi

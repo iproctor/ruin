@@ -46,6 +46,17 @@ TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
+# League training: non-zero LEAGUE_SIZE enables sampling opponents from the
+# last N model_iter_*.json snapshots. Prevents role collapse; expect ~4x
+# fewer samples per game (only the learner power's decisions are recorded).
+# To preserve effective training volume, TRAIN_THRESHOLD and TRAIN_WINDOW
+# are multiplied by 4 when league is active.
+LEAGUE_SIZE=${LEAGUE_SIZE:-0}
+LEAGUE_MIX=${LEAGUE_MIX:-0.5}
+if [ "$LEAGUE_SIZE" -gt 0 ]; then
+  TRAIN_THRESHOLD=$((TRAIN_THRESHOLD * 4))
+  TRAIN_WINDOW=$((TRAIN_WINDOW * 4))
+fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"
@@ -93,8 +104,9 @@ while true; do
   echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0.15 \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue

@@ -33,6 +33,11 @@ WORKER_ID=${WORKER_ID:?WORKER_ID env var required (unique small int per worker)}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-7}
 IDLE_SECONDS=${IDLE_SECONDS:-30}
+# League training: non-zero LEAGUE_SIZE enables opponent-snapshot sampling.
+# The worker pulls the most recent LEAGUE_SIZE model_iter_*.json from the
+# coordinator before each batch.
+LEAGUE_SIZE=${LEAGUE_SIZE:-0}
+LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"
@@ -64,6 +69,33 @@ while true; do
     continue
   fi
 
+  # 1b. If league training is on, pull the most recent LEAGUE_SIZE snapshots.
+  # Ask the coordinator which filenames are the newest, wipe old local ones,
+  # then rsync only those. Keeps worker disk usage bounded.
+  if [ "$LEAGUE_SIZE" -gt 0 ]; then
+    SNAPSHOT_LIST=$(ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
+      "cd ${REMOTE_PATH}/packages/ai/data && ls model_iter_*.json 2>/dev/null | sort | tail -${LEAGUE_SIZE}")
+    if [ -z "$SNAPSHOT_LIST" ]; then
+      echo "  ! no snapshots on coordinator, league pool will be empty"
+    else
+      rm -f "${DATA_DIR}"/model_iter_*.json
+      SNAP_OK=1
+      for snap in $SNAPSHOT_LIST; do
+        if ! rsync -az -e "${RSYNC_SSH}" \
+            "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/${snap}" \
+            "${DATA_DIR}/${snap}" 2>/dev/null; then
+          SNAP_OK=0
+          break
+        fi
+      done
+      if [ "$SNAP_OK" -eq 0 ]; then
+        echo "  ! snapshot rsync failed, sleeping ${IDLE_SECONDS}s..."
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+    fi
+  fi
+
   # 2. Always collect — don't wait for model changes. Small batches + continuous
   #    uploads maximize throughput. The coordinator trains when enough arrive.
 
@@ -78,6 +110,7 @@ while true; do
   T0=$(date +%s)
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0.15 \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"

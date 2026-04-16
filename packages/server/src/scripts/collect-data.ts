@@ -15,6 +15,7 @@ import {
 import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS,
   canonicalActionIndex, ACTION_DIM,
+  loadModelForPower, clearPerPowerModels, type ModelJson,
 } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -39,9 +40,42 @@ const mctsTimeMs = parseInt(getArg('--time', '300'), 10);
 // pick a random legal summoning action instead of MCTS's best. Breaks the AI
 // out of dominant strategies and produces more diverse training data.
 const epsilon = parseFloat(getArg('--epsilon', '0.1'));
+// League training: with --league-size K, the K most recent snapshot models
+// are loaded into a pool. Per game, one power is the "learner" (rotated by
+// seed) and uses the current model; each other power, with probability
+// --league-mix, is assigned a random snapshot as its opponent policy.
+// Only the learner's decision points produce training samples.
+// Default 0 = disabled (pure self-play).
+const leagueSize = parseInt(getArg('--league-size', '0'), 10);
+const leagueMix = parseFloat(getArg('--league-mix', '0.5'));
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+
+// ── Snapshot pool (league training) ───────────────────────────────────────────
+
+const snapshotPool: ModelJson[] = [];
+if (leagueSize > 0) {
+  const snapDir = path.resolve('packages/ai/data');
+  if (fs.existsSync(snapDir)) {
+    const files = fs.readdirSync(snapDir)
+      .filter(f => /^model_iter_\d+\.json$/.test(f))
+      .sort((a, b) => {
+        const na = parseInt(a.match(/\d+/)![0], 10);
+        const nb = parseInt(b.match(/\d+/)![0], 10);
+        return na - nb;
+      })
+      .slice(-leagueSize);
+    for (const f of files) {
+      snapshotPool.push(JSON.parse(fs.readFileSync(path.join(snapDir, f), 'utf-8')) as ModelJson);
+    }
+    console.log(`[league] pool size=${snapshotPool.length}: ${files.join(', ')}`);
+  }
+  if (snapshotPool.length === 0) {
+    console.log(`[league] no snapshots found — league mode inactive`);
+  }
+}
+const leagueActive = snapshotPool.length > 0;
 
 // ── Ensure output directory exists ────────────────────────────────────────────
 
@@ -101,6 +135,22 @@ function runGame(seed: number): GameResult {
     rngState = (rngState * 1664525 + 1013904223) >>> 0;
     return rngState / 0xffffffff;
   };
+
+  // League assignment: rotate learner across games, then probabilistically
+  // load a snapshot as each non-learner power's opponent policy.
+  const learnerPower: Power = leagueActive
+    ? ALL_POWERS[seed % ALL_POWERS.length]!
+    : ALL_POWERS[0]!;  // unused when league is off
+  if (leagueActive) {
+    clearPerPowerModels();
+    for (const p of ALL_POWERS) {
+      if (p === learnerPower) continue;
+      if (rand() < leagueMix) {
+        const snap = snapshotPool[Math.floor(rand() * snapshotPool.length)]!;
+        loadModelForPower(p, snap);
+      }
+    }
+  }
 
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) break;
@@ -170,7 +220,11 @@ function runGame(seed: number): GameResult {
 
     // Sample at every summoning decision point. We record the feature vector
     // AND (when MCTS ran) the visit distribution as the policy training signal.
-    if (pending.actionKind === 'summoning_action') {
+    // In league mode, only record samples from the learner's decisions —
+    // snapshot-driven policy visits would regress the current model toward
+    // the snapshot.
+    const recordThisPower = !leagueActive || pending.waitingFor === learnerPower;
+    if (pending.actionKind === 'summoning_action' && recordThisPower) {
       const sample: Sample = {
         x: Array.from(extractFeatures(state, pending.waitingFor)),
       };
@@ -187,7 +241,9 @@ function runGame(seed: number): GameResult {
       // queries from their perspective on the next decision).
       if (state.round !== prevRound && state.winners === null && state.phase !== 'completed') {
         const viewpoint = state.pendingAction?.waitingFor ?? ALL_POWERS[0]!;
-        samples.push({ x: Array.from(extractFeatures(state, viewpoint)) });
+        if (!leagueActive || viewpoint === learnerPower) {
+          samples.push({ x: Array.from(extractFeatures(state, viewpoint)) });
+        }
       }
     } catch (err) {
       const e = err instanceof Error ? { message: err.message, stack: err.stack } : { message: String(err), stack: null };
@@ -206,6 +262,8 @@ function runGame(seed: number): GameResult {
     }
     actionCount++;
   }
+
+  if (leagueActive) clearPerPowerModels();
 
   const winners = state.winners;
   const target = winners && winners.length > 0

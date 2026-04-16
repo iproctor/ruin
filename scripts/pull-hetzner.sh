@@ -14,6 +14,11 @@ REMOTE_USER=${REMOTE_USER:-iain}
 REMOTE_HOST=${REMOTE_HOST:-78.46.79.158}
 REMOTE_PATH=${REMOTE_PATH:-/home/iain/code/chaos}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
+# How many recent model_iter_*.json snapshots to keep on the remote after pull.
+# League training uses the last N snapshots as an opponent pool — deleting them
+# would leave workers with nothing to sample. Default 10 covers league-size up
+# to 10 with headroom.
+KEEP_SNAPSHOTS=${KEEP_SNAPSHOTS:-10}
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SSH_OPTS="-i $SSH_KEY"
@@ -23,14 +28,15 @@ rsync -avz -e "ssh ${SSH_OPTS}" \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
   "${LOCAL_ROOT}/packages/ai/data/model.json"
 
-echo "→ Pulling all model_iter_*.json snapshots (incremental, then clean remote)"
+echo "→ Pulling all model_iter_*.json snapshots (incremental, then prune old remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
   --include='model_iter_*.json' --exclude='*' \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
   "${LOCAL_ROOT}/packages/ai/data/"
-# Keep only the latest snapshot on the box, delete the rest
+# Keep the KEEP_SNAPSHOTS most recent on the box (league pool needs them);
+# delete older ones.
 ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
-  "cd ${REMOTE_PATH}/packages/ai/data && ls -t model_iter_*.json 2>/dev/null | tail -n +2 | xargs rm -f"
+  "cd ${REMOTE_PATH}/packages/ai/data && ls -t model_iter_*.json 2>/dev/null | tail -n +$((KEEP_SNAPSHOTS + 1)) | xargs -r rm -f"
 
 echo "→ Pulling all bench_iter_*.json results (incremental, then clean remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \

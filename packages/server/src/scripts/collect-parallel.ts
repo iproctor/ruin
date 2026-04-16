@@ -23,6 +23,8 @@ const gameCount = parseInt(getArg('--games', '200'), 10);
 const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().length - 1))), 10);
 const epsilon = getArg('--epsilon', '0.1');
+const leagueSize = getArg('--league-size', '0');
+const leagueMix = getArg('--league-mix', '0.5');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
 // Slice the seed space across workers.
@@ -59,6 +61,8 @@ const processes = slices.map((s, w) =>
       '--games', String(s.count),
       '--seed', String(s.start),
       '--epsilon', epsilon,
+      '--league-size', leagueSize,
+      '--league-mix', leagueMix,
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
