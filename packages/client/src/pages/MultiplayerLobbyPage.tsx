@@ -817,7 +817,7 @@ function GameLobbyPane({
           <div style={{ display: 'flex', gap: '0.4rem' }}>
             <input
               type="text"
-              placeholder="username or email"
+              placeholder="username"
               value={inviteInput}
               onChange={(e) => setInviteInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), onInvite())}

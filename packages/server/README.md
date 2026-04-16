@@ -6,7 +6,7 @@ Express + PostgreSQL backend for Ruin. Authentication, game state persistence, r
 
 - Express (routes, middleware)
 - Drizzle ORM + PostgreSQL
-- JWT auth (7-day tokens, bcrypt for passwords, magic-link email login)
+- JWT auth (7-day tokens, bcrypt for passwords)
 - Server-Sent Events for live game updates
 - Node `worker_threads` for off-loop MCTS execution
 - Nodemailer (AWS SES in prod, console output in dev)
@@ -17,10 +17,10 @@ Express + PostgreSQL backend for Ruin. Authentication, game state persistence, r
 src/
 ├── index.ts          Express app + boot
 ├── routes/
-│   ├── auth.ts       /api/auth — register, login, magic links
+│   ├── auth.ts       /api/auth — register, login
 │   └── games.ts      /api/games — list, create, state, action, stream, chat
 ├── db/               Drizzle schema and migrations
-├── auth/             JWT, bcrypt, magic-link helpers
+├── auth/             JWT, bcrypt helpers
 ├── middleware/       requireAuth + optionalAuth (Bearer or ?token=)
 ├── email/            Nodemailer transports + templates
 ├── game/

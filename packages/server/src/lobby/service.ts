@@ -1,4 +1,4 @@
-import { eq, and, or, inArray, desc, ne } from 'drizzle-orm';
+import { eq, and, inArray, desc, ne } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   games,
@@ -53,20 +53,19 @@ export interface LobbySnapshot {
  */
 async function listVisibleGames(viewerId: string): Promise<LobbyGameSummary[]> {
   const [viewerRow] = await db
-    .select({ id: users.id, username: users.username, email: users.email })
+    .select({ id: users.id, username: users.username })
     .from(users)
     .where(eq(users.id, viewerId))
     .limit(1);
   if (!viewerRow) return [];
 
-  // Pending invitations for this viewer (by username or email)
-  const inviteMatch = viewerRow.email
-    ? or(eq(invitations.username, viewerRow.username), eq(invitations.email, viewerRow.email))
-    : eq(invitations.username, viewerRow.username);
   const myInviteRows = await db
     .select({ gameId: invitations.gameId })
     .from(invitations)
-    .where(and(eq(invitations.invitationStatus, 'pending'), inviteMatch!));
+    .where(and(
+      eq(invitations.invitationStatus, 'pending'),
+      eq(invitations.username, viewerRow.username),
+    ));
   const invitedGameIds = new Set(myInviteRows.map((r) => r.gameId));
 
   // Games viewer is already a lobby member of (exclude from "open games")

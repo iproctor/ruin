@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads';
-import { eq, and, or, asc, inArray, sql } from 'drizzle-orm';
+import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, enumerateBattleHitStrategies, GameLog, maskEvents } from '@ruin/engine';
 import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
@@ -8,6 +8,9 @@ import { db } from '../db/client.js';
 import { games, gamePlayers, chatMessages, gameEvents, lobbyPlayers, invitations, users } from '../db/schema.js';
 import { broadcast, broadcastEvents } from './sse.js';
 import { broadcastGamesUpdate, notifyInvited } from '../lobby/service.js';
+import { isOnline } from '../lobby/sse.js';
+import { sendEmail } from '../email/index.js';
+import { gameInviteEmail } from '../email/templates/gameInvite.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -596,7 +599,7 @@ export async function getLobbyState(gameId: string, viewerId: string): Promise<L
     })),
     invitations: invitationRows.map(i => ({
       id: i.id,
-      label: i.username ?? i.email ?? '',
+      label: i.username ?? '',
       status: i.invitationStatus,
       createdAt: i.createdAt.toISOString(),
     })),
@@ -604,7 +607,7 @@ export async function getLobbyState(gameId: string, viewerId: string): Promise<L
   };
 }
 
-export async function lobbyInvite(gameId: string, creatorId: string, identifier: string): Promise<string> {
+export async function lobbyInvite(gameId: string, creatorId: string, username: string): Promise<string> {
   const [gameRow] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
   if (!gameRow || gameRow.status !== 'pending') throw new Error('Game not in lobby');
   if (gameRow.createdBy !== creatorId) throw new Error('Only the creator can invite');
@@ -612,27 +615,36 @@ export async function lobbyInvite(gameId: string, creatorId: string, identifier:
   const players = await db.select().from(lobbyPlayers).where(eq(lobbyPlayers.gameId, gameId));
   if (players.length >= 4) throw new Error('Lobby is full (4 players max)');
 
-  const isEmail = identifier.includes('@');
+  const [invitedUser] = await db
+    .select({ id: users.id, username: users.username, email: users.email })
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+  if (!invitedUser) throw new Error(`No user named "${username}"`);
+
   const [inv] = await db.insert(invitations).values({
     gameId,
-    email: isEmail ? identifier : null,
-    username: isEmail ? null : identifier,
+    username: invitedUser.username,
     power: '',  // not assigned at invite time
     invitationStatus: 'pending',
   }).returning();
 
   broadcastLobbyUpdate(gameId);
 
-  // Push real-time notification to the invited user (if they have an account)
-  let invitedUserId: string | null = null;
-  if (isEmail) {
-    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, identifier)).limit(1);
-    invitedUserId = u?.id ?? null;
-  } else {
-    const [u] = await db.select({ id: users.id }).from(users).where(eq(users.username, identifier)).limit(1);
-    invitedUserId = u?.id ?? null;
+  if (isOnline(invitedUser.id)) {
+    notifyInvited(invitedUser.id, gameId);
+  } else if (invitedUser.email) {
+    const [host] = await db
+      .select({ username: users.username })
+      .from(users)
+      .where(eq(users.id, creatorId))
+      .limit(1);
+    await sendEmail({
+      to: invitedUser.email,
+      subject: 'You have been invited to play Ruin',
+      html: gameInviteEmail(gameId, gameRow.name, host?.username ?? 'A player'),
+    });
   }
-  if (invitedUserId) notifyInvited(invitedUserId, gameId);
   void broadcastGamesUpdate();
   return inv!.id;
 }
@@ -652,16 +664,16 @@ export async function lobbyJoin(gameId: string, userId: string): Promise<void> {
 
   await db.insert(lobbyPlayers).values({ gameId, userId, isCreator: false });
 
-  // Mark invitation as accepted if one exists for this user's email or username
-  const [user] = await db.select({ email: users.email, username: users.username }).from(users).where(eq(users.id, userId)).limit(1);
+  // Mark any matching pending invitation (by username) as accepted
+  const [user] = await db.select({ username: users.username }).from(users).where(eq(users.id, userId)).limit(1);
   if (user) {
-    const conditions = [eq(invitations.gameId, gameId), eq(invitations.invitationStatus, 'pending')];
-    const matchConditions = [];
-    if (user.email) matchConditions.push(eq(invitations.email, user.email));
-    matchConditions.push(eq(invitations.username, user.username));
     await db.update(invitations)
       .set({ invitationStatus: 'accepted' })
-      .where(and(...conditions, or(...matchConditions)));
+      .where(and(
+        eq(invitations.gameId, gameId),
+        eq(invitations.invitationStatus, 'pending'),
+        eq(invitations.username, user.username),
+      ));
   }
 
   // If lobby is now full, revoke remaining pending invitations
@@ -1041,7 +1053,7 @@ async function broadcastLobbyUpdate(gameId: string): Promise<void> {
     })),
     invitations: invitationRows.map(i => ({
       id: i.id,
-      label: i.username ?? i.email ?? '',
+      label: i.username ?? '',
       status: i.invitationStatus,
       createdAt: i.createdAt.toISOString(),
     })),

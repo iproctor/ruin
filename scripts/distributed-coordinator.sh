@@ -47,16 +47,12 @@ BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
 # League training: non-zero LEAGUE_SIZE enables sampling opponents from the
-# last N model_iter_*.json snapshots. Prevents role collapse; expect ~4x
-# fewer samples per game (only the learner power's decisions are recorded).
-# To preserve effective training volume, TRAIN_THRESHOLD and TRAIN_WINDOW
-# are multiplied by 4 when league is active.
+# last N model_iter_*.json snapshots. Prevents role collapse. Value-head
+# samples are unchanged (all powers), but policy-head visits are only
+# recorded for the learner — ~4x fewer policy samples per game. Same inbox
+# file count per train is fine; the trainer just sees sparser visits.
 LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
-if [ "$LEAGUE_SIZE" -gt 0 ]; then
-  TRAIN_THRESHOLD=$((TRAIN_THRESHOLD * 4))
-  TRAIN_WINDOW=$((TRAIN_WINDOW * 4))
-fi
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"

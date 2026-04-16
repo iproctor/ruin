@@ -44,7 +44,9 @@ const epsilon = parseFloat(getArg('--epsilon', '0.1'));
 // are loaded into a pool. Per game, one power is the "learner" (rotated by
 // seed) and uses the current model; each other power, with probability
 // --league-mix, is assigned a random snapshot as its opponent policy.
-// Only the learner's decision points produce training samples.
+// Value-head samples are recorded for all powers (outcome is valid from any
+// viewpoint). Policy-head visits are only recorded for the learner —
+// snapshot-driven visits would regress the current policy toward snapshots.
 // Default 0 = disabled (pure self-play).
 const leagueSize = parseInt(getArg('--league-size', '0'), 10);
 const leagueMix = parseFloat(getArg('--league-mix', '0.5'));
@@ -218,17 +220,18 @@ function runGame(seed: number): GameResult {
       break;
     }
 
-    // Sample at every summoning decision point. We record the feature vector
-    // AND (when MCTS ran) the visit distribution as the policy training signal.
-    // In league mode, only record samples from the learner's decisions —
-    // snapshot-driven policy visits would regress the current model toward
-    // the snapshot.
-    const recordThisPower = !leagueActive || pending.waitingFor === learnerPower;
-    if (pending.actionKind === 'summoning_action' && recordThisPower) {
+    // Sample at every summoning decision point. Feature vector trains the
+    // value head (outcome-prediction from this viewpoint) regardless of which
+    // model picked the moves — the outcome target is valid either way.
+    // The visit distribution trains the policy head, and snapshot-driven
+    // visits would regress the current policy toward snapshots — so in
+    // league mode, strip visits for non-learner samples.
+    if (pending.actionKind === 'summoning_action') {
       const sample: Sample = {
         x: Array.from(extractFeatures(state, pending.waitingFor)),
       };
-      if (visitsForSample) sample.visits = visitsForSample;
+      const isLearner = !leagueActive || pending.waitingFor === learnerPower;
+      if (visitsForSample && isLearner) sample.visits = visitsForSample;
       samples.push(sample);
     }
 
@@ -238,12 +241,11 @@ function runGame(seed: number): GameResult {
       state = result.state;
       // Sample at the FIRST state of each new round (post-end-phase snapshot).
       // Use the upcoming acting power's viewpoint (what they'd see when MCTS
-      // queries from their perspective on the next decision).
+      // queries from their perspective on the next decision). These samples
+      // have no visits — pure value-head training data, so always recorded.
       if (state.round !== prevRound && state.winners === null && state.phase !== 'completed') {
         const viewpoint = state.pendingAction?.waitingFor ?? ALL_POWERS[0]!;
-        if (!leagueActive || viewpoint === learnerPower) {
-          samples.push({ x: Array.from(extractFeatures(state, viewpoint)) });
-        }
+        samples.push({ x: Array.from(extractFeatures(state, viewpoint)) });
       }
     } catch (err) {
       const e = err instanceof Error ? { message: err.message, stack: err.stack } : { message: String(err), stack: null };

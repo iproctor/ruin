@@ -27,10 +27,7 @@ import {
 } from '../game/service.js';
 import { addListener, removeListener } from '../game/sse.js';
 import { db } from '../db/client.js';
-import { games, gamePlayers, lobbyPlayers, invitations, users, chatMessages, gameEvents } from '../db/schema.js';
-import { createMagicLink } from '../auth/magicLink.js';
-import { sendEmail } from '../email/index.js';
-import { gameInviteEmail } from '../email/templates/gameInvite.js';
+import { games, gamePlayers, users, chatMessages, gameEvents } from '../db/schema.js';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -56,7 +53,6 @@ const legacySchema = z.object({
   powers: z.array(zPowerEnum).min(2).max(4),
   playerTypes: z.record(zPowerEnum, z.enum(['human', 'ai', 'guest'])),
   playerUserIds: z.record(zPowerEnum, z.string().uuid()).optional(),
-  inviteEmails: z.array(z.object({ power: zPowerEnum, email: z.string().email() })).optional(),
 });
 
 const createGameSchema = z.union([singleplayerSchema, multiplayerSchema, legacySchema]);
@@ -84,7 +80,6 @@ router.post('/', requireAuth, async (req, res) => {
   // Singleplayer (or legacy)
   const { powers, playerTypes } = data as z.infer<typeof legacySchema>;
   const playerUserIds = ('playerUserIds' in data ? data.playerUserIds : {}) ?? {};
-  const inviteEmails = ('inviteEmails' in data ? data.inviteEmails : []) ?? [];
 
   const resolvedUserIds: Partial<Record<Power, string>> = { ...playerUserIds };
   for (const p of powers) {
@@ -99,16 +94,6 @@ router.post('/', requireAuth, async (req, res) => {
     playerTypes as Record<Power, PlayerType>,
     resolvedUserIds,
   );
-
-  for (const { power, email } of inviteEmails) {
-    const token = await createMagicLink(email, gameId);
-    await db.insert(invitations).values({ gameId, email, power });
-    await sendEmail({
-      to: email,
-      subject: 'You have been invited to play Ruin',
-      html: gameInviteEmail(token, power),
-    });
-  }
 
   res.status(201).json({ gameId });
 });
@@ -271,21 +256,10 @@ router.get('/:id/lobby', requireAuth, async (req, res) => {
 });
 
 router.post('/:id/invite', requireAuth, async (req, res) => {
-  const parsed = z.object({ identifier: z.string().min(1) }).safeParse(req.body);
-  if (!parsed.success) { res.status(400).json({ error: 'Provide a username or email' }); return; }
-  const { identifier } = parsed.data;
-  const isEmail = identifier.includes('@');
+  const parsed = z.object({ username: z.string().min(1).max(32) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: 'Provide a username' }); return; }
   try {
-    const invId = await lobbyInvite(req.params.id!, req.userId!, identifier);
-    // Send invite email if an email address was provided
-    if (isEmail) {
-      const token = await createMagicLink(identifier, req.params.id!);
-      await sendEmail({
-        to: identifier,
-        subject: 'You have been invited to play Ruin',
-        html: gameInviteEmail(token, ''),
-      });
-    }
+    const invId = await lobbyInvite(req.params.id!, req.userId!, parsed.data.username);
     res.json({ invitationId: invId });
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : String(err) });

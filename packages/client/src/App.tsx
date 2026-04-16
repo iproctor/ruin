@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import LoginPage from './pages/LoginPage.js';
 import RegisterPage from './pages/RegisterPage.js';
-import JoinPage from './pages/JoinPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
 import HomePage from './pages/HomePage.js';
@@ -30,7 +29,6 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/join/:token" element={<JoinPage />} />
       <Route
         path="/home"
         element={

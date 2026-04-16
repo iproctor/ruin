@@ -60,7 +60,7 @@ export default function RegisterPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="email">Email (optional — needed for magic links)</label>
+            <label htmlFor="email">Email (optional — for invite notifications when offline)</label>
             <input
               id="email"
               type="email"

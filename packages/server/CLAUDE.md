@@ -16,7 +16,7 @@ Express + Drizzle + SSE + AI worker threads. The wiring is intentionally simple:
 - **Adding a route that mutates state.** Make sure it (a) loads the latest state from DB inside the request handler, (b) calls `engine.applyAction`, (c) persists the result, (d) broadcasts via SSE, (e) calls `maybeRunAiTurns` if a follow-up AI turn is queued. Skipping any of those produces stale clients or stuck games.
 - **SSE listeners are in-memory.** A server restart drops every connected stream. Clients reconnect automatically. If you scale to multiple server instances, you'll need sticky sessions or a pub/sub layer.
 - **DB writes are not transactional across action + log.** A crash between `saveState` and `appendLog` leaves a desynced state. If this becomes a real problem, wrap them in a Drizzle transaction.
-- **Magic links + invitations are bearer tokens.** They're URL-safe but unique-only. Don't log them or include them in error messages.
+- **Invitations target usernames only.** Invited users who are online get an SSE `invited` event; offline users with an email address get an email linking to `/lobby/g/:gameId`. If they have no email, the invitation is still recorded — they'll see it next time they're online.
 - **Email transport diverges by env.** Dev uses console JSON output, prod uses AWS SES. If you add a new template, test both paths.
 
 ## Scripts directory

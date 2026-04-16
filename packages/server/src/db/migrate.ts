@@ -32,15 +32,6 @@ export async function ensureSchema(): Promise<void> {
         PRIMARY KEY (game_id, power)
       );
 
-      CREATE TABLE IF NOT EXISTS magic_links (
-        token       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        email       TEXT NOT NULL,
-        game_id     UUID,
-        expires_at  TIMESTAMP NOT NULL,
-        used        BOOLEAN NOT NULL DEFAULT false,
-        created_at  TIMESTAMP NOT NULL DEFAULT now()
-      );
-
       CREATE TABLE IF NOT EXISTS invitations (
         id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         game_id     UUID NOT NULL REFERENCES games(id),
@@ -49,6 +40,8 @@ export async function ensureSchema(): Promise<void> {
         created_at  TIMESTAMP NOT NULL DEFAULT now(),
         accepted    BOOLEAN NOT NULL DEFAULT false
       );
+
+      DROP TABLE IF EXISTS magic_links;
     `);
 
     // Additive migrations — safe to re-run

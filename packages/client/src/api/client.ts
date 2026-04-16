@@ -59,29 +59,11 @@ export async function login(
   });
 }
 
-export async function requestMagicLink(email: string, gameId?: string): Promise<void> {
-  await request('/auth/magic-link/request', {
-    method: 'POST',
-    body: JSON.stringify({ email, gameId }),
-  });
-}
-
-export async function consumeMagicLink(
-  token: string,
-): Promise<{ token: string; gameId?: string }> {
-  const res = await request<{ token: string; gameId?: string | null }>(
-    `/auth/magic-link/${encodeURIComponent(token)}`,
-  );
-  // Normalize null → undefined
-  return { token: res.token, gameId: res.gameId ?? undefined };
-}
-
 // ── Games ───────────────────────────────────────────────────────────────────
 
 export interface CreateGameBody {
   powers: string[];
   playerTypes: Record<string, string>;
-  inviteEmails?: Array<{ power: string; email: string }>;
 }
 
 export async function createGame(body: CreateGameBody): Promise<{ gameId: string }> {
@@ -176,10 +158,10 @@ export async function getLobby(gameId: string): Promise<LobbyState> {
   return request(`/games/${gameId}/lobby`);
 }
 
-export async function invitePlayer(gameId: string, identifier: string): Promise<void> {
+export async function invitePlayer(gameId: string, username: string): Promise<void> {
   await request(`/games/${gameId}/invite`, {
     method: 'POST',
-    body: JSON.stringify({ identifier }),
+    body: JSON.stringify({ username }),
   });
 }
 

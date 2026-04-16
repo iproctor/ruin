@@ -43,15 +43,6 @@ export const gamePlayers = pgTable('game_players', {
   guestEmail: text('guest_email'),
 });
 
-export const magicLinks = pgTable('magic_links', {
-  token: uuid('token').primaryKey().defaultRandom(),
-  email: text('email').notNull(),
-  gameId: uuid('game_id'),
-  expiresAt: timestamp('expires_at').notNull(),
-  used: boolean('used').notNull().default(false),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
 export const invitations = pgTable('invitations', {
   id: uuid('id').primaryKey().defaultRandom(),
   gameId: uuid('game_id')
