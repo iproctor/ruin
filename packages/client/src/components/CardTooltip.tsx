@@ -36,88 +36,74 @@ export default function CardTooltip({ cardId, x, y }: CardTooltipProps) {
 
   return createPortal(
     <div
+      className="gt"
       style={{
-        position: 'fixed',
         left,
         top,
-        width: 240,
-        background: '#0d0d1f',
-        border: `1px solid ${powerColor}`,
-        borderRadius: 8,
-        padding: '10px 12px',
-        pointerEvents: 'none',
-        zIndex: 9999,
-        boxShadow: `0 0 16px ${powerColor}44`,
-        fontSize: '0.8rem',
-        lineHeight: 1.45,
-        color: '#e5e7eb',
+        width: 250,
+        ['--tt-accent' as string]: powerColor,
+        ['--tt-glow' as string]: `${powerColor}55`,
       }}
     >
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontWeight: 700, color: '#fff', fontSize: '0.9rem' }}>
-          {card.name}
-        </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <span className="gt-title" style={{ margin: 0 }}>{card.name}</span>
         {isChaos && (
-          <span
-            style={{
-              background: powerColor,
-              color: '#fff',
-              borderRadius: 4,
-              padding: '1px 7px',
-              fontWeight: 700,
-              fontSize: '0.85rem',
-            }}
-          >
+          <span style={{
+            background: powerColor,
+            color: '#0a0806',
+            padding: '1px 9px',
+            fontFamily: "'Cinzel', serif",
+            fontWeight: 700,
+            fontSize: '0.85rem',
+            borderRadius: 1,
+          }}>
             {(card as { cost: number }).cost}
           </span>
         )}
       </div>
 
-      {/* Meta row */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: '0.72rem', color: '#94a3b8' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, fontFamily: "'Cinzel', serif", fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
         {isWorld && (card as { hasCometIcon?: boolean }).hasCometIcon && (
-          <span style={{ color: '#fbbf24' }}>☄ Comet</span>
+          <span style={{ color: 'var(--game-brass-hot)' }}>☄ Comet</span>
         )}
         {isChaos && (
           <>
             <span style={{ color: powerColor }}>
               {POWER_LABELS[(card as { power: string }).power as keyof typeof POWER_LABELS]}
             </span>
-            <span>·</span>
-            <span>{TIMING_LABELS[(card as { timing: string }).timing] ?? (card as { timing: string }).timing}</span>
+            <span className="gt-fade">·</span>
+            <span className="gt-muted">{TIMING_LABELS[(card as { timing: string }).timing] ?? (card as { timing: string }).timing}</span>
             {(card as { hasMagicSymbol: boolean }).hasMagicSymbol && (
               <>
-                <span>·</span>
-                <span style={{ color: '#a78bfa' }}>✦ Magic</span>
+                <span className="gt-fade">·</span>
+                <span style={{ color: 'var(--game-tenzen, #3d8ec8)' }}>✦ Magic</span>
               </>
             )}
           </>
         )}
       </div>
 
-      {/* Effect text */}
       {isChaos && (
-        <p style={{ margin: 0, color: '#d1d5db' }}>
+        <p className="gt-body" style={{ margin: 0 }}>
           {(card as { effect: string }).effect}
         </p>
       )}
       {isWorld && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <p style={{ margin: 0, color: '#d1d5db' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>IMMEDIATE </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <p className="gt-body" style={{ margin: 0 }}>
+            <span className="gt-sublabel" style={{ marginRight: 4 }}>Immediate</span>
             {(card as { immediateEffect: string }).immediateEffect}
           </p>
           {(card as { persistentEffect: string | null }).persistentEffect && (
-            <p style={{ margin: 0, color: '#c4b5fd' }}>
-              <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>PERSISTENT </span>
+            <p style={{ margin: 0, color: 'var(--game-brass-hot)' }}>
+              <span className="gt-sublabel" style={{ marginRight: 4 }}>Persistent</span>
               {(card as { persistentEffect: string }).persistentEffect}
             </p>
           )}
         </div>
       )}
       {isUpgrade && (
-        <p style={{ margin: 0, color: '#d1d5db' }}>
+        <p className="gt-body" style={{ margin: 0 }}>
           {(card as { effect: string }).effect}
         </p>
       )}

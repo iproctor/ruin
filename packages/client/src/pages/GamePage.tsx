@@ -23,6 +23,7 @@ import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
 import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import './GamePage.css';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
 
@@ -720,25 +721,16 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="gpopup"
             style={{
-              position: 'fixed',
               top: Math.min(slotPopup.y + 6, window.innerHeight - 260),
               left: Math.min(slotPopup.x + 6, window.innerWidth - 200),
-              background: '#0d1a2d', border: '1px solid #3a3a6e', borderRadius: 6,
-              minWidth: 180, padding: 6,
-              boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
+              minWidth: 190,
             }}
           >
-            <div style={{
-              fontSize: '0.7rem', color: '#94a3b8',
-              padding: '2px 6px 6px', textTransform: 'uppercase', letterSpacing: '0.05em',
-            }}>
-              Play a card
-            </div>
+            <div className="gpopup-label">Play a Card</div>
             {slotChoices.length === 0 && (
-              <div style={{ padding: '6px', fontSize: '0.78rem', color: '#64748b' }}>
-                No playable cards.
-              </div>
+              <div className="gpopup-empty">No playable cards.</div>
             )}
             {slotChoices.map((cardId) => {
               const def = CARD_BY_ID[cardId];
@@ -748,18 +740,10 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
                 <button
                   key={cardId}
                   onClick={() => stageFromSlotPopup(cardId)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = '#1e1e3a')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                    width: '100%', padding: '6px 8px',
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    color: '#cbd5e1', fontSize: '0.82rem', textAlign: 'left',
-                    borderRadius: 4,
-                  }}
+                  className="gpopup-item"
                 >
                   <span>{name}</span>
-                  <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>PP {cost}</span>
+                  <span className="gpopup-item-cost">PP {cost}</span>
                 </button>
               );
             })}
@@ -775,42 +759,24 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="gpopup"
             style={{
-              position: 'fixed',
               top: Math.min(summonPopup.y + 6, window.innerHeight - 260),
               left: Math.min(summonPopup.x + 6, window.innerWidth - 220),
-              background: '#0d1a2d', border: '1px solid #3a3a6e', borderRadius: 6,
-              minWidth: 200, padding: 6,
-              boxShadow: '0 6px 20px rgba(0,0,0,0.6)',
             }}
           >
-            <div style={{
-              fontSize: '0.7rem', color: '#94a3b8',
-              padding: '2px 6px 6px', textTransform: 'uppercase', letterSpacing: '0.05em',
-            }}>
-              Summon a follower
-            </div>
+            <div className="gpopup-label">Summon a Follower</div>
             {summonChoices.length === 0 && (
-              <div style={{ padding: '6px', fontSize: '0.78rem', color: '#64748b' }}>
-                No summon options.
-              </div>
+              <div className="gpopup-empty">No summon options.</div>
             )}
             {summonChoices.map(({ action, label, cost }, i) => (
               <button
                 key={`${action.followerId}-${i}`}
                 onClick={() => stageFromSummonPopup(action)}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#1e1e3a')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                  width: '100%', padding: '6px 8px',
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  color: '#cbd5e1', fontSize: '0.82rem', textAlign: 'left',
-                  borderRadius: 4,
-                }}
+                className="gpopup-item"
               >
                 <span>{label}</span>
-                <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>PP {cost}</span>
+                <span className="gpopup-item-cost">PP {cost}</span>
               </button>
             ))}
           </div>

@@ -28,22 +28,24 @@ export default function FollowerTooltip({ power, followerClass, upgradesInPlay, 
   const top  = Math.min(y + 14, window.innerHeight - 120);
 
   return createPortal(
-    <div style={{
-      position: 'fixed', left, top, width: 190,
-      background: '#0d0d1f', border: `1px solid ${color}`,
-      borderRadius: 8, padding: '8px 10px',
-      pointerEvents: 'none', zIndex: 9999,
-      boxShadow: `0 0 12px ${color}44`,
-      fontSize: '0.78rem', lineHeight: 1.5, color: '#e5e7eb',
-    }}>
-      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{def.name}</div>
-      <div style={{ display: 'flex', gap: 10, color: '#94a3b8', fontSize: '0.72rem', marginBottom: activeUpgrade ? 6 : 0 }}>
-        <span>Cost <strong style={{ color: '#fff' }}>{stats.cost}</strong></span>
-        <span>Atk <strong style={{ color: '#fff' }}>{stats.attack}</strong></span>
-        <span>Def <strong style={{ color: '#fff' }}>{stats.defense}</strong></span>
+    <div
+      className="gt"
+      style={{
+        left,
+        top,
+        width: 200,
+        ['--tt-accent' as string]: color,
+        ['--tt-glow' as string]: `${color}55`,
+      }}
+    >
+      <div className="gt-title" style={{ margin: 0, marginBottom: 4 }}>{def.name}</div>
+      <div style={{ display: 'flex', gap: 10, fontFamily: "'Cinzel', serif", fontSize: '0.68rem', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: activeUpgrade ? 6 : 0 }}>
+        <span className="gt-fade">Cost <strong style={{ color: 'var(--game-paper)' }}>{stats.cost}</strong></span>
+        <span className="gt-fade">Atk <strong style={{ color: 'var(--game-paper)' }}>{stats.attack}</strong></span>
+        <span className="gt-fade">Def <strong style={{ color: 'var(--game-paper)' }}>{stats.defense}</strong></span>
       </div>
       {activeUpgrade && (
-        <div style={{ fontSize: '0.7rem', color: '#a78bfa', borderTop: '1px solid #1e1e3a', paddingTop: 4 }}>
+        <div className="gt-divider" style={{ paddingTop: 5, fontSize: '0.8rem', color: 'var(--game-brass-hot)' }}>
           ✦ {activeUpgrade.name}: {activeUpgrade.effect}
         </div>
       )}

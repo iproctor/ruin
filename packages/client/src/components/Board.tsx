@@ -685,17 +685,20 @@ const TOKEN_DESCRIPTIONS: Record<TokenType, string> = {
 function TokenTooltip({ token, x, y }: { token: TokenType; x: number; y: number }) {
   const left = Math.min(x + 14, window.innerWidth - 240);
   const top  = Math.min(y + 14, window.innerHeight - 140);
+  const color = TOKEN_COLORS[token];
   return createPortal(
-    <div style={{
-      position: 'fixed', left, top, width: 230,
-      background: '#0d0d1f', border: `1px solid ${TOKEN_COLORS[token]}`,
-      borderRadius: 8, padding: '8px 10px',
-      pointerEvents: 'none', zIndex: 9999,
-      boxShadow: `0 0 12px ${TOKEN_COLORS[token]}55`,
-      fontSize: '0.78rem', lineHeight: 1.5, color: '#e5e7eb',
-    }}>
-      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 4 }}>{TOKEN_NAMES[token]}</div>
-      <div style={{ color: '#cbd5e1', fontSize: '0.74rem' }}>{TOKEN_DESCRIPTIONS[token]}</div>
+    <div
+      className="gt"
+      style={{
+        left,
+        top,
+        width: 240,
+        ['--tt-accent' as string]: color,
+        ['--tt-glow' as string]: `${color}55`,
+      }}
+    >
+      <div className="gt-title" style={{ margin: 0, marginBottom: 4 }}>{TOKEN_NAMES[token]}</div>
+      <div className="gt-body" style={{ fontSize: '0.82rem' }}>{TOKEN_DESCRIPTIONS[token]}</div>
     </div>,
     document.body,
   );
@@ -736,47 +739,42 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
   const top  = Math.min(y + 14, window.innerHeight - 200);
 
   return createPortal(
-    <div style={{
-      position: 'fixed', left, top, width: 230,
-      background: '#0d0d1f', border: '1px solid #3a3a6e',
-      borderRadius: 8, padding: '10px 12px',
-      pointerEvents: 'none', zIndex: 9999,
-      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-      fontSize: '0.78rem', lineHeight: 1.5, color: '#e5e7eb',
-    }}>
-      <div style={{ fontWeight: 700, color: '#fff', marginBottom: 6, fontSize: '0.9rem' }}>{def.name}</div>
+    <div className="gt" style={{ left, top, width: 240 }}>
+      <div className="gt-title" style={{ margin: 0, marginBottom: 4 }}>{def.name}</div>
       {def.populous && (
-        <div style={{ color: '#facc15', fontSize: '0.72rem', marginBottom: 4 }}>Populous</div>
+        <div className="gt-sublabel" style={{ color: 'var(--game-brass-hot)', marginBottom: 4 }}>Populous</div>
       )}
-      <div>Resistance: <span style={{ color: '#fff', fontWeight: 600 }}>{resistance}</span></div>
-      <div>VP reward: <span style={{ color: '#fff', fontWeight: 600 }}>{vp}</span>
+      <div className="gt-body" style={{ fontSize: '0.85rem' }}>
+        <span className="gt-fade">resistance </span><strong style={{ color: 'var(--game-paper)', fontStyle: 'normal' }}>{resistance}</strong>
+      </div>
+      <div className="gt-body" style={{ fontSize: '0.85rem' }}>
+        <span className="gt-fade">VP reward </span><strong style={{ color: 'var(--game-paper)', fontStyle: 'normal' }}>{vp}</strong>
         {(tokenCounts.get('noble') ?? 0) > 0 && (
-          <span style={{ color: '#94a3b8' }}> ({region.conquestValue} base + {tokenCounts.get('noble')} noble)</span>
+          <span className="gt-fade"> ({region.conquestValue} base + {tokenCounts.get('noble')} noble)</span>
         )}
       </div>
       {region.ruinationCardIndex !== null ? (
-        <div style={{ marginTop: 6, color: '#f87171', fontWeight: 700, fontSize: '0.85rem' }}>
+        <div className="gt-divider" style={{ paddingTop: 6, fontFamily: "'Cinzel', serif", fontWeight: 800, letterSpacing: '0.24em', color: '#ff7a7a', fontSize: '0.85rem' }}>
           RUINED
         </div>
       ) : (
         <>
-          <div style={{ marginTop: 6, color: '#94a3b8', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 0.3 }}>
-            Domination
-          </div>
-          {domEntries.length === 0 && <div style={{ color: '#64748b' }}>—</div>}
+          <div className="gt-sublabel" style={{ marginTop: 8, marginBottom: 3 }}>Domination</div>
+          {domEntries.length === 0 && <div className="gt-fade">—</div>}
           {domEntries.map(({ p, d }) => (
-            <div key={p}>
-              <span style={{ color: POWER_COLORS[p], fontWeight: 600 }}>{POWER_LABELS[p]}</span>
-              : <span style={{ color: d > resistance ? '#fff' : '#64748b' }}>{d}</span>
+            <div key={p} style={{ fontFamily: "'IM Fell English', serif", fontSize: '0.85rem' }}>
+              <span style={{ color: POWER_COLORS[p], fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: '0.72rem', letterSpacing: '0.16em' }}>{POWER_LABELS[p]}</span>
+              <span className="gt-fade"> · </span>
+              <span style={{ color: d > resistance ? 'var(--game-paper)' : 'var(--game-paper-fade)' }}>{d}</span>
             </div>
           ))}
-          <div style={{ marginTop: 6 }}>
-            Corruption: <span style={{ color: '#fff', fontWeight: 600 }}>{corruptionTotal}</span>
-            {cultCount > 0 && <span style={{ color: '#94a3b8' }}> (+{cultCount} incoming)</span>}
+          <div className="gt-body" style={{ fontSize: '0.85rem', marginTop: 6 }}>
+            <span className="gt-fade">corruption </span><strong style={{ color: 'var(--game-paper)', fontStyle: 'normal' }}>{corruptionTotal}</strong>
+            {cultCount > 0 && <span className="gt-fade"> (+{cultCount} incoming)</span>}
           </div>
           {willRuin && (
-            <div style={{ marginTop: 6, color: '#ef4444', fontWeight: 700 }}>
-              ⚠ This region may ruin this round
+            <div style={{ marginTop: 6, color: '#ff7a7a', fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: '0.72rem', letterSpacing: '0.18em' }}>
+              ⚠ May ruin this round
             </div>
           )}
         </>

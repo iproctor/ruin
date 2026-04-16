@@ -54,44 +54,24 @@ function NavMenu({ onLeave, leaveLabel = 'Leave Game' }: { onLeave?: () => void;
         ref={btnRef}
         onClick={toggle}
         aria-label="Menu"
-        className="text-slate-400 hover:text-white"
-        style={{
-          background: 'transparent', border: 'none', cursor: 'pointer',
-          padding: '4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
+        className="gsb-menu-btn"
       >
         <svg width="16" height="14" viewBox="0 0 16 14" fill="none" aria-hidden="true">
           <path d="M1 2h14M1 7h14M1 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </button>
       {open && anchor && createPortal(
-        <div
-          ref={menuRef}
-          style={{
-            position: 'fixed', top: anchor.top, left: anchor.left,
-            background: '#0f1b33', border: '1px solid #3a3a6e', borderRadius: 4,
-            minWidth: 140, zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          }}
-        >
+        <div ref={menuRef} className="gsb-menu" style={{ top: anchor.top, left: anchor.left }}>
           <button
+            className="gsb-menu-item"
             onClick={() => { setOpen(false); navigate('/home'); }}
-            style={{
-              display: 'block', width: '100%', textAlign: 'left',
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              padding: '6px 10px', color: '#cbd5e1', fontSize: '0.78rem',
-            }}
           >
             Back to Home
           </button>
           {onLeave && (
             <button
+              className="gsb-menu-item is-danger"
               onClick={() => { setOpen(false); onLeave(); }}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                background: 'transparent', border: 'none', cursor: 'pointer',
-                padding: '6px 10px', color: '#f87171', fontSize: '0.78rem',
-                borderTop: '1px solid #1e1e3a',
-              }}
             >
               {leaveLabel}
             </button>
@@ -111,72 +91,23 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
   const isPersistent = def?.timing === 'persistent';
   const isDiscard = slot === 'D';
 
+  const classes = [
+    'gsb-wc',
+    isPersistent && 'is-persistent',
+    isDiscard && 'is-discard',
+  ].filter(Boolean).join(' ');
+
   return (
     <>
       <div
         onMouseEnter={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
         onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
         onMouseLeave={() => setTooltip(null)}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          width: 78,
-          height: 34,
-          borderRadius: 4,
-          overflow: 'hidden',
-          border: isDiscard ? '1.5px dashed #64748b'
-            : isPersistent ? '1.5px solid #a78bfa'
-            : '1.5px solid #334155',
-          background: isDiscard ? '#0d0d1a' : '#13121f',
-          cursor: 'default',
-          boxShadow: isPersistent ? '0 0 6px #a78bfa44' : 'none',
-          opacity: isDiscard ? 0.7 : 1,
-          position: 'relative',
-          flexShrink: 0,
-        }}
+        className={classes}
       >
-        {/* Slot label */}
-        <div style={{
-          position: 'absolute',
-          top: 2,
-          left: 3,
-          fontSize: '0.5rem',
-          color: isDiscard ? '#64748b' : '#475569',
-          lineHeight: 1,
-          fontWeight: 700,
-          letterSpacing: 1,
-        }}>
-          {isDiscard ? 'DISC' : `W${slot}`}
-        </div>
-
-        {/* Comet indicator */}
-        {def?.hasCometIcon && (
-          <div style={{
-            position: 'absolute',
-            top: 2,
-            right: 3,
-            fontSize: '0.6rem',
-            color: '#fbbf24',
-            lineHeight: 1,
-          }}>☄</div>
-        )}
-
-        {/* Card name */}
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '10px 3px 3px',
-          textAlign: 'center',
-          fontSize: '0.52rem',
-          fontWeight: 700,
-          color: isDiscard ? '#94a3b8' : '#c4b5fd',
-          lineHeight: 1.15,
-          wordBreak: 'break-word',
-        }}>
-          {def?.name ?? cardId}
-        </div>
+        <div className="gsb-wc-slot">{isDiscard ? 'DISC' : `W${slot}`}</div>
+        {def?.hasCometIcon && <div className="gsb-wc-comet">☄</div>}
+        <div className="gsb-wc-name">{def?.name ?? cardId}</div>
       </div>
 
       {tooltip && (
@@ -211,83 +142,77 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
 }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
 
+  const classes = [
+    'gsb-pow',
+    isActing && 'is-acting',
+    dimmed && 'is-dimmed',
+  ].filter(Boolean).join(' ');
+
   return (
     <div
-      className="flex flex-col items-center gap-0.5 min-w-[56px]"
-      style={{ opacity: dimmed ? 0.7 : 1, cursor: 'default' }}
+      className={classes}
+      style={{ ['--accent' as string]: color }}
       onMouseEnter={e => setTooltip({ x: e.clientX, y: e.clientY })}
       onMouseMove={e => setTooltip({ x: e.clientX, y: e.clientY })}
       onMouseLeave={() => setTooltip(null)}
     >
-      <span className="text-xs font-bold leading-none" style={{ color, textShadow: isActing ? `0 0 8px ${color}` : 'none' }}>
-        {POWER_LABELS[power]}{isMe && <span className="text-slate-500"> ★</span>}
+      <span className="gsb-pow-name">
+        {POWER_LABELS[power]}{isMe && <span className="gsb-pow-you">★</span>}
       </span>
-      <span className="text-base font-black leading-none" style={{ color }}>
-        {ps.victoryPoints}<span className="text-slate-500 text-xs font-normal"> VP</span>
+      <span className="gsb-pow-vp">
+        {ps.victoryPoints}<span className="gsb-pow-vp-label">vp</span>
       </span>
-      <div className="flex gap-2 text-[10px]">
-        <span style={{ color: '#64748b' }}>{ps.powerPoints}<span className="text-slate-600"> pp</span></span>
-        <span style={{ color: '#64748b' }}>{ps.hand.filter(c => c !== '?').length}<span className="text-slate-600"> cards</span></span>
+      <div className="gsb-pow-stats">
+        <span>{ps.powerPoints}<em>pp</em></span>
+        <span>{ps.hand.filter(c => c !== '?').length}<em>cards</em></span>
       </div>
-      <span className="text-[9px] text-slate-500 leading-none">{ps.threatValue} • {ticksLeft} ticks to win</span>
+      <span className="gsb-pow-meta">{ps.threatValue} · {ticksLeft} ticks</span>
 
       {tooltip && createPortal(
-        <div style={{
-          position: 'fixed',
-          left: Math.max(tooltip.x - 245, 4),
-          top: tooltip.y + 14,
-          width: 245,
-          background: '#0d0d1f',
-          border: `1px solid ${color}`,
-          borderRadius: 8,
-          padding: '10px 12px',
-          pointerEvents: 'none',
-          zIndex: 9999,
-          boxShadow: `0 0 14px ${color}44`,
-          fontSize: '0.78rem',
-          lineHeight: 1.5,
-          color: '#e5e7eb',
-        }}>
-          <div style={{ fontWeight: 700, color: '#fff', marginBottom: 2, fontSize: '0.9rem' }}>
-            {POWER_LABELS[power]}
-          </div>
-          <div style={{ color: '#94a3b8', fontSize: '0.7rem', marginBottom: 6 }}>
+        <div
+          className="gt"
+          style={{
+            left: Math.max(tooltip.x - 255, 4),
+            top: tooltip.y + 14,
+            width: 260,
+            ['--tt-accent' as string]: color,
+            ['--tt-glow' as string]: `${color}55`,
+          }}
+        >
+          <div className="gt-title" style={{ color }}>{POWER_LABELS[power]}</div>
+          <div className="gt-meta" style={{ marginBottom: 6 }}>
             {controller
               ? controller.playerType === 'ai'
                 ? 'AI ✨'
                 : (controller.username ?? 'Human')
               : '—'}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', color: '#ccc', fontSize: '0.73rem', marginBottom: 6 }}>
-            <span><span style={{ color: '#64748b' }}>Threat: </span>{ps.threatValue}</span>
-            <span><span style={{ color: '#64748b' }}>Dial: </span>{ps.dialPosition}</span>
-            <span><span style={{ color: '#64748b' }}>Board: </span>{ps.followers.filter(f => f.regionId !== null).length}</span>
-            <span><span style={{ color: '#64748b' }}>Reserve: </span>{ps.followers.filter(f => f.regionId === null).length}</span>
-            <span><span style={{ color: '#64748b' }}>Discard: </span>{ps.discardIds.length}</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', fontSize: '0.78rem', marginBottom: 6 }}>
+            <span><span className="gt-fade">Threat </span>{ps.threatValue}</span>
+            <span><span className="gt-fade">Dial </span>{ps.dialPosition}</span>
+            <span><span className="gt-fade">Board </span>{ps.followers.filter(f => f.regionId !== null).length}</span>
+            <span><span className="gt-fade">Reserve </span>{ps.followers.filter(f => f.regionId === null).length}</span>
+            <span><span className="gt-fade">Discard </span>{ps.discardIds.length}</span>
             {ps.claimedPeasants > 0 && (
-              <span><span style={{ color: '#64748b' }}>Peasants: </span><strong style={{ color: '#fbbf24' }}>{ps.claimedPeasants}</strong></span>
+              <span><span className="gt-fade">Peasants </span><strong style={{ color: 'var(--game-brass-hot)' }}>{ps.claimedPeasants}</strong></span>
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {UPGRADES.filter(u => u.power === power).map(u => {
               const taken = ps.upgradesInPlay.includes(u.id);
               return (
-                <div key={u.id} style={{ borderTop: '1px solid #1e1e3a', paddingTop: 4, opacity: taken ? 1 : 0.45 }}>
-                  <div style={{ fontWeight: 600, color: taken ? color : '#6b7280', fontSize: '0.75rem' }}>
+                <div key={u.id} className="gt-divider" style={{ paddingTop: 5, marginTop: 0, opacity: taken ? 1 : 0.5 }}>
+                  <div style={{ fontFamily: "'Cinzel', serif", fontSize: '0.72rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: taken ? color : 'var(--game-paper-fade)' }}>
                     {u.name}{taken && ' ✓'}
                   </div>
-                  <div style={{ color: taken ? '#d1d5db' : '#6b7280', fontSize: '0.7rem' }}>{u.effect}</div>
+                  <div className={taken ? 'gt-body' : 'gt-fade'} style={{ fontSize: '0.78rem' }}>{u.effect}</div>
                 </div>
               );
             })}
           </div>
-          <div style={{ borderTop: '1px solid #1e1e3a', marginTop: 6, paddingTop: 6 }}>
-            <div style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>
-              Dial Advancement
-            </div>
-            <div style={{ color: '#cbd5e1', fontSize: '0.72rem' }}>
-              {dialAdvancementCondition(power)}
-            </div>
+          <div className="gt-divider" style={{ paddingTop: 6, marginTop: 2 }}>
+            <div className="gt-sublabel" style={{ marginBottom: 2 }}>Dial advancement</div>
+            <div className="gt-body" style={{ fontSize: '0.8rem' }}>{dialAdvancementCondition(power)}</div>
           </div>
         </div>,
         document.body,
@@ -331,49 +256,28 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
         ref={chipRef}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '3px 8px',
-          borderRadius: 4,
-          border: ruinCount > 0 ? '1.5px solid #991b1b' : '1.5px solid #334155',
-          background: ruinCount > 0 ? '#1a0808' : '#13121f',
-          cursor: 'default',
-          flexShrink: 0,
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          color: ruinCount > 0 ? '#f87171' : '#64748b',
-        }}
+        className={`gsb-chip ${ruinCount > 0 ? 'is-danger' : ''}`}
       >
-        Ruined: {ruinCount}
+        <span>Ruined</span>
+        <span className="gsb-chip-value">{ruinCount}</span>
       </div>
 
       {hovered && createPortal(
         <div
+          className="gt"
           style={{
-            position: 'fixed',
             left: '50%',
             transform: 'translateX(-50%)',
             top: chipBottom + 8,
-            background: '#0d0d1f',
-            border: '1px solid #991b1b',
-            borderRadius: 8,
-            padding: '10px 12px',
-            pointerEvents: 'none',
-            zIndex: 9999,
-            boxShadow: '0 0 14px #991b1b44',
-            fontSize: '0.73rem',
-            lineHeight: 1.5,
-            color: '#e5e7eb',
+            ['--tt-accent' as string]: 'var(--game-blood)',
+            ['--tt-glow' as string]: 'rgba(194, 24, 24, 0.3)',
+            fontSize: '0.78rem',
           }}
         >
-          <div style={{ fontWeight: 700, color: '#f87171', marginBottom: 6, fontSize: '0.85rem' }}>
-            Ruination Cards
-          </div>
+          <div className="gt-title" style={{ color: '#ff7a7a' }}>Ruination Cards</div>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
-              <tr style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1 }}>
+              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
                 <th style={{ textAlign: 'left', padding: '2px 8px 4px 0' }}>Card</th>
                 <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>Ruiner VP</th>
                 {REGION_ORDER.map(rid => (
@@ -394,14 +298,14 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                   <tr
                     key={card.index}
                     style={{
-                      borderTop: '1px solid #1e1e3a',
-                      opacity: isUsed ? 0.6 : 1,
+                      borderTop: '1px solid var(--game-border)',
+                      opacity: isUsed ? 0.55 : 1,
                     }}
                   >
-                    <td style={{ padding: '3px 8px 3px 0', fontWeight: 700, color: isUsed ? '#64748b' : '#e5e7eb' }}>
+                    <td style={{ padding: '3px 8px 3px 0', fontWeight: 700, color: isUsed ? 'var(--game-paper-fade)' : 'var(--game-paper)' }}>
                       #{card.index}
                     </td>
-                    <td style={{ textAlign: 'center', padding: '3px 8px', color: '#fbbf24', fontWeight: 600 }}>
+                    <td style={{ textAlign: 'center', padding: '3px 8px', color: 'var(--game-brass-hot)', fontWeight: 600 }}>
                       {card.ruinersScore}
                     </td>
                     {REGION_ORDER.map(rid => {
@@ -413,15 +317,13 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                           style={{
                             textAlign: 'center',
                             padding: '3px 4px',
-                            background: isThisRegion ? '#7f1d1d33' : 'transparent',
-                            borderRadius: isThisRegion ? 3 : 0,
+                            background: isThisRegion ? 'rgba(194, 24, 24, 0.18)' : 'transparent',
                             fontWeight: isThisRegion ? 700 : 400,
-                            color: isThisRegion ? '#f87171' : '#ccc',
                           }}
                         >
-                          <span style={{ color: isThisRegion ? '#f87171' : '#e5e7eb' }}>{vp.first}</span>
-                          <span style={{ color: '#64748b' }}>/</span>
-                          <span style={{ color: isThisRegion ? '#fca5a5' : '#94a3b8' }}>{vp.second}</span>
+                          <span style={{ color: isThisRegion ? '#ff7a7a' : 'var(--game-paper)' }}>{vp.first}</span>
+                          <span className="gt-fade">/</span>
+                          <span style={{ color: isThisRegion ? '#ff9a9a' : 'var(--game-paper-dim)' }}>{vp.second}</span>
                         </td>
                       );
                     })}
@@ -429,16 +331,16 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                       {scoring
                         ? scoring.first.map(p => (
                             <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
-                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} style={{ color: '#64748b' }}>/</span>, el], [])
-                        : <span style={{ color: '#334155' }}>—</span>
+                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} className="gt-fade">/</span>, el], [])
+                        : <span className="gt-fade">—</span>
                       }
                     </td>
                     <td style={{ textAlign: 'center', padding: '3px 8px', whiteSpace: 'nowrap' }}>
                       {scoring && scoring.second.length > 0
                         ? scoring.second.map(p => (
                             <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
-                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} style={{ color: '#64748b' }}>/</span>, el], [])
-                        : <span style={{ color: '#334155' }}>—</span>
+                          )).reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, <span key={`s${i}`} className="gt-fade">/</span>, el], [])
+                        : <span className="gt-fade">—</span>
                       }
                     </td>
                   </tr>
@@ -446,7 +348,7 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
               })}
             </tbody>
           </table>
-          <div style={{ marginTop: 6, fontSize: '0.6rem', color: '#64748b' }}>
+          <div className="gt-fade" style={{ marginTop: 6, fontSize: '0.65rem' }}>
             Values show 1st/2nd place VP per region at end of game. Highlighted column = region ruined by that card.
           </div>
         </div>,
@@ -478,16 +380,25 @@ function DialChip({ state }: { state: GameState }) {
   const chipRef = useRef<HTMLDivElement>(null);
   const chipBottom = chipRef.current?.getBoundingClientRect().bottom ?? 0;
 
-  // Highest dial position across all active powers (for compact summary on chip)
+  // Leader = whoever is furthest along their dial (ticks closest to victory).
   let leadPower: Power | null = null;
-  let leadThreat = -1;
+  let leadPos = -1;
+  let leadMax = 0;
   for (const p of state.activePowers) {
     const ps = state.powers[p];
     if (!ps) continue;
-    const pos = THREAT_DIALS[p]?.[ps.dialPosition];
-    if (!pos) continue;
-    const threat = typeof pos.threat === 'number' ? pos.threat : 99;
-    if (threat > leadThreat) { leadThreat = threat; leadPower = p; }
+    const track = THREAT_DIALS[p];
+    if (!track) continue;
+    const pos = ps.dialPosition;
+    const max = track.length - 1;
+    // Compare by remaining ticks so a closer-to-win power wins the tie.
+    const score = pos - 0.001 * max; // prefer larger pos, break ties by smaller max
+    const leadScore = leadPos - 0.001 * leadMax;
+    if (score > leadScore) {
+      leadPower = p;
+      leadPos = pos;
+      leadMax = max;
+    }
   }
 
   return (
@@ -496,49 +407,29 @@ function DialChip({ state }: { state: GameState }) {
         ref={chipRef}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '3px 8px',
-          borderRadius: 4,
-          border: '1.5px solid #334155',
-          background: '#13121f',
-          cursor: 'default',
-          flexShrink: 0,
-          fontSize: '0.75rem',
-          fontWeight: 700,
-          color: leadPower ? POWER_COLORS[leadPower] : '#64748b',
-        }}
+        className={`gsb-chip is-stacked ${leadPower ? 'is-active' : ''}`}
+        style={leadPower ? { ['--accent' as string]: POWER_COLORS[leadPower], borderColor: POWER_COLORS[leadPower], color: POWER_COLORS[leadPower] } : undefined}
       >
-        Dial lead: {leadPower ? `${POWER_LABELS[leadPower]} (${leadThreat})` : '—'}
+        <span>Dial lead</span>
+        <span className="gsb-chip-value" style={leadPower ? { color: POWER_COLORS[leadPower] } : undefined}>
+          {leadPower ? (<>{POWER_LABELS[leadPower]} {leadPos}<em>/</em>{leadMax}</>) : '—'}
+        </span>
       </div>
 
       {hovered && createPortal(
         <div
+          className="gt"
           style={{
-            position: 'fixed',
             left: '50%',
             transform: 'translateX(-50%)',
             top: chipBottom + 8,
-            background: '#0d0d1f',
-            border: '1px solid #3a3a6e',
-            borderRadius: 8,
-            padding: '10px 12px',
-            pointerEvents: 'none',
-            zIndex: 9999,
-            boxShadow: '0 0 14px #3a3a6e44',
-            fontSize: '0.73rem',
-            lineHeight: 1.5,
-            color: '#e5e7eb',
+            fontSize: '0.78rem',
           }}
         >
-          <div style={{ fontWeight: 700, color: '#e5e7eb', marginBottom: 6, fontSize: '0.85rem' }}>
-            Threat Dials
-          </div>
+          <div className="gt-title">Threat Dials</div>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
-              <tr style={{ color: '#94a3b8', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 1 }}>
+              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
                 <th style={{ textAlign: 'left', padding: '2px 10px 4px 0' }}>Power</th>
                 <th style={{ textAlign: 'center', padding: '2px 6px 4px' }}>Pos</th>
                 <th style={{ textAlign: 'left', padding: '2px 10px 4px' }}>Track (threat · reward)</th>
@@ -550,11 +441,11 @@ function DialChip({ state }: { state: GameState }) {
                 const track = THREAT_DIALS[power];
                 const currentIdx = ps.dialPosition;
                 return (
-                  <tr key={power} style={{ borderTop: '1px solid #1e1e3a' }}>
+                  <tr key={power} style={{ borderTop: '1px solid var(--game-border)' }}>
                     <td style={{ padding: '4px 10px 4px 0', fontWeight: 700, color: POWER_COLORS[power] }}>
                       {POWER_LABELS[power]}
                     </td>
-                    <td style={{ textAlign: 'center', padding: '4px 6px', color: '#fbbf24', fontWeight: 700 }}>
+                    <td style={{ textAlign: 'center', padding: '4px 6px', color: 'var(--game-brass-hot)', fontWeight: 700 }}>
                       {currentIdx}/{track.length - 1}
                     </td>
                     <td style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>
@@ -569,10 +460,10 @@ function DialChip({ state }: { state: GameState }) {
                               display: 'inline-block',
                               padding: '1px 6px',
                               margin: '0 2px',
-                              borderRadius: 4,
+                              borderRadius: 1,
                               background: isCurrent ? POWER_COLORS[power] : 'transparent',
-                              color: isCurrent ? '#0d0d1f' : isPast ? '#64748b' : '#cbd5e1',
-                              border: isCurrent ? 'none' : '1px solid #2a2a4a',
+                              color: isCurrent ? 'var(--game-ink)' : isPast ? 'var(--game-paper-fade)' : 'var(--game-paper)',
+                              border: isCurrent ? 'none' : '1px solid var(--game-border)',
                               fontWeight: isCurrent ? 700 : 500,
                               fontSize: '0.68rem',
                             }}
@@ -589,7 +480,7 @@ function DialChip({ state }: { state: GameState }) {
               })}
             </tbody>
           </table>
-          <div style={{ marginTop: 6, fontSize: '0.6rem', color: '#64748b' }}>
+          <div className="gt-fade" style={{ marginTop: 6, fontSize: '0.65rem' }}>
             Highlighted cell = current position. Reach ★ (victory) to win by dial.
           </div>
         </div>,
@@ -608,51 +499,33 @@ export default function StatusBar({ state, myPower, players, events: eventLog, o
   const { slot1, slot2, discardCard } = state.worldTrack;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '4px 8px', background: '#16213e', borderBottom: '1px solid #3a3a6e', fontSize: '0.875rem', flexShrink: 0, overflow: 'visible' }}>
-      {/* Nav */}
+    <div className="gsb">
       <NavMenu onLeave={onLeave} leaveLabel={leaveLabel ?? 'Leave Game'} />
-      <span className="text-slate-600 shrink-0">|</span>
+      <span className="gsb-sep">|</span>
 
-      {/* Round + Phase */}
-      <span className="shrink-0 font-semibold text-slate-200">
-        Round {state.round}
-      </span>
-      <span
-        className="shrink-0 px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide"
-        style={{
-          background: state.phase === 'summoning' ? '#312e81'
-            : state.phase === 'battle'    ? '#7f1d1d'
-            : state.phase === 'completed' ? '#14532d'
-            : '#1e1e3a',
-          color: state.phase === 'completed' ? '#86efac' : '#c7d2fe',
-        }}
-      >
-        {phaseLabel}
-      </span>
+      <span className="gsb-round">Round {state.round}</span>
+      <span className={`gsb-phase phase-${state.phase}`}>{phaseLabel}</span>
 
-      {/* Active player */}
       {waiting && !state.winners && (
-        <span className="shrink-0 text-xs">
-          <span className="text-slate-400">Acting: </span>
-          <span style={{ color: POWER_COLORS[waiting], fontWeight: 700 }}>
+        <span className="gsb-acting">
+          <span className="gsb-acting-label">acting </span>
+          <span className="gsb-acting-name" style={{ color: POWER_COLORS[waiting] }}>
             {POWER_LABELS[waiting]}
-            {waiting === myPower && ' (you)'}
           </span>
+          {waiting === myPower && <span className="gsb-acting-you">· you</span>}
         </span>
       )}
 
-      {/* Game over */}
       {state.winners && (
-        <span className="shrink-0 font-bold text-yellow-400">
-          🏆 {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} win!
+        <span className="gsb-winner">
+          ♛ {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} prevail
         </span>
       )}
 
-      {/* World cards */}
       {(slot1 || slot2 || discardCard) && (
         <>
-          <span className="text-slate-600 shrink-0">|</span>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <span className="gsb-sep">|</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             {slot1 && <WorldCardChip cardId={slot1} slot={1} />}
             {slot2 && <WorldCardChip cardId={slot2} slot={2} />}
             {discardCard && <WorldCardChip cardId={discardCard} slot={'D'} />}
@@ -660,17 +533,13 @@ export default function StatusBar({ state, myPower, players, events: eventLog, o
         </>
       )}
 
-      {/* Ruination tracker */}
-      <span className="text-slate-600 shrink-0">|</span>
+      <span className="gsb-sep">|</span>
       <RuinChip state={state} events={eventLog} />
-
-      {/* Dial tracker */}
       <DialChip state={state} />
 
-      <div className="flex-1" />
+      <div className="gsb-spacer" />
 
-      {/* Per-power scores */}
-      <div className="flex gap-4 shrink-0">
+      <div className="gsb-powers">
         {state.activePowers.map((power) => {
           const ps = state.powers[power]!;
           const isActing = power === waiting;
