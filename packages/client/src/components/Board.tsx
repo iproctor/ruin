@@ -14,17 +14,23 @@ import type { DragItem } from '../types/drag.js';
 
 // SVG viewBox: 800 × 615
 export const BOARD_VIEWBOX_W = 800;
-export const BOARD_VIEWBOX_H = 615;
+export const BOARD_VIEWBOX_H = 720;
+// Canvas is 800×720 — slightly rectangular, with the top 80 of the original
+// 800×800 source image cropped so the map sits flush under the status bar.
+// Region positions are rotated 90° CW around the board centre (400, 360)
+// so they line up with the map image (which is also rotated 90° CW).
+// The cards themselves stay axis-aligned (horizontal) — only the centres
+// move. For an old centre (cx, cy), the new top-left is (615 - cy, cx - 15).
 export const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: number; label: string }> = {
-  norrsund:    { x: 20,  y: 20,  w: 170, h: 120, label: 'Norrsund' },
-  talvimaa:    { x: 230, y: 20,  w: 170, h: 120, label: 'Talvimaa' },
-  volensk:     { x: 440, y: 20,  w: 170, h: 120, label: 'Volensk' },
-  mittelreich: { x: 335, y: 180, w: 170, h: 120, label: 'Mittelreich' },
-  normagne:    { x: 125, y: 340, w: 170, h: 120, label: 'Normagne' },
-  almerida:    { x: 20,  y: 490, w: 170, h: 120, label: 'Almerida' },
-  toscavar:    { x: 335, y: 415, w: 170, h: 120, label: 'Toscavar' },
-  pelascos:    { x: 570, y: 340, w: 170, h: 120, label: 'Pelascos' },
-  the_barrens: { x: 590, y: 490, w: 170, h: 120, label: 'The Barrens' },
+  norrsund:    { x: 590, y: 190,   w: 170, h: 120, label: 'Norrsund' },
+  talvimaa:    { x: 600, y: 455, w: 170, h: 120, label: 'Talvimaa' },
+  volensk:     { x: 483, y: 590, w: 170, h: 120, label: 'Volensk' },
+  mittelreich: { x: 400, y: 350, w: 170, h: 120, label: 'Mittelreich' },
+  normagne:    { x: 263, y: 190, w: 170, h: 120, label: 'Normagne' },
+  almerida:    { x: 113, y: 20,   w: 170, h: 120, label: 'Almerida' },
+  toscavar:    { x: 30, y: 190, w: 170, h: 120, label: 'Toscavar' },
+  pelascos:    { x: 213, y: 555, w: 170, h: 120, label: 'Pelascos' },
+  the_barrens: { x: 20, y: 535, w: 170, h: 120, label: 'The Barrens' },
 };
 
 // ── Token display ─────────────────────────────────────────────────────────────
@@ -362,10 +368,10 @@ function RegionDropZone({ regionId, pos, onClick, active }: {
       onClick={onClick}
       style={{
         position: 'absolute',
-        left:   `${(pos.x / 800) * 100}%`,
-        top:    `${(pos.y / 615) * 100}%`,
-        width:  `${(pos.w / 800) * 100}%`,
-        height: `${(pos.h / 615) * 100}%`,
+        left:   `${(pos.x / BOARD_VIEWBOX_W) * 100}%`,
+        top:    `${(pos.y / BOARD_VIEWBOX_H) * 100}%`,
+        width:  `${(pos.w / BOARD_VIEWBOX_W) * 100}%`,
+        height: `${(pos.h / BOARD_VIEWBOX_H) * 100}%`,
         borderRadius: 6,
         background: isOver ? 'rgba(250,204,21,0.12)' : 'transparent',
         border:    isOver ? `2px solid ${HIGHLIGHT}` : '2px solid transparent',
@@ -380,10 +386,10 @@ function RegionDropZone({ regionId, pos, onClick, active }: {
 
 // ── Draggable figure overlay ──────────────────────────────────────────────────
 
-// SVG viewBox is 800×615; the Board container has the same aspect ratio.
+// Board container has the same aspect ratio as the SVG viewBox.
 // Convert SVG coords to percentages for absolute HTML positioning.
 function svgPct(svgCoord: number, axis: 'x' | 'y') {
-  return `${(svgCoord / (axis === 'x' ? 800 : 615)) * 100}%`;
+  return `${(svgCoord / (axis === 'x' ? BOARD_VIEWBOX_W : BOARD_VIEWBOX_H)) * 100}%`;
 }
 
 function DraggableFigureOverlay({ fig, fromRegion, svgX, svgY }: {
@@ -499,9 +505,10 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         />
       ))}
 
-      {/* Background */}
+      {/* Background — 50% transparent so the map shows through */}
       <rect x={x} y={y} width={w} height={h} rx={6}
         fill={isRuined ? '#1a0808' : SOOT}
+        fillOpacity={0.85}
         stroke={
           isAnimationTarget ? '#ef4444' :
           isHighlighted ? HIGHLIGHT :
@@ -858,13 +865,39 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
   const isDragging = (highlightRegions !== undefined || dimmedRegions !== undefined);
 
   return (
-    <div style={{ position: 'relative', width: '100%', maxWidth: 'calc((100vh - 280px) * 800 / 615)', aspectRatio: '800 / 615' }}>
-      {/* SVG board */}
+    <div
+      className="board-wrap"
+      style={{
+        position: 'relative',
+        height: '100%',
+        aspectRatio: '800 / 720',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        borderRadius: 8,
+      }}
+    >
+      {/* Slightly rectangular board. Map rotated 90° CW; the extra -80 on
+          the translate shifts it up so the top strip is cropped. */}
       <svg
-        viewBox="0 0 800 615"
-        style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: INK }}
+        viewBox="0 0 800 720"
+        style={{ position: 'relative', width: '100%', height: '100%', display: 'block', borderRadius: 8, background: 'transparent' }}
       >
-        {/* Connection lines between adjacent regions */}
+        <g transform="translate(800 -80) rotate(90)">
+          <image
+            href="/world_map.jpg"
+            x={0}
+            y={0}
+            width={800}
+            height={800}
+            preserveAspectRatio="xMidYMid slice"
+            opacity={0.9}
+          />
+        </g>
+        {/* Subtle darken so region boxes stay legible over the map */}
+        <rect x={0} y={0} width={800} height={720} fill={INK} opacity={0.22} />
+        {/* Connection lines between adjacent regions. Lines run center-to-center
+            but are clipped to the gap between the two region rects so they don't
+            disappear behind the (now semi-transparent) region backgrounds. */}
         <g>
           {(() => {
             const drawn = new Set<string>();
@@ -876,13 +909,36 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                 if (drawn.has(key)) continue;
                 drawn.add(key);
                 const pb = REGION_POSITIONS[b];
-                const x1 = pa.x + pa.w / 2;
-                const y1 = pa.y + pa.h / 2;
-                const x2 = pb.x + pb.w / 2;
-                const y2 = pb.y + pb.h / 2;
+                const ax = pa.x + pa.w / 2;
+                const ay = pa.y + pa.h / 2;
+                const bx = pb.x + pb.w / 2;
+                const by = pb.y + pb.h / 2;
+                const dx = bx - ax;
+                const dy = by - ay;
+                // Parametric t in [0,1] from A's center to B's center.
+                // t_exitA = smallest positive t where ray crosses A's edge.
+                // t_enterB = largest t < 1 where ray crosses B's edge.
+                let tExitA = 1;
+                if (dx > 0) tExitA = Math.min(tExitA, (pa.x + pa.w - ax) / dx);
+                if (dx < 0) tExitA = Math.min(tExitA, (pa.x - ax) / dx);
+                if (dy > 0) tExitA = Math.min(tExitA, (pa.y + pa.h - ay) / dy);
+                if (dy < 0) tExitA = Math.min(tExitA, (pa.y - ay) / dy);
+                let tEnterB = 0;
+                if (dx > 0) tEnterB = Math.max(tEnterB, (pb.x - ax) / dx);
+                if (dx < 0) tEnterB = Math.max(tEnterB, (pb.x + pb.w - ax) / dx);
+                if (dy > 0) tEnterB = Math.max(tEnterB, (pb.y - ay) / dy);
+                if (dy < 0) tEnterB = Math.max(tEnterB, (pb.y + pb.h - ay) / dy);
+                // Pull endpoints slightly inward from the region edges.
+                const pad = 0.06 * (tEnterB - tExitA);
+                const t1 = tExitA + pad;
+                const t2 = tEnterB - pad;
+                if (t2 <= t1) continue;  // regions overlap or touch — no gap to draw in
                 lines.push(
-                  <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke={BORDER} strokeWidth={1.5} opacity={0.35} strokeDasharray="4 3" />
+                  <line key={key}
+                    x1={ax + dx * t1} y1={ay + dy * t1}
+                    x2={ax + dx * t2} y2={ay + dy * t2}
+                    stroke={BRASS} strokeWidth={1.25} opacity={0.45}
+                    strokeDasharray="5 4" strokeLinecap="round" />
                 );
               }
             }
@@ -974,10 +1030,10 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                   onMouseLeave={() => setRegionTooltip(null)}
                   style={{
                     position: 'absolute',
-                    left:   `${(pos.x / 800) * 100}%`,
-                    top:    `${(pos.y / 615) * 100}%`,
-                    width:  `${(pos.w / 800) * 100}%`,
-                    height: `${(30 / 615) * 100}%`,
+                    left:   `${(pos.x / BOARD_VIEWBOX_W) * 100}%`,
+                    top:    `${(pos.y / BOARD_VIEWBOX_H) * 100}%`,
+                    width:  `${(pos.w / BOARD_VIEWBOX_W) * 100}%`,
+                    height: `${(30 / BOARD_VIEWBOX_H) * 100}%`,
                     pointerEvents: 'auto',
                     cursor: 'help',
                   }}
@@ -989,10 +1045,10 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                     onMouseLeave={() => setHoveredBattleRegion(null)}
                     style={{
                       position: 'absolute',
-                      left:   `${(pos.x / 800) * 100}%`,
-                      top:    `${(pos.y / 615) * 100}%`,
-                      width:  `${(pos.w / 800) * 100}%`,
-                      height: `${(pos.h / 615) * 100}%`,
+                      left:   `${(pos.x / BOARD_VIEWBOX_W) * 100}%`,
+                      top:    `${(pos.y / BOARD_VIEWBOX_H) * 100}%`,
+                      width:  `${(pos.w / BOARD_VIEWBOX_W) * 100}%`,
+                      height: `${(pos.h / BOARD_VIEWBOX_H) * 100}%`,
                       pointerEvents: 'auto',
                     }}
                   />
