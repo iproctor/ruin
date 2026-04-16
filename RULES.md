@@ -502,12 +502,12 @@ Non-italicized text, active while the card remains on the World Track. Persisten
 
 ### World Cards Reference
 
-Cards marked **☄** bear the Twin-tailed Comet icon. Cards marked **[Discard]** are removed from the game after resolving rather than placed on the World Track. Count indicates number of copies in the full deck (28 total).
+Cards marked **☄** bear the Twin-tailed Comet icon. Cards marked **[Discard]** are removed from the game after resolving rather than placed on the World Track. Count indicates number of copies in the full deck (24 total).
 
 ---
 
 **Strategic Vanguard** (×1)
-*Place a Noble token on Normagne and a Noble token on any other region.*
+*Place a Hero token on Normagne and a Hero token on any other region.*
 During the Resolve World Cards step: each player with 1 or more figures on Normagne must discard a Chaos card of their choice, if possible.
 
 ---
@@ -518,19 +518,9 @@ At the end of the battle phase: each player must remove one of their figures fro
 
 ---
 
-**The Pardon** [Discard] (×1)
-*Choose a Peasant token on the board and replace it with a Noble token, if possible.*
-
----
-
 **The Gambit** (×1)
-*Place a Noble token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.*
-During the Resolve World Cards step: the player with the lowest Threat places a Noble token on a region where there is already a Noble token, if possible.
-
----
-
-**Frontier Settlement** [Discard] (×1)
-*Place a Ratmen token on 2 different regions.*
+*Place a Hero token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.*
+During the Resolve World Cards step: the player with the lowest Threat places a Hero token on a region where there is already a Hero token, if possible.
 
 ---
 
@@ -551,13 +541,8 @@ While this card remains in play: each player who battles in a region containing 
 
 ---
 
-**Border Garrison** [Discard] (×1)
-*Place a Peasant token on 2 different regions.*
-
----
-
 **Buried Cache** [Discard] (×2)
-*Place a Chaos Stone token on 2 different regions.*
+*Place a Chaos Stone token on 3 different regions.*
 
 ---
 
@@ -579,31 +564,31 @@ While this card remains in play: each Peasant token on the board increases the R
 ---
 
 **Diplomatic Envoy** (×1)
-*Place a Noble token on 3 different regions.*
-During the Resolve World Cards step: the player with the lowest Threat removes 1 Noble token from the board.
+*Place a Hero token on 3 different Populous regions.*
+During the Resolve World Cards step: the player with the lowest Threat removes 1 Hero token from the board.
 
 ---
 
 **The Hunt** (×1)
-*Place a Hero token on The Barrens and Pelascos.*
-During the Resolve World Cards step: the player with the lowest Threat places a Hero token on any region containing at least 1 Chaos Stone token. If no Chaos Stone tokens are on the board, do nothing.
+*Place a Ratmen token on The Barrens and Pelascos.*
+During the Resolve World Cards step: the player with the lowest Threat places a Ratmen token on any region containing at least 1 Chaos Stone token. If no Chaos Stone tokens are on the board, do nothing.
 
 ---
 
 **The Exodus** ☄ (×1)
 *Place an Event token on any region.*
-During the Resolve World Cards step: remove all figures from each region containing at least 1 Event token (they return to their owners' stockpiles). Then move all Event tokens on the board to the region with the most corruption tokens.
+During the Resolve World Cards step: remove all Cultists from each region containing at least 1 Event token (they return to their owners' stockpiles). Then move all Event tokens on the board to the region with the most corruption tokens.
 
 ---
 
 **Grand Muster** [Discard] (×1)
-*Place a Peasant token on 2 different regions, then a Noble token on 2 different regions, then a Ratmen token on 2 different regions.*
+*Place a Peasant token on 2 different regions, then a Hero token on 2 different regions, then a Noble token on 2 different regions.*
 
 ---
 
-**Entanglement** (×1)
-*Place a Hero token on Normagne and Mittelreich, OR on Almerida and Toscavar.*
-While this card remains in play: regions containing 1 or more Hero tokens have only 1 card space available instead of 2 (total across all players).
+**Ratmen's Price** (×1)
+*Place a Ratmen token on Normagne and Mittelreich, OR on Almerida and Toscavar.*
+While this card remains in play: only 1 Chaos card may be played in any region containing 1 or more Ratmen tokens.
 
 ---
 
@@ -614,7 +599,7 @@ During the Resolve World Cards step: remove all corruption tokens from each regi
 ---
 
 **Forward Scouts** [Discard] (×2)
-*Place a Hero token on any region (or a region adjacent to a region) that contains 1 or more Chaos Stone tokens. If there are no Chaos Stone tokens on the board, do nothing.*
+*Place a Ratmen token on any region (or a region adjacent to a region) that contains 1 or more Chaos Stone tokens. If there are no Chaos Stone tokens on the board, do nothing.*
 
 ---
 
@@ -625,8 +610,8 @@ During the Resolve World Cards step: each player with at least 1 figure on a reg
 ---
 
 **Noble Scrutiny** (×1)
-*Place a Noble token on Normagne, Mittelreich, and Almerida.*
-During the Resolve World Cards step: in each region containing a Noble token, the player with the most VP removes 1 of their corruption tokens from that region, if they have one there.
+*Place a Hero token on Normagne, Mittelreich, and Almerida.*
+During the Resolve World Cards step: in each region containing a Hero token, the player with the greatest Threat removes 1 of their corruption tokens from that region, if they have one there.
 
 ---
 
@@ -812,7 +797,7 @@ There are 5 ruination cards, used in order (card 1 first, card 5 last). Each car
 | 1 | 3 | Volensk | 8 | 4 |
 | 1 | 3 | Mittelreich | 10 | 5 |
 | 1 | 3 | Normagne | 8 | 4 |
-| 1 | 3 | Almerida | 9 | 5 |
+| 1 | 3 | Almerida | 9 | 4 |
 | 1 | 3 | Toscavar | 7 | 3 |
 | 1 | 3 | Pelascos | 7 | 3 |
 | 1 | 3 | The Barrens | 6 | 3 |

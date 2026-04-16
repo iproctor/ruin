@@ -49,24 +49,6 @@ describe('raise_the_militia', () => {
   });
 });
 
-describe('purchased_title', () => {
-  test('auto-replaces single Peasant with Noble when only one Peasant present', () => {
-    let s = addToken(makeState({ phase: 'world', pendingAction: null, worldDeck: ['purchased_title'] }), 'norrsund', 'peasant');
-    const { state } = resolveWorldPhase(s);
-    expect(state.regions.norrsund!.tokens).not.toContain('peasant');
-    expect(state.regions.norrsund!.tokens).toContain('noble');
-    expect(state.phase).toBe('draw');
-  });
-
-  test('sets world_choice when multiple Peasants are present', () => {
-    let s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['purchased_title'] });
-    s = addToken(s, 'norrsund', 'peasant');
-    s = addToken(s, 'talvimaa', 'peasant');
-    const { state } = resolveWorldPhase(s);
-    expect(state.pendingAction?.actionKind).toBe('world_choice');
-  });
-});
-
 describe('the_chokepoint', () => {
   test('places Event on The Barrens, Mittelreich, and Toscavar', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['the_chokepoint'] });
@@ -79,12 +61,12 @@ describe('the_chokepoint', () => {
 });
 
 describe('noble_scrutiny', () => {
-  test('places Noble on Normagne, Mittelreich, and Almerida', () => {
+  test('places Hero on Normagne, Mittelreich, and Almerida', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['noble_scrutiny'] });
     const { state } = resolveWorldPhase(s);
-    expect(state.regions.normagne!.tokens).toContain('noble');
-    expect(state.regions.mittelreich!.tokens).toContain('noble');
-    expect(state.regions.almerida!.tokens).toContain('noble');
+    expect(state.regions.normagne!.tokens).toContain('hero');
+    expect(state.regions.mittelreich!.tokens).toContain('hero');
+    expect(state.regions.almerida!.tokens).toContain('hero');
   });
 });
 
@@ -103,11 +85,11 @@ describe('central_overpopulation', () => {
 });
 
 describe('chaos_countermeasures', () => {
-  test('places Hero on The Barrens and Pelascos', () => {
+  test('places Ratmen on The Barrens and Pelascos', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['chaos_countermeasures'] });
     const { state } = resolveWorldPhase(s);
-    expect(state.regions.the_barrens!.tokens).toContain('hero');
-    expect(state.regions.pelascos!.tokens).toContain('hero');
+    expect(state.regions.the_barrens!.tokens).toContain('ratmen');
+    expect(state.regions.pelascos!.tokens).toContain('ratmen');
   });
 });
 
@@ -153,10 +135,10 @@ describe('accelerating_doom', () => {
 // ─── Choice-requiring cards (set pendingAction) ───────────────────────────────
 
 describe('normagne_heir', () => {
-  test('places Noble on Normagne immediately and requires choice for second region', () => {
+  test('places Hero on Normagne immediately and requires choice for second region', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['normagne_heir'] });
     const { state } = resolveWorldPhase(s);
-    expect(state.regions.normagne!.tokens).toContain('noble');
+    expect(state.regions.normagne!.tokens).toContain('hero');
     expect(state.pendingAction?.actionKind).toBe('world_choice');
     expect((state.pendingAction?.context as any).cardId).toBe('normagne_heir');
   });
@@ -179,22 +161,6 @@ describe('northern_heir', () => {
   });
 });
 
-describe('ratmen_incursion', () => {
-  test('requires a choice (2 regions for Ratmen)', () => {
-    const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['ratmen_incursion'] });
-    const { state } = resolveWorldPhase(s);
-    expect(state.pendingAction?.actionKind).toBe('world_choice');
-  });
-});
-
-describe('peasant_prosperity', () => {
-  test('requires a choice (2 regions for Peasant)', () => {
-    const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['peasant_prosperity'] });
-    const { state } = resolveWorldPhase(s);
-    expect(state.pendingAction?.actionKind).toBe('world_choice');
-  });
-});
-
 describe('great_exorcism', () => {
   test('requires a choice (which region gets Event token)', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['great_exorcism'] });
@@ -203,16 +169,16 @@ describe('great_exorcism', () => {
   });
 });
 
-describe('heroes_of_order', () => {
-  test('requires a choice (pair of Hero regions)', () => {
-    const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['heroes_of_order'] });
+describe('ratmens_price', () => {
+  test('requires a choice (pair of Ratmen regions)', () => {
+    const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['ratmens_price'] });
     const { state } = resolveWorldPhase(s);
     expect(state.pendingAction?.actionKind).toBe('world_choice');
   });
 });
 
 describe('chaos_storm', () => {
-  test('requires a choice (2 regions for Chaos Stone)', () => {
+  test('requires a choice (3 regions for Chaos Stone)', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['chaos_storm'] });
     const { state } = resolveWorldPhase(s);
     expect(state.pendingAction?.actionKind).toBe('world_choice');
@@ -228,7 +194,7 @@ describe('the_exchange', () => {
 });
 
 describe('diplomatic_envoy', () => {
-  test('requires a choice (3 Noble regions)', () => {
+  test('requires a choice (3 Populous Hero regions)', () => {
     const s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['diplomatic_envoy'] });
     const { state } = resolveWorldPhase(s);
     expect(state.pendingAction?.actionKind).toBe('world_choice');
@@ -275,103 +241,67 @@ describe('world track', () => {
 
 // ─── applyWorldChoice ─────────────────────────────────────────────────────────
 
-describe('applyWorldChoice: purchased_title', () => {
-  test('replaces Peasant with Noble in chosen region', () => {
-    let s = addToken(makeState(), 'talvimaa', 'peasant');
-    s = { ...s, pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'purchased_title' } } };
-    const { state } = applyWorldChoice(s, {
-      kind: 'world_choice', power: 'xarm', cardId: 'purchased_title', choices: { regionId: 'talvimaa' },
-    });
-    expect(state.regions.talvimaa!.tokens).not.toContain('peasant');
-    expect(state.regions.talvimaa!.tokens).toContain('noble');
-    expect(state.phase).toBe('draw');
-  });
-});
-
-describe('applyWorldChoice: ratmen_incursion', () => {
-  test('places Ratmen in both chosen regions', () => {
-    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'ratmen_incursion' } } });
-    const { state } = applyWorldChoice(s, {
-      kind: 'world_choice', power: 'xarm', cardId: 'ratmen_incursion',
-      choices: { regions: ['norrsund', 'talvimaa'] },
-    });
-    expect(state.regions.norrsund!.tokens).toContain('ratmen');
-    expect(state.regions.talvimaa!.tokens).toContain('ratmen');
-  });
-});
-
-describe('applyWorldChoice: peasant_prosperity', () => {
-  test('places Peasant in both chosen regions', () => {
-    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'peasant_prosperity' } } });
-    const { state } = applyWorldChoice(s, {
-      kind: 'world_choice', power: 'xarm', cardId: 'peasant_prosperity',
-      choices: { regions: ['volensk', 'pelascos'] },
-    });
-    expect(state.regions.volensk!.tokens).toContain('peasant');
-    expect(state.regions.pelascos!.tokens).toContain('peasant');
-  });
-});
-
 describe('applyWorldChoice: chaos_storm', () => {
-  test('places Chaos Stone in both chosen regions', () => {
+  test('places Chaos Stone in all 3 chosen regions', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'chaos_storm' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
-      choices: { regions: ['norrsund', 'almerida'] },
+      choices: { regions: ['norrsund', 'almerida', 'volensk'] },
     });
     expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
     expect(state.regions.almerida!.tokens).toContain('chaos_stone');
+    expect(state.regions.volensk!.tokens).toContain('chaos_stone');
   });
 });
 
 describe('applyWorldChoice: grand_muster', () => {
-  test('places Peasant, Noble, and Ratmen in chosen regions', () => {
+  test('places Peasant, Hero, and Noble in chosen regions', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'grand_muster' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'grand_muster',
       choices: {
         peasantRegions: ['norrsund', 'talvimaa'],
-        nobleRegions: ['volensk', 'mittelreich'],
-        ratmenRegions: ['toscavar', 'pelascos'],
+        heroRegions: ['volensk', 'mittelreich'],
+        nobleRegions: ['toscavar', 'pelascos'],
       },
     });
     expect(state.regions.norrsund!.tokens).toContain('peasant');
-    expect(state.regions.volensk!.tokens).toContain('noble');
-    expect(state.regions.toscavar!.tokens).toContain('ratmen');
+    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.toscavar!.tokens).toContain('noble');
   });
 });
 
 describe('applyWorldChoice: normagne_heir', () => {
-  test('places Noble in chosen second region', () => {
+  test('places Hero in chosen second region', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'normagne_heir' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'normagne_heir',
       choices: { regionId: 'almerida' },
     });
-    expect(state.regions.almerida!.tokens).toContain('noble');
+    expect(state.regions.almerida!.tokens).toContain('hero');
     expect(state.phase).toBe('draw');
   });
 });
 
 describe('applyWorldChoice: northern_heir', () => {
-  test('pair ab places Nobles on Norrsund and Volensk', () => {
+  test('pair ab places Heroes on Norrsund and Volensk', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'northern_heir' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'northern_heir',
       choices: { pair: 'ab' },
     });
-    expect(state.regions.norrsund!.tokens).toContain('noble');
-    expect(state.regions.volensk!.tokens).toContain('noble');
+    expect(state.regions.norrsund!.tokens).toContain('hero');
+    expect(state.regions.volensk!.tokens).toContain('hero');
   });
 
-  test('pair cd places Nobles on Talvimaa and Mittelreich', () => {
+  test('pair cd places Heroes on Talvimaa and Mittelreich', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'northern_heir' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'northern_heir',
       choices: { pair: 'cd' },
     });
-    expect(state.regions.talvimaa!.tokens).toContain('noble');
-    expect(state.regions.mittelreich!.tokens).toContain('noble');
+    expect(state.regions.talvimaa!.tokens).toContain('hero');
+    expect(state.regions.mittelreich!.tokens).toContain('hero');
   });
 });
 
@@ -386,25 +316,25 @@ describe('applyWorldChoice: mittelreich_diplomacy', () => {
   });
 });
 
-describe('applyWorldChoice: heroes_of_order', () => {
-  test('pair ab places Heroes on Normagne and Mittelreich', () => {
-    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'heroes_of_order' } } });
+describe("applyWorldChoice: ratmens_price", () => {
+  test("pair ab places Ratmen on Normagne and Mittelreich", () => {
+    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'ratmens_price' } } });
     const { state } = applyWorldChoice(s, {
-      kind: 'world_choice', power: 'xarm', cardId: 'heroes_of_order',
+      kind: 'world_choice', power: 'xarm', cardId: 'ratmens_price',
       choices: { pair: 'ab' },
     });
-    expect(state.regions.normagne!.tokens).toContain('hero');
-    expect(state.regions.mittelreich!.tokens).toContain('hero');
+    expect(state.regions.normagne!.tokens).toContain('ratmen');
+    expect(state.regions.mittelreich!.tokens).toContain('ratmen');
   });
 
-  test('pair cd places Heroes on Almerida and Toscavar', () => {
-    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'heroes_of_order' } } });
+  test("pair cd places Ratmen on Almerida and Toscavar", () => {
+    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'ratmens_price' } } });
     const { state } = applyWorldChoice(s, {
-      kind: 'world_choice', power: 'xarm', cardId: 'heroes_of_order',
+      kind: 'world_choice', power: 'xarm', cardId: 'ratmens_price',
       choices: { pair: 'cd' },
     });
-    expect(state.regions.almerida!.tokens).toContain('hero');
-    expect(state.regions.toscavar!.tokens).toContain('hero');
+    expect(state.regions.almerida!.tokens).toContain('ratmen');
+    expect(state.regions.toscavar!.tokens).toContain('ratmen');
   });
 });
 
@@ -432,26 +362,26 @@ describe('applyWorldChoice: the_exchange', () => {
 });
 
 describe('applyWorldChoice: diplomatic_envoy', () => {
-  test('places Noble in each of the 3 chosen regions', () => {
+  test('places Hero in each of the 3 chosen Populous regions', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'diplomatic_envoy' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'diplomatic_envoy',
-      choices: { regions: ['norrsund', 'talvimaa', 'volensk'] },
+      choices: { regions: ['volensk', 'mittelreich', 'normagne'] },
     });
-    expect(state.regions.norrsund!.tokens).toContain('noble');
-    expect(state.regions.talvimaa!.tokens).toContain('noble');
-    expect(state.regions.volensk!.tokens).toContain('noble');
+    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.mittelreich!.tokens).toContain('hero');
+    expect(state.regions.normagne!.tokens).toContain('hero');
   });
 });
 
 describe('applyWorldChoice: forward_scouts', () => {
-  test('places Hero in chosen region', () => {
+  test('places Ratmen in chosen region', () => {
     const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'forward_scouts' } } });
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'forward_scouts',
       choices: { regionId: 'norrsund' },
     });
-    expect(state.regions.norrsund!.tokens).toContain('hero');
+    expect(state.regions.norrsund!.tokens).toContain('ratmen');
   });
 });
 

@@ -253,13 +253,13 @@ describe('world card persistent effects during end phase', () => {
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(0);
   });
 
-  test('Noble Scrutiny: richest player removes 1 corruption from Noble regions', () => {
+  test('Witch Hunters: highest-threat player removes 1 corruption from Hero regions', () => {
     let s = makeState({ phase: 'end', pendingAction: null });
     s = setWorldCard(s, 'noble_scrutiny');
-    s = addToken(s, 'norrsund', 'noble');
+    s = addToken(s, 'norrsund', 'hero');
     s = addCorruption(s, 'norrsund', 'xarm', 3);
     s = addCorruption(s, 'norrsund', 'gormen', 1);
-    s = setVP(s, 'xarm', 20); // xarm has most VP
+    s = setThreat(s, 'xarm', 25); // xarm has highest threat
     const corrBefore = s.regions.norrsund!.corruptionTokens.xarm;
     const { state } = resolveEndPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.xarm).toBe(corrBefore - 1);

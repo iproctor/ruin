@@ -55,50 +55,50 @@ describe('victory detection at end of resolveEndPhase', () => {
 // ─── World card persistent effects ───────────────────────────────────────────
 
 describe('northern_heir persistent effect (end phase)', () => {
-  test('places an additional Noble on a region that already has a Noble', () => {
+  test('places an additional Hero on a region that already has a Hero', () => {
     let s = endState();
     s = setWorldCard(s, 'northern_heir');
-    s = addToken(s, 'norrsund', 'noble');
+    s = addToken(s, 'norrsund', 'hero');
     const { state } = resolveEndPhase(s);
-    const nobles = state.regions.norrsund!.tokens.filter(t => t === 'noble');
-    expect(nobles.length).toBeGreaterThanOrEqual(2);
+    const heroes = state.regions.norrsund!.tokens.filter(t => t === 'hero');
+    expect(heroes.length).toBeGreaterThanOrEqual(2);
   });
 
-  test('does nothing when no Noble tokens are on the board', () => {
+  test('does nothing when no Hero tokens are on the board', () => {
     let s = endState();
     s = setWorldCard(s, 'northern_heir');
-    // No nobles anywhere — should not crash
+    // No heroes anywhere — should not crash
     const { state } = resolveEndPhase(s);
     expect(state.phase).not.toBe('completed');
   });
 });
 
 describe('diplomatic_envoy persistent effect (end phase)', () => {
-  test('removes a Noble token from the first region that has one', () => {
+  test('removes a Hero token from the first region that has one', () => {
     let s = endState();
     s = setWorldCard(s, 'diplomatic_envoy');
-    s = addToken(s, 'norrsund', 'noble');
+    s = addToken(s, 'norrsund', 'hero');
     const { state } = resolveEndPhase(s);
-    expect(state.regions.norrsund!.tokens.filter(t => t === 'noble').length).toBe(0);
+    expect(state.regions.norrsund!.tokens.filter(t => t === 'hero').length).toBe(0);
   });
 });
 
 describe('chaos_countermeasures persistent effect (end phase)', () => {
-  test('places a Hero on the first region containing a Chaos Stone', () => {
+  test('places a Ratmen on the first region containing a Chaos Stone', () => {
     let s = endState();
     s = setWorldCard(s, 'chaos_countermeasures');
     s = addToken(s, 'volensk', 'chaos_stone');
     const { state } = resolveEndPhase(s);
-    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.volensk!.tokens).toContain('ratmen');
   });
 
   test('does nothing when no Chaos Stones are on the board', () => {
     let s = endState();
     s = setWorldCard(s, 'chaos_countermeasures');
     const { state } = resolveEndPhase(s);
-    // No crash, no hero placed
+    // No crash, no ratmen placed
     for (const r of Object.values(state.regions)) {
-      expect(r.tokens).not.toContain('hero');
+      expect(r.tokens).not.toContain('ratmen');
     }
   });
 });

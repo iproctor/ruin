@@ -44,11 +44,36 @@ export const TOKEN_TYPES: TokenType[] = ['peasant', 'noble', 'event', 'hero', 'r
 // Sorted card ids for stable indexing
 const CHAOS_CARD_IDS = CHAOS_CARDS.map(c => c.id).sort();
 const UPGRADE_IDS = UPGRADES.map(u => u.id).sort();
-const WORLD_CARD_IDS = WORLD_CARDS.map(w => w.id).sort();
+
+// World card slot list is *legacy-stable*: it contains the IDs that existed
+// when the model was first trained. Removing a card would shift every later
+// slot index and silently invalidate every trained model. Instead we keep
+// removed cards as ghost slots (always zero) and alias renames to their
+// previous id so the feature positions are preserved. This is the world-card
+// equivalent of the "features are append-only" invariant.
+const LEGACY_DELETED_WORLD_CARD_IDS = [
+  'heroes_of_order',
+  'peasant_prosperity',
+  'purchased_title',
+  'ratmen_incursion',    // replaced by ratmens_price — aliased below
+];
+const WORLD_CARD_ALIAS: Record<string, string> = {
+  ratmens_price: 'ratmen_incursion',
+};
+const WORLD_CARD_IDS = [
+  ...WORLD_CARDS.map(w => w.id).filter(id => !(id in WORLD_CARD_ALIAS)),
+  ...LEGACY_DELETED_WORLD_CARD_IDS,
+].sort();
 
 const CHAOS_CARD_INDEX = new Map(CHAOS_CARD_IDS.map((id, i) => [id, i]));
 const UPGRADE_INDEX = new Map(UPGRADE_IDS.map((id, i) => [id, i]));
 const WORLD_CARD_INDEX = new Map(WORLD_CARD_IDS.map((id, i) => [id, i]));
+
+function worldCardSlot(cardId: string | null): number | undefined {
+  if (cardId === null) return undefined;
+  const legacy = WORLD_CARD_ALIAS[cardId] ?? cardId;
+  return WORLD_CARD_INDEX.get(legacy);
+}
 
 // Quick lookup: is a chaos card a magic-symbol card?
 const MAGIC_SYMBOL_CARDS = new Set(CHAOS_CARDS.filter(c => c.hasMagicSymbol).map(c => c.id));
@@ -359,16 +384,16 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
   // ── World track (one-hot per slot) ──────────────────────────────────────
   const slot1Start = i;
   for (let k = 0; k < WORLD_CARD_IDS.length; k++) out[slot1Start + k] = 0;
-  if (state.worldTrack.slot1) {
-    const idx = WORLD_CARD_INDEX.get(state.worldTrack.slot1);
+  {
+    const idx = worldCardSlot(state.worldTrack.slot1);
     if (idx !== undefined) out[slot1Start + idx] = 1;
   }
   i += WORLD_CARD_IDS.length;
 
   const slot2Start = i;
   for (let k = 0; k < WORLD_CARD_IDS.length; k++) out[slot2Start + k] = 0;
-  if (state.worldTrack.slot2) {
-    const idx = WORLD_CARD_INDEX.get(state.worldTrack.slot2);
+  {
+    const idx = worldCardSlot(state.worldTrack.slot2);
     if (idx !== undefined) out[slot2Start + idx] = 1;
   }
   i += WORLD_CARD_IDS.length;

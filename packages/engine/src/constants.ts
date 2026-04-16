@@ -317,7 +317,7 @@ export const RUINATION_CARDS: RuinationCard[] = [
       volensk:     { first: 8,  second: 4 },
       mittelreich: { first: 10, second: 5 },
       normagne:    { first: 8,  second: 4 },
-      almerida:    { first: 9,  second: 5 },
+      almerida:    { first: 9,  second: 4 },
       toscavar:    { first: 7,  second: 3 },
       pelascos:    { first: 7,  second: 3 },
       the_barrens: { first: 6,  second: 3 },
