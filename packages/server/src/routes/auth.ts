@@ -92,13 +92,13 @@ router.post('/login', async (req, res) => {
     .limit(1);
 
   if (!user || !user.passwordHash) {
-    res.status(401).json({ error: 'Invalid credentials' });
+    res.status(404).json({ error: 'No such user', code: 'no_user' });
     return;
   }
 
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) {
-    res.status(401).json({ error: 'Invalid credentials' });
+    res.status(401).json({ error: 'Wrong password', code: 'bad_password' });
     return;
   }
 

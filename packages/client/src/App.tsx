@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
 import LoginPage from './pages/LoginPage.js';
 import RegisterPage from './pages/RegisterPage.js';
+import LandingPage from './pages/LandingPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
 import HomePage from './pages/HomePage.js';
@@ -19,9 +20,9 @@ function LobbyRedirect() {
   return <Navigate to={`/lobby/g/${id}`} replace />;
 }
 
-function RootRedirect() {
+function RootEntry() {
   const { token } = useAuth();
-  return <Navigate to={token ? '/home' : '/login'} replace />;
+  return token ? <Navigate to="/home" replace /> : <LandingPage />;
 }
 
 function AppRoutes() {
@@ -77,7 +78,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
-      <Route path="/" element={<RootRedirect />} />
+      <Route path="/" element={<RootEntry />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

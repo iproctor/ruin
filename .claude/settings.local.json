@@ -92,7 +92,9 @@
       "Bash(pnpm benchmark:parallel --games 20 --seed 1 --out /tmp/bench-old-20.json)",
       "Bash(pnpm benchmark:parallel --games 20 --seed 1 --out /tmp/bench-0625-20.json)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__resize_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__fill"
     ]
   }
 }

@@ -7,6 +7,17 @@ function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+  constructor(message: string, status: number, code: string | null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -24,13 +35,15 @@ async function request<T>(
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
+    let code: string | null = null;
     try {
-      const body = (await res.json()) as { error?: string };
+      const body = (await res.json()) as { error?: string; code?: string };
       if (body.error) msg = body.error;
+      if (body.code) code = body.code;
     } catch {
       // ignore parse error
     }
-    throw new Error(msg);
+    throw new ApiError(msg, res.status, code);
   }
 
   return res.json() as Promise<T>;
