@@ -34,32 +34,34 @@ export type { DragItem } from '../types/drag.js';
 // Measures the popup after render and, if its preferred top/left would spill
 // past the viewport, flips it above the anchor or clamps it to the edge.
 
-function useClampedPopupPosition(anchor: { x: number; y: number } | null) {
+function useClampedPopupPosition(anchorX: number | null, anchorY: number | null) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number; ready: boolean }>(
     { top: 0, left: 0, ready: false },
   );
 
   useLayoutEffect(() => {
-    if (!anchor) {
-      setPos({ top: 0, left: 0, ready: false });
+    if (anchorX == null || anchorY == null) {
+      setPos((prev) => (prev.ready ? { top: 0, left: 0, ready: false } : prev));
       return;
     }
     const el = ref.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
     const margin = 8;
-    let top = anchor.y + 6;
-    let left = anchor.x + 6;
+    let top = anchorY + 6;
+    let left = anchorX + 6;
     if (top + height > window.innerHeight - margin) {
-      const above = anchor.y - height - 6;
+      const above = anchorY - height - 6;
       top = above >= margin ? above : Math.max(margin, window.innerHeight - height - margin);
     }
     if (left + width > window.innerWidth - margin) {
       left = Math.max(margin, window.innerWidth - width - margin);
     }
-    setPos({ top, left, ready: true });
-  }, [anchor]);
+    setPos((prev) =>
+      prev.top === top && prev.left === left && prev.ready ? prev : { top, left, ready: true },
+    );
+  }, [anchorX, anchorY]);
 
   return { ref, pos };
 }
@@ -349,11 +351,14 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
   >(null);
 
   // Clamped positions (measure after render, flip/clip if off-screen).
+  // Pass primitives so the effect's deps array is stable between renders.
   const { ref: slotPopupRef, pos: slotPopupPos } = useClampedPopupPosition(
-    slotPopup ? { x: slotPopup.x, y: slotPopup.y } : null,
+    slotPopup?.x ?? null,
+    slotPopup?.y ?? null,
   );
   const { ref: summonPopupRef, pos: summonPopupPos } = useClampedPopupPosition(
-    summonPopup ? { x: summonPopup.x, y: summonPopup.y } : null,
+    summonPopup?.x ?? null,
+    summonPopup?.y ?? null,
   );
 
   const legalSummonActions = useMemo(() => {
