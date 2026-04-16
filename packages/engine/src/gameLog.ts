@@ -239,13 +239,13 @@ function renderWorldCardEffect(event: Extract<GameEvent, { type: 'world_card_eff
     case 'normagne_heir_discard':
       return `${WORLD_CARD_BY_ID['normagne_heir']!.name}: ${P(event.power)} discards a card.`;
     case 'northern_heir':
-      return `${WORLD_CARD_BY_ID['northern_heir']!.name}: ${P(event.power)} places a Noble in ${R(event.regionId)}.`;
+      return `${WORLD_CARD_BY_ID['northern_heir']!.name}: ${P(event.power)} places a Hero in ${R(event.regionId)}.`;
     case 'diplomatic_envoy':
-      return `${WORLD_CARD_BY_ID['diplomatic_envoy']!.name}: ${P(event.power)} removes a Noble from ${R(event.regionId)}.`;
+      return `${WORLD_CARD_BY_ID['diplomatic_envoy']!.name}: ${P(event.power)} removes a Hero from ${R(event.regionId)}.`;
     case 'chaos_countermeasures':
-      return `${WORLD_CARD_BY_ID['chaos_countermeasures']!.name}: ${P(event.power)} places a Hero in ${R(event.regionId)}.`;
+      return `${WORLD_CARD_BY_ID['chaos_countermeasures']!.name}: ${P(event.power)} places a Ratmen in ${R(event.regionId)}.`;
     case 'great_exorcism_figures':
-      return `${WORLD_CARD_BY_ID['great_exorcism']!.name}: all figures removed from ${R(event.regionId)}.`;
+      return `${WORLD_CARD_BY_ID['great_exorcism']!.name}: all Cultists removed from ${R(event.regionId)}.`;
     case 'great_exorcism_events':
       return `${WORLD_CARD_BY_ID['great_exorcism']!.name}: ${event.eventsMoved} Event token(s) moved to ${R(event.regionId)}.`;
     case 'central_overpopulation':

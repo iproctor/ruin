@@ -1,4 +1,4 @@
-import type { GameEvent, GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
+import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
 import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
@@ -13,11 +13,8 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
   const notRuined = REGION_ORDER.filter(r => state.regions[r]!.ruinationCardIndex === null);
 
   switch (cardId) {
-    case 'purchased_title':
-      return notRuined.filter(r => state.regions[r]!.tokens.includes('peasant'));
-
     case 'normagne_heir':
-      // Noble already placed on Normagne; choose any other region
+      // Hero already placed on Normagne; choose any other region
       return notRuined.filter(r => r !== 'normagne');
 
     case 'mittelreich_diplomacy':
@@ -36,11 +33,15 @@ export function getWorldChoiceRegions(state: GameState, cardId: string): RegionI
       );
 
     case 'northern_heir':
-      // Persistent effect: Noble on region that already has a Noble
-      return notRuined.filter(r => state.regions[r]!.tokens.includes('noble'));
+      // Persistent effect placement: Hero on a region that already has a Hero
+      return notRuined;
+
+    case 'diplomatic_envoy':
+      // 3 different Populous regions
+      return notRuined.filter(r => REGIONS[r].populous);
 
     default:
-      // the_exodus, the_exchange, diplomatic_envoy (first pick), etc. — any non-ruined region
+      // great_exorcism, the_exchange, etc. — any non-ruined region
       return notRuined;
   }
 }
@@ -88,7 +89,7 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
     // Verify there are actually valid choices (regions may all be ruined).
     // If not, skip the choice and auto-resolve.
     const choiceRegions = getWorldChoiceRegions(s, cardId!);
-    const isPairCard = cardId === 'northern_heir' || cardId === 'heroes_of_order';
+    const isPairCard = cardId === 'northern_heir' || cardId === 'ratmens_price';
     if (!isPairCard && choiceRegions.length === 0) {
       // No valid regions — skip choice, place card and move on
       s = placeOnTrackOrDiscard(s, cardId!, log);
@@ -166,30 +167,8 @@ function applyWorldCardImmediate(
       return { state: s, needsChoice: false };
     }
 
-    case 'purchased_title': {
-      // Find first Peasant on board and replace with Noble (no player choice for auto)
-      // If multiple Peasants: lowest-threat player chooses — set needsChoice
-      const peasantRegions = REGION_ORDER.filter(r => s.regions[r]!.tokens.includes('peasant'));
-      if (peasantRegions.length === 0) return { state: s, needsChoice: false };
-      if (peasantRegions.length === 1) {
-        s = removeTokenWithEvent(s, peasantRegions[0]!, 'peasant', log);
-        s = addTokenIfAvailable(s, peasantRegions[0]!, 'noble', log);
-        return { state: s, needsChoice: false };
-      }
-      return { state: s, needsChoice: true };
-    }
-
-    case 'ratmen_incursion': {
-      // Place Ratmen on 2 regions — lowest threat player chooses
-      return { state: s, needsChoice: true };
-    }
-
-    case 'peasant_prosperity': {
-      return { state: s, needsChoice: true }; // choose 2 regions for Peasant
-    }
-
     case 'chaos_storm': {
-      return { state: s, needsChoice: true }; // choose 2 regions for Chaos Stone
+      return { state: s, needsChoice: true }; // choose 3 regions for Chaos Stone
     }
 
     case 'grand_muster': {
@@ -234,13 +213,13 @@ function applyWorldCardImmediate(
     }
 
     case 'normagne_heir': {
-      // Noble on Normagne + one other region
-      s = addTokenIfAvailable(s, 'normagne', 'noble', log);
+      // Hero on Normagne + one other region
+      s = addTokenIfAvailable(s, 'normagne', 'hero', log);
       return { state: s, needsChoice: true }; // choose the second region
     }
 
     case 'northern_heir': {
-      // Noble on (Norrsund+Volensk) OR (Talvimaa+Mittelreich) — choice required
+      // Hero on (Norrsund+Volensk) OR (Talvimaa+Mittelreich) — choice required
       return { state: s, needsChoice: true };
     }
 
@@ -271,7 +250,7 @@ function applyWorldCardImmediate(
       return { state: s, needsChoice: true }; // choose which region gets Event token
     }
 
-    case 'heroes_of_order': {
+    case 'ratmens_price': {
       return { state: s, needsChoice: true }; // choose pair: (Normagne+Mittelreich) or (Almerida+Toscavar)
     }
 
@@ -283,7 +262,7 @@ function applyWorldCardImmediate(
 
     case 'chaos_countermeasures': {
       for (const r of ['the_barrens', 'pelascos'] as RegionId[]) {
-        s = addTokenIfAvailable(s, r, 'hero', log);
+        s = addTokenIfAvailable(s, r, 'ratmen', log);
       }
       return { state: s, needsChoice: false };
     }
@@ -307,13 +286,10 @@ function applyWorldCardImmediate(
 
     case 'noble_scrutiny': {
       for (const r of ['normagne', 'mittelreich', 'almerida'] as RegionId[]) {
-        s = addTokenIfAvailable(s, r, 'noble', log);
+        s = addTokenIfAvailable(s, r, 'hero', log);
       }
       return { state: s, needsChoice: false };
     }
-
-    case 'kashnir_arms': // alias — same as noble_scrutiny placement
-      return { state: s, needsChoice: false };
 
     default:
       return { state: s, needsChoice: false };
@@ -335,57 +311,35 @@ function applyWorldCardChoice(
   const logChoice = (desc: string) => log.emit({ type: 'world_card_choice', cardId, cardName, description: desc });
 
   switch (cardId) {
-    case 'purchased_title': {
-      const regionId = choices['regionId'] as RegionId;
-      logChoice(`replace Peasant with Noble in ${rname(regionId)}`);
-      s = removeTokenWithEvent(s, regionId, 'peasant', log);
-      s = addTokenIfAvailable(s, regionId, 'noble', log);
-      break;
-    }
-    case 'ratmen_incursion': {
-      const [r1, r2] = choices['regions'] as RegionId[];
-      logChoice(`Ratmen → ${rlist([r1, r2])}`);
-      if (r1) s = addTokenIfAvailable(s, r1, 'ratmen', log);
-      if (r2) s = addTokenIfAvailable(s, r2, 'ratmen', log);
-      break;
-    }
-    case 'peasant_prosperity': {
-      const [r1, r2] = choices['regions'] as RegionId[];
-      logChoice(`Peasants → ${rlist([r1, r2])}`);
-      if (r1) s = addTokenIfAvailable(s, r1, 'peasant', log);
-      if (r2) s = addTokenIfAvailable(s, r2, 'peasant', log);
-      break;
-    }
     case 'chaos_storm': {
-      const [r1, r2] = choices['regions'] as RegionId[];
-      logChoice(`Chaos Stones → ${rlist([r1, r2])}`);
-      if (r1) s = addTokenIfAvailable(s, r1, 'chaos_stone', log);
-      if (r2) s = addTokenIfAvailable(s, r2, 'chaos_stone', log);
+      const regs = (choices['regions'] as RegionId[]) ?? [];
+      logChoice(`Chaos Stones → ${rlist(regs)}`);
+      for (const r of regs) if (r) s = addTokenIfAvailable(s, r, 'chaos_stone', log);
       break;
     }
     case 'grand_muster': {
-      const { peasantRegions, nobleRegions, ratmenRegions } = choices as Record<string, RegionId[]>;
+      const { peasantRegions, heroRegions, nobleRegions } = choices as Record<string, RegionId[]>;
       const parts: string[] = [];
       if (peasantRegions?.length) parts.push(`Peasants → ${rlist(peasantRegions)}`);
+      if (heroRegions?.length)    parts.push(`Heroes → ${rlist(heroRegions)}`);
       if (nobleRegions?.length)   parts.push(`Nobles → ${rlist(nobleRegions)}`);
-      if (ratmenRegions?.length)  parts.push(`Ratmen → ${rlist(ratmenRegions)}`);
       logChoice(parts.join('; '));
       for (const r of peasantRegions ?? []) s = addTokenIfAvailable(s, r, 'peasant', log);
+      for (const r of heroRegions ?? []) s = addTokenIfAvailable(s, r, 'hero', log);
       for (const r of nobleRegions ?? []) s = addTokenIfAvailable(s, r, 'noble', log);
-      for (const r of ratmenRegions ?? []) s = addTokenIfAvailable(s, r, 'ratmen', log);
       break;
     }
     case 'normagne_heir': {
       const regionId = choices['regionId'] as RegionId;
-      logChoice(`Noble → ${rname(regionId)}`);
-      s = addTokenIfAvailable(s, regionId, 'noble', log);
+      logChoice(`Hero → ${rname(regionId)}`);
+      s = addTokenIfAvailable(s, regionId, 'hero', log);
       break;
     }
     case 'northern_heir': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['norrsund', 'volensk'] : ['talvimaa', 'mittelreich'];
-      logChoice(`Nobles → ${rlist(regions)}`);
-      for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
+      logChoice(`Heroes → ${rlist(regions)}`);
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);
       break;
     }
     case 'mittelreich_diplomacy': {
@@ -400,11 +354,11 @@ function applyWorldCardChoice(
       s = addTokenIfAvailable(s, regionId, 'event', log);
       break;
     }
-    case 'heroes_of_order': {
+    case 'ratmens_price': {
       const pair = choices['pair'] as 'ab' | 'cd';
       const regions: RegionId[] = pair === 'ab' ? ['normagne', 'mittelreich'] : ['almerida', 'toscavar'];
-      logChoice(`Heroes → ${rlist(regions)}`);
-      for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);
+      logChoice(`Ratmen → ${rlist(regions)}`);
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'ratmen', log);
       break;
     }
     case 'cleansing_wave': {
@@ -415,8 +369,8 @@ function applyWorldCardChoice(
     }
     case 'forward_scouts': {
       const regionId = choices['regionId'] as RegionId;
-      logChoice(`Hero → ${rname(regionId)}`);
-      s = addTokenIfAvailable(s, regionId, 'hero', log);
+      logChoice(`Ratmen → ${rname(regionId)}`);
+      s = addTokenIfAvailable(s, regionId, 'ratmen', log);
       break;
     }
     case 'the_exchange': {
@@ -428,18 +382,13 @@ function applyWorldCardChoice(
     }
     case 'diplomatic_envoy': {
       const regions = choices['regions'] as RegionId[];
-      logChoice(`Nobles → ${rlist(regions)}`);
-      for (const r of regions) s = addTokenIfAvailable(s, r, 'noble', log);
+      logChoice(`Heroes → ${rlist(regions)}`);
+      for (const r of regions) s = addTokenIfAvailable(s, r, 'hero', log);
       break;
     }
   }
 
   return { state: s };
-}
-
-function removeTokenWithEvent(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {
-  let s = log.apply(state, { type: 'token_removed', regionId, tokenType: token });
-  return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] + 1 } };
 }
 
 function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenType, log: GameLog): GameState {

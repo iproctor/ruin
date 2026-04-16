@@ -3,6 +3,7 @@ import { useDraggable } from '@dnd-kit/core';
 import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
 import { CARD_BY_ID, REGIONS, FOLLOWERS } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, shortCardName } from '../lib/display.js';
+import { INK, SOOT, PARCHMENT, PARCHMENT_HI, BORDER, BORDER_HI, PAPER, PAPER_DIM, BRASS, BRASS_HOT, CARD_FACE, CARD_FACE_HI, CARD_EDGE, CARD_INK, MAGIC, PENDING, ERROR, POWER_DIM } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
 import type { DragItem } from '../types/drag.js';
@@ -54,9 +55,9 @@ function HandCard({
   });
 
   const showSelected = isSelected && !isSummoningTurn;
-  const borderColor = isPending ? '#22c55e' : showSelected ? color : '#3a3a6e';
+  const borderColor = isPending ? PENDING : showSelected ? color : CARD_EDGE;
   const shadow = isPending
-    ? '0 0 10px #22c55e88'
+    ? `0 0 10px ${PENDING}88`
     : showSelected
     ? `0 0 10px ${color}88`
     : 'none';
@@ -74,7 +75,7 @@ function HandCard({
         position: 'relative',
         width: 77,
         height: 76,
-        background: isSelected ? '#1e1433' : '#13121f',
+        background: isSelected ? CARD_FACE_HI : CARD_FACE,
         border: `1.5px ${isPending ? 'dashed' : 'solid'} ${borderColor}`,
         borderRadius: 5,
         cursor: isSummoningTurn ? 'grab' : 'pointer',
@@ -90,7 +91,7 @@ function HandCard({
       }}
     >
       {/* Power color stripe */}
-      <div style={{ height: 4, background: color, opacity: 0.9, flexShrink: 0 }} />
+      <div style={{ height: 4, background: color, opacity: 0.95, flexShrink: 0 }} />
 
       {/* Card name */}
       <div style={{
@@ -100,9 +101,11 @@ function HandCard({
         justifyContent: 'center',
         padding: '2px 3px',
         textAlign: 'center',
-        fontSize: '0.62rem',
-        fontWeight: 700,
-        color: '#e5e7eb',
+        fontFamily: "'Cinzel', serif",
+        fontSize: '0.68rem',
+        fontWeight: 600,
+        letterSpacing: '0.03em',
+        color: CARD_INK,
         lineHeight: 1.2,
         wordBreak: 'break-word',
       }}>
@@ -115,7 +118,7 @@ function HandCard({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: '2px 4px 3px',
-        borderTop: '1px solid #1e1e3a',
+        borderTop: `1px solid ${CARD_EDGE}`,
       }}>
         <span style={{
           fontSize: '0.7rem',
@@ -129,7 +132,7 @@ function HandCard({
           {cost}
         </span>
         {hasMagic && (
-          <span style={{ fontSize: '0.65rem', color: '#a78bfa' }}>✦</span>
+          <span style={{ fontSize: '0.65rem', color: MAGIC }}>✦</span>
         )}
       </div>
     </button>
@@ -235,21 +238,21 @@ function Stockpile({
       const icon =
         cls === 'incarnation' ? (
           <svg width={12} height={12} viewBox="0 0 12 12">
-            <rect x={1} y={1} width={10} height={10} fill="#334155" opacity={0.6} rx={1} />
+            <rect x={1} y={1} width={10} height={10} fill={BORDER} opacity={0.6} rx={1} />
           </svg>
         ) : cls === 'warrior' ? (
           <svg width={14} height={14} viewBox="0 0 14 14">
-            <polygon points="7,1 13,13 1,13" fill="#334155" opacity={0.6} />
+            <polygon points="7,1 13,13 1,13" fill={BORDER} opacity={0.6} />
           </svg>
         ) : (
           <svg width={8} height={14} viewBox="0 0 8 14">
-            <rect x={2} y={1} width={4} height={12} fill="#334155" opacity={0.6} rx={1} />
+            <rect x={2} y={1} width={4} height={12} fill={BORDER} opacity={0.6} rx={1} />
           </svg>
         );
       return (
         <div className="flex flex-col items-center gap-0.5">
           {icon}
-          <span style={{ fontSize: '0.7rem', color: '#334155', fontWeight: 700 }}>0</span>
+          <span style={{ fontSize: '0.7rem', color: BORDER, fontWeight: 700 }}>0</span>
         </div>
       );
     }
@@ -342,6 +345,7 @@ export default function Tableau({
 
   const ps = state.powers[myPower]!;
   const color = POWER_COLORS[myPower];
+  const colorDim = POWER_DIM[myPower];
   // Use displayState for live preview (PP spend, hand changes)
   const displayPs = displayState?.powers[myPower] ?? ps;
   const hand = [...displayPs.hand.filter((c) => c !== '?')].sort((a, b) => {
@@ -387,8 +391,8 @@ export default function Tableau({
       className="flex gap-4 px-4 py-3 shrink-0"
       style={{
         minHeight: 120,
-        background: '#0d0d1f',
-        borderTop: `2px solid ${isSummoningTurn ? color : '#1e1e3a'}`,
+        background: INK,
+        borderTop: `2px solid ${isSummoningTurn ? colorDim : SOOT}`,
         transition: 'border-color 0.3s',
         position: 'relative',
         paddingRight: isSummoningTurn
@@ -405,12 +409,12 @@ export default function Tableau({
         <div className="text-[10px] text-slate-500 mt-1">/ {displayPs.basePowerPoints}</div>
       </div>
 
-      <div className="w-px shrink-0" style={{ background: '#1e1e3a' }} />
+      <div className="w-px shrink-0" style={{ background: SOOT }} />
 
       {/* Stockpile — use displayState so reserve count drops immediately on drag */}
       <Stockpile state={displayState ?? state} power={myPower} isSummoningTurn={isSummoningTurn} />
 
-      <div className="w-px shrink-0" style={{ background: '#1e1e3a' }} />
+      <div className="w-px shrink-0" style={{ background: SOOT }} />
 
       {/* Card counts */}
       <div className="flex flex-col gap-1 shrink-0 justify-center min-w-[56px]">
@@ -431,7 +435,7 @@ export default function Tableau({
         </div>
       </div>
 
-      <div className="w-px shrink-0" style={{ background: '#1e1e3a' }} />
+      <div className="w-px shrink-0" style={{ background: SOOT }} />
 
       {/* Hand */}
       <div className="flex flex-col gap-1 flex-1 min-w-0">
@@ -462,7 +466,7 @@ export default function Tableau({
       <div className="flex flex-col items-end justify-between shrink-0 gap-2">
         {/* Error */}
         {submitError && (
-          <p style={{ color: '#f87171', fontSize: '0.75rem', maxWidth: 160, textAlign: 'right' }}>
+          <p style={{ color: ERROR, fontSize: '0.75rem', maxWidth: 160, textAlign: 'right' }}>
             {submitError}
           </p>
         )}
@@ -483,8 +487,8 @@ export default function Tableau({
                 padding: '0 18px',
                 border: 'none',
                 borderRadius: 0,
-                background: '#1e1e3a',
-                color: '#94a3b8',
+                background: SOOT,
+                color: PAPER_DIM,
                 fontWeight: 600,
                 fontSize: '0.8rem',
                 cursor: 'pointer',
@@ -500,12 +504,12 @@ export default function Tableau({
               minWidth: 160,
               border: 'none',
               borderRadius: 0,
-              background: color,
+              background: colorDim,
               color: '#fff',
               fontWeight: 700,
               fontSize: '0.85rem',
               cursor: 'pointer',
-              boxShadow: `0 0 8px ${color}66`,
+              boxShadow: `0 0 8px ${colorDim}66`,
               textAlign: 'center',
               whiteSpace: 'nowrap',
               display: 'flex',

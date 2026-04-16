@@ -33,8 +33,8 @@ function getEventDuration(event: GameEvent): number {
         return 200;
       case 'summoning_pass':    return 0;
       case 'battle_region_start': return 500;
-      case 'battle_roll':       return 800;
-      case 'battle_kill':       return 500;
+      case 'battle_roll':       return 700;
+      case 'battle_kill':       return 250;
       case 'peasant_claimed':   return 300;
       case 'domination_result': return event.conquered ? 600 : 0;
       case 'domination_failed': return 0;

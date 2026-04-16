@@ -163,7 +163,7 @@ export const CHAOS_CARDS: CardDef[] = [
   { id: 'gormen_pandemic',             power: 'gormen', name: 'Pandemic', shortName: 'Pandemic',             cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'This region\'s Resistance is reduced by two.' },
   { id: 'gormen_rain_of_bile',          power: 'gormen', name: 'Rain of Bile', shortName: 'Rain',          cost: 1, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'Your figures\' defense value is increased by one.' },
   { id: 'gormen_decay',              power: 'gormen', name: 'Decay', shortName: 'Decay',              cost: 1, hasMagicSymbol: false, count: 2, timing: 'on_play', effect: 'Remove one corruption token (any player) from this region.' },
-  { id: 'gormen_vile_consumption',         power: 'gormen', name: 'Vile Consumption', shortName: 'Consumption',         cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'At the end of Corruption Phase, remove all of your figures from this region; place one corruption token for every two figures removed.' },
+  { id: 'gormen_vile_consumption',         power: 'gormen', name: 'Vile Consumption', shortName: 'Consump.',         cost: 2, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'At the end of Corruption Phase, remove all of your figures from this region; place one corruption token for every two figures removed.' },
   { id: 'gormen_inevitable_rot',  power: 'gormen', name: 'Inevitable Rot', shortName: 'Rot', cost: 2, hasMagicSymbol: false, count: 3, timing: 'end_of_battle', effect: 'After battle, kill one enemy Cultist or Warrior per corruption token you have in this region. Gormen chooses which figures to kill.' },
   { id: 'gormen_deaths_perfume',       power: 'gormen', name: 'Death\'s Perfume', shortName: 'Perfume',      cost: 3, hasMagicSymbol: true,  count: 2, timing: 'persistent', effect: 'If you dominate this region, place two corruption tokens here.' },
 
@@ -183,7 +183,7 @@ export const CHAOS_CARDS: CardDef[] = [
   { id: 'lasha_sweet_lies',   power: 'lasha', name: 'Sweet Lies', shortName: 'Lies',   cost: 1, hasMagicSymbol: false, count: 4, timing: 'persistent', effect: 'For each Noble and Hero token in this region, add two to your domination value.' },
   { id: 'lasha_hidden_influence', power: 'lasha', name: 'Hidden Influence', shortName: 'Influence', cost: 1, hasMagicSymbol: true, count: 4, timing: 'on_play', effect: 'Move a Peasant, Hero, or Noble token from this region to any other region.' },
   { id: 'lasha_narcotic_musk',   power: 'lasha', name: 'Narcotic Musk', shortName: 'Musk',   cost: 2, hasMagicSymbol: true,  count: 4, timing: 'persistent', effect: 'Choose one enemy Cultist in this region; you control it until this card is discarded.' },
-  { id: 'lasha_ecstasy',  power: 'lasha', name: 'Ecstasy', shortName: 'Ecstasy',  cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures roll battle dice in this region this round.' },
+  { id: 'lasha_ecstasy',  power: 'lasha', name: 'Plane of Ecstasy', shortName: 'Ecstasy',  cost: 2, hasMagicSymbol: false, count: 3, timing: 'persistent', effect: 'No figures roll battle dice in this region this round.' },
   { id: 'lasha_debauched_royalty',power: 'lasha', name: 'Debauched Royalty', shortName: 'Royalty', cost: 3, hasMagicSymbol: false, count: 3, timing: 'on_play', effect: 'If this region contains three or more corruption tokens when you play this card, reduce the cost by three. The printed cost still counts toward domination.' },
 ];
 
@@ -402,24 +402,16 @@ export interface WorldCardDef {
 
 export const WORLD_CARDS: WorldCardDef[] = [
   { id: 'normagne_heir', name: 'Normagne Heir', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
-    immediateEffect: 'Place a Noble token on Normagne and a Noble token on any other region.',
+    immediateEffect: 'Place a Hero token on Normagne and a Hero token on any other region.',
     persistentEffect: 'During Resolve World Cards: each player with 1+ figures on Normagne must discard a Chaos card of their choice, if possible.' },
 
   { id: 'eastern_armistice', name: 'Eastern Armistice', count: 1, hasCometIcon: true, timing: 'end_of_battle', requiresChoice: false,
     immediateEffect: 'Place an Event token on Almerida, Normagne, and Norrsund.',
     persistentEffect: 'At the end of the battle phase: each player must remove one of their figures from each region containing an Event token, if possible.' },
 
-  { id: 'purchased_title', name: 'Purchased Title', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Choose a Peasant token on the board and replace it with a Noble token, if possible.',
-    persistentEffect: null },
-
   { id: 'northern_heir', name: 'Northern Heir', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
-    immediateEffect: 'Place a Noble token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.',
-    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Noble token on a region where there is already a Noble token, if possible.' },
-
-  { id: 'ratmen_incursion', name: 'Ratmen Incursion', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Place a Ratmen token on 2 different regions.',
-    persistentEffect: null },
+    immediateEffect: 'Place a Hero token on Norrsund and Volensk, OR on Talvimaa and Mittelreich.',
+    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Hero token on a region where there is already a Hero token, if possible.' },
 
   { id: 'mittelreich_diplomacy', name: 'Mittelreich Diplomacy', count: 1, hasCometIcon: true, timing: 'constant', requiresChoice: true,
     immediateEffect: 'Place an Event token on Mittelreich and an Event token on any other region.',
@@ -433,12 +425,8 @@ export const WORLD_CARDS: WorldCardDef[] = [
     immediateEffect: 'Place an Event token on The Barrens, Mittelreich, and Toscavar.',
     persistentEffect: 'Each player who battles in a region containing at least 1 Event token may only roll 1 battle die in total for that battle.' },
 
-  { id: 'peasant_prosperity', name: 'Peasant Prosperity', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Place a Peasant token on 2 different regions.',
-    persistentEffect: null },
-
   { id: 'chaos_storm', name: 'Chaos Storm', count: 2, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Place a Chaos Stone token on 2 different regions.',
+    immediateEffect: 'Place a Chaos Stone token on 3 different regions.',
     persistentEffect: null },
 
   { id: 'central_overpopulation', name: 'Central Overpopulation', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
@@ -454,31 +442,31 @@ export const WORLD_CARDS: WorldCardDef[] = [
     persistentEffect: null },
 
   { id: 'diplomatic_envoy', name: 'Diplomatic Envoy', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: false,
-    immediateEffect: 'Place a Noble token on 3 different regions.',
-    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat removes 1 Noble token from the board.' },
+    immediateEffect: 'Place a Hero token on 3 different Populous regions.',
+    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat removes 1 Hero token from the board.' },
 
   { id: 'chaos_countermeasures', name: 'Chaos Countermeasures', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: false,
-    immediateEffect: 'Place a Hero token on The Barrens and Pelascos.',
-    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Hero token on any region containing at least 1 Chaos Stone token. If none, do nothing.' },
+    immediateEffect: 'Place a Ratmen token on The Barrens and Pelascos.',
+    persistentEffect: 'During Resolve World Cards: the player with the lowest Threat places a Ratmen token on any region containing at least 1 Chaos Stone token. If none, do nothing.' },
 
   { id: 'great_exorcism', name: 'Great Exorcism', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: true,
     immediateEffect: 'Place an Event token on any region.',
-    persistentEffect: 'During Resolve World Cards: remove all figures from each region containing at least 1 Event token (return to owners\' stockpiles). Then move all Event tokens to the region with the most corruption tokens.' },
+    persistentEffect: "During Resolve World Cards: remove all Cultists from each region containing at least 1 Event token (return to owners' stockpiles). Then move all Event tokens to the region with the most corruption tokens." },
 
   { id: 'grand_muster', name: 'Grand Muster', count: 1, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Place a Peasant token on 2 different regions, then a Noble token on 2 different regions, then a Ratmen token on 2 different regions.',
+    immediateEffect: 'Place a Peasant token on 2 different regions, then a Hero token on 2 different regions, then a Noble token on 2 different regions.',
     persistentEffect: null },
 
-  { id: 'heroes_of_order', name: 'Heroes of Order', count: 1, hasCometIcon: false, timing: 'constant', requiresChoice: true,
-    immediateEffect: 'Place a Hero token on Normagne and Mittelreich, OR on Almerida and Toscavar.',
-    persistentEffect: 'Regions containing 1 or more Hero tokens have only 1 card space available instead of 2 (total across all players).' },
+  { id: 'ratmens_price', name: "Ratmen's Price", count: 1, hasCometIcon: false, timing: 'constant', requiresChoice: true,
+    immediateEffect: 'Place a Ratmen token on Normagne and Mittelreich, OR on Almerida and Toscavar.',
+    persistentEffect: 'While this card remains in play, only 1 Chaos card may be played in any region containing 1 or more Ratmen tokens.' },
 
   { id: 'cleansing_wave', name: 'Cleansing Wave', count: 1, hasCometIcon: true, timing: 'persistent', requiresChoice: false,
     immediateEffect: 'Place an Event token on Normagne and an Event token on a region adjacent to Normagne.',
     persistentEffect: 'During Resolve World Cards: remove all corruption tokens from each region containing at least 1 Event token.' },
 
   { id: 'forward_scouts', name: 'Forward Scouts', count: 2, hasCometIcon: false, timing: 'discard', requiresChoice: false,
-    immediateEffect: 'Place a Hero token on any region (or adjacent region) containing 1+ Chaos Stone tokens. If none, do nothing.',
+    immediateEffect: 'Place a Ratmen token on any region (or adjacent region) containing 1+ Chaos Stone tokens. If none, do nothing.',
     persistentEffect: null },
 
   { id: 'the_exchange', name: 'The Exchange', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: true,
@@ -486,8 +474,8 @@ export const WORLD_CARDS: WorldCardDef[] = [
     persistentEffect: 'During Resolve World Cards: each player with at least 1 figure on a region containing at least 1 Chaos Stone token draws 1 Chaos card.' },
 
   { id: 'noble_scrutiny', name: 'Noble Scrutiny', count: 1, hasCometIcon: false, timing: 'persistent', requiresChoice: false,
-    immediateEffect: 'Place a Noble token on Normagne, Mittelreich, and Almerida.',
-    persistentEffect: 'During Resolve World Cards: in each region containing a Noble token, the player with the most VP removes 1 of their corruption tokens from that region, if they have one there.' },
+    immediateEffect: 'Place a Hero token on Normagne, Mittelreich, and Almerida.',
+    persistentEffect: 'During Resolve World Cards: in each region containing a Hero token, the player with the greatest Threat removes 1 of their corruption tokens from that region, if they have one there.' },
 ];
 
 // ─── Derived lookups ──────────────────────────────────────────────────────────

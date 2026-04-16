@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
 import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADES, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
+import { RUINED_TEXT } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
 
 import type { GamePlayerInfo } from '../api/client.js';
@@ -271,22 +272,22 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
             top: chipBottom + 8,
             ['--tt-accent' as string]: 'var(--game-blood)',
             ['--tt-glow' as string]: 'rgba(194, 24, 24, 0.3)',
-            fontSize: '0.78rem',
+            fontSize: '0.92rem',
           }}
         >
-          <div className="gt-title" style={{ color: '#ff7a7a' }}>Ruination Cards</div>
+          <div className="gt-title" style={{ color: RUINED_TEXT }}>Ruination Cards</div>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
-              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
-                <th style={{ textAlign: 'left', padding: '2px 8px 4px 0' }}>Card</th>
-                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>Ruiner VP</th>
+              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
+                <th style={{ textAlign: 'left', padding: '4px 10px 6px 0' }}>Card</th>
+                <th style={{ textAlign: 'center', padding: '4px 10px 6px' }}>Ruiner VP</th>
                 {REGION_ORDER.map(rid => (
-                  <th key={rid} style={{ textAlign: 'center', padding: '2px 4px 4px', whiteSpace: 'nowrap' }}>
+                  <th key={rid} style={{ textAlign: 'center', padding: '4px 6px 6px', whiteSpace: 'nowrap' }}>
                     {REGIONS[rid].name}
                   </th>
                 ))}
-                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>1st</th>
-                <th style={{ textAlign: 'center', padding: '2px 8px 4px' }}>2nd</th>
+                <th style={{ textAlign: 'center', padding: '4px 10px 6px' }}>1st</th>
+                <th style={{ textAlign: 'center', padding: '4px 10px 6px' }}>2nd</th>
               </tr>
             </thead>
             <tbody>
@@ -298,14 +299,14 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                   <tr
                     key={card.index}
                     style={{
-                      borderTop: '1px solid var(--game-border)',
+                      borderTop: '1px solid var(--game-slate-line)',
                       opacity: isUsed ? 0.55 : 1,
                     }}
                   >
-                    <td style={{ padding: '3px 8px 3px 0', fontWeight: 700, color: isUsed ? 'var(--game-paper-fade)' : 'var(--game-paper)' }}>
+                    <td style={{ padding: '5px 10px 5px 0', fontWeight: 700, color: isUsed ? 'var(--game-paper-fade)' : 'var(--game-paper)' }}>
                       #{card.index}
                     </td>
-                    <td style={{ textAlign: 'center', padding: '3px 8px', color: 'var(--game-brass-hot)', fontWeight: 600 }}>
+                    <td style={{ textAlign: 'center', padding: '5px 10px', color: 'var(--game-brass-hot)', fontWeight: 600 }}>
                       {card.ruinersScore}
                     </td>
                     {REGION_ORDER.map(rid => {
@@ -316,18 +317,18 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                           key={rid}
                           style={{
                             textAlign: 'center',
-                            padding: '3px 4px',
+                            padding: '5px 6px',
                             background: isThisRegion ? 'rgba(194, 24, 24, 0.18)' : 'transparent',
                             fontWeight: isThisRegion ? 700 : 400,
                           }}
                         >
-                          <span style={{ color: isThisRegion ? '#ff7a7a' : 'var(--game-paper)' }}>{vp.first}</span>
+                          <span style={{ color: isThisRegion ? RUINED_TEXT : 'var(--game-paper)' }}>{vp.first}</span>
                           <span className="gt-fade">/</span>
                           <span style={{ color: isThisRegion ? '#ff9a9a' : 'var(--game-paper-dim)' }}>{vp.second}</span>
                         </td>
                       );
                     })}
-                    <td style={{ textAlign: 'center', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                    <td style={{ textAlign: 'center', padding: '5px 10px', whiteSpace: 'nowrap' }}>
                       {scoring
                         ? scoring.first.map(p => (
                             <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
@@ -335,7 +336,7 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
                         : <span className="gt-fade">—</span>
                       }
                     </td>
-                    <td style={{ textAlign: 'center', padding: '3px 8px', whiteSpace: 'nowrap' }}>
+                    <td style={{ textAlign: 'center', padding: '5px 10px', whiteSpace: 'nowrap' }}>
                       {scoring && scoring.second.length > 0
                         ? scoring.second.map(p => (
                             <span key={p} style={{ color: POWER_COLORS[p], fontWeight: 700 }}>{POWER_LABELS[p]}</span>
@@ -348,7 +349,7 @@ function RuinChip({ state, events }: { state: GameState; events?: GameEvent[] })
               })}
             </tbody>
           </table>
-          <div className="gt-fade" style={{ marginTop: 6, fontSize: '0.65rem' }}>
+          <div className="gt-fade" style={{ marginTop: 8, fontSize: '0.78rem' }}>
             Values show 1st/2nd place VP per region at end of game. Highlighted column = region ruined by that card.
           </div>
         </div>,
@@ -423,16 +424,16 @@ function DialChip({ state }: { state: GameState }) {
             left: '50%',
             transform: 'translateX(-50%)',
             top: chipBottom + 8,
-            fontSize: '0.78rem',
+            fontSize: '0.92rem',
           }}
         >
           <div className="gt-title">Threat Dials</div>
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <thead>
-              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
-                <th style={{ textAlign: 'left', padding: '2px 10px 4px 0' }}>Power</th>
-                <th style={{ textAlign: 'center', padding: '2px 6px 4px' }}>Pos</th>
-                <th style={{ textAlign: 'left', padding: '2px 10px 4px' }}>Track (threat · reward)</th>
+              <tr className="gt-fade" style={{ fontFamily: "'Cinzel', serif", fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.18em' }}>
+                <th style={{ textAlign: 'left', padding: '4px 12px 6px 0' }}>Power</th>
+                <th style={{ textAlign: 'center', padding: '4px 8px 6px' }}>Pos</th>
+                <th style={{ textAlign: 'left', padding: '4px 12px 6px' }}>Track (threat · reward)</th>
               </tr>
             </thead>
             <tbody>
@@ -441,14 +442,14 @@ function DialChip({ state }: { state: GameState }) {
                 const track = THREAT_DIALS[power];
                 const currentIdx = ps.dialPosition;
                 return (
-                  <tr key={power} style={{ borderTop: '1px solid var(--game-border)' }}>
-                    <td style={{ padding: '4px 10px 4px 0', fontWeight: 700, color: POWER_COLORS[power] }}>
+                  <tr key={power} style={{ borderTop: '1px solid var(--game-slate-line)' }}>
+                    <td style={{ padding: '6px 12px 6px 0', fontWeight: 700, color: POWER_COLORS[power] }}>
                       {POWER_LABELS[power]}
                     </td>
-                    <td style={{ textAlign: 'center', padding: '4px 6px', color: 'var(--game-brass-hot)', fontWeight: 700 }}>
+                    <td style={{ textAlign: 'center', padding: '6px 8px', color: 'var(--game-brass-hot)', fontWeight: 700 }}>
                       {currentIdx}/{track.length - 1}
                     </td>
-                    <td style={{ padding: '4px 10px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '6px 12px', whiteSpace: 'nowrap' }}>
                       {track.map((pos, i) => {
                         const isCurrent = i === currentIdx;
                         const isPast = i < currentIdx;
@@ -458,18 +459,18 @@ function DialChip({ state }: { state: GameState }) {
                             key={i}
                             style={{
                               display: 'inline-block',
-                              padding: '1px 6px',
+                              padding: '2px 8px',
                               margin: '0 2px',
                               borderRadius: 1,
                               background: isCurrent ? POWER_COLORS[power] : 'transparent',
                               color: isCurrent ? 'var(--game-ink)' : isPast ? 'var(--game-paper-fade)' : 'var(--game-paper)',
-                              border: isCurrent ? 'none' : '1px solid var(--game-border)',
+                              border: isCurrent ? 'none' : '1px solid var(--game-slate-line)',
                               fontWeight: isCurrent ? 700 : 500,
-                              fontSize: '0.68rem',
+                              fontSize: '0.82rem',
                             }}
                           >
                             <span style={{ fontWeight: 700 }}>{threatLabel}</span>
-                            <span style={{ margin: '0 3px', opacity: 0.5 }}>·</span>
+                            <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
                             <span>{describeDialInstruction(pos.instruction)}</span>
                           </span>
                         );
@@ -480,7 +481,7 @@ function DialChip({ state }: { state: GameState }) {
               })}
             </tbody>
           </table>
-          <div className="gt-fade" style={{ marginTop: 6, fontSize: '0.65rem' }}>
+          <div className="gt-fade" style={{ marginTop: 8, fontSize: '0.78rem' }}>
             Highlighted cell = current position. Reach ★ (victory) to win by dial.
           </div>
         </div>,
@@ -518,7 +519,7 @@ export default function StatusBar({ state, myPower, players, events: eventLog, o
 
       {state.winners && (
         <span className="gsb-winner">
-          ♛ {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} prevail
+          ♛ {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} prevails
         </span>
       )}
 

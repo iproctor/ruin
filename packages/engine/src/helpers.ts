@@ -130,10 +130,10 @@ export function cardSlotsAvailable(state: GameState, regionId: RegionId): number
   const region = state.regions[regionId]!;
   if (isRuined(region)) return 0;
 
-  // Entanglement: regions with Hero tokens have only 1 slot
-  const hasHero = region.tokens.includes('hero');
-  const entanglementActive = isWorldCardActive(state, 'heroes_of_order');
-  const maxSlots = (hasHero && entanglementActive) ? 1 : 2;
+  // Ratmen's Price: regions with Ratmen tokens have only 1 slot
+  const hasRatmen = region.tokens.includes('ratmen');
+  const ratmensPriceActive = isWorldCardActive(state, 'ratmens_price');
+  const maxSlots = (hasRatmen && ratmensPriceActive) ? 1 : 2;
 
   const filled = region.chaosCards.filter(c => c !== null).length;
   return Math.max(0, maxSlots - filled);

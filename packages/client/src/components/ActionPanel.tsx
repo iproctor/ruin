@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { POWER_COLORS, POWER_LABELS, TOKEN_LABELS } from '../lib/display.js';
+import { CARD_FACE, CARD_FACE_HI, CARD_EDGE, BRASS, BRASS_HOT, PAPER, PAPER_DIM, PAPER_FADE, HIGHLIGHT, ERROR } from '../lib/gameColors.js';
 import type {
   GameState,
   Power,
@@ -54,7 +55,7 @@ export default function ActionPanel({
 
   return (
     <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-      <div style={{ fontSize: '0.8rem', color: '#818cf8', fontWeight: 700, marginBottom: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: BRASS_HOT, fontWeight: 700, marginBottom: '0.5rem' }}>
         Your turn — {formatId(pending.actionKind)}
       </div>
 
@@ -262,9 +263,9 @@ function SummoningPanel({
 
       {mode === 'summon' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-          <div style={{ fontSize: '0.8rem', color: '#aaa' }}>Choose figure from reserve:</div>
+          <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>Choose figure from reserve:</div>
           {reserveFigures.length === 0 && (
-            <p style={{ color: '#f87171', fontSize: '0.8rem' }}>No figures in reserve.</p>
+            <p style={{ color: ERROR, fontSize: '0.8rem' }}>No figures in reserve.</p>
           )}
           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
             {reserveFigures.map((fig) => (
@@ -296,7 +297,7 @@ function SummoningPanel({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} />
           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.8rem', color: '#aaa' }}>Slot:</span>
+            <span style={{ fontSize: '0.8rem', color: PAPER_DIM }}>Slot:</span>
             <button
               className={slotIndex === 0 ? 'primary' : 'secondary'}
               onClick={() => setSlotIndex(0)}
@@ -335,7 +336,7 @@ function RegionPicker({
   const regions = allowedRegions ?? ALL_REGIONS;
   return (
     <div>
-      <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: '0.25rem' }}>Choose region:</div>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginBottom: '0.25rem' }}>Choose region:</div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {regions.map((r) => (
           <button
@@ -365,7 +366,7 @@ function TenzenDiscardPanel({
   const unique = [...new Set(visibleCards)];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Choose a card to discard, or keep all:
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -397,12 +398,15 @@ function TenzenDiscardPanel({
 
 // ── World choice ──────────────────────────────────────────────────────────────
 
-const WORLD_TWO_REGION_CARDS = new Set(['peasant_prosperity', 'ratmen_incursion', 'chaos_storm']);
+// Card IDs that ask for N different regions. The value is the required count.
+const WORLD_MULTI_REGION_CARDS: Record<string, number> = {
+  chaos_storm: 3,
+};
 
 // Cards where the player picks between two fixed region pairs (A or B).
 const WORLD_PAIR_CHOICES: Record<string, { ab: [string, string]; cd: [string, string] }> = {
-  northern_heir:   { ab: ['Norrsund', 'Volensk'],     cd: ['Talvimaa', 'Mittelreich'] },
-  heroes_of_order: { ab: ['Normagne', 'Mittelreich'],  cd: ['Almerida', 'Toscavar'] },
+  northern_heir: { ab: ['Norrsund', 'Volensk'],    cd: ['Talvimaa', 'Mittelreich'] },
+  ratmens_price: { ab: ['Normagne', 'Mittelreich'], cd: ['Almerida', 'Toscavar'] },
 };
 
 function WorldChoicePanel({
@@ -422,19 +426,20 @@ function WorldChoicePanel({
 
   const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
   const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
-  const isTwoRegion = WORLD_TWO_REGION_CARDS.has(cardId);
+  const multiRegionCount = WORLD_MULTI_REGION_CARDS[cardId];
+  const isMultiRegion = multiRegionCount !== undefined;
   const pairChoice = WORLD_PAIR_CHOICES[cardId];
 
   function toggleRegion(r: RegionId) {
     setSelectedRegions(prev => {
       if (prev.includes(r)) return prev.filter(x => x !== r);
-      if (prev.length >= 2) return prev;
+      if (multiRegionCount !== undefined && prev.length >= multiRegionCount) return prev;
       return [...prev, r];
     });
   }
 
   function handleSubmit() {
-    if (isTwoRegion) {
+    if (isMultiRegion) {
       if (selectedRegions.length === 0) return;
       onAction({ kind: 'world_choice', power: myPower, cardId, choices: { regions: selectedRegions } });
     } else {
@@ -448,23 +453,23 @@ function WorldChoicePanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       {cardDef && (
-        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#e2e8f0' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: PAPER }}>
           {cardDef.name}
         </div>
       )}
       {cardDef?.immediateEffect && (
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+        <div style={{ fontSize: '0.75rem', color: PAPER_DIM, fontStyle: 'italic' }}>
           {cardDef.immediateEffect}
         </div>
       )}
       {cardDef?.persistentEffect && (
-        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+        <div style={{ fontSize: '0.75rem', color: PAPER_FADE }}>
           Persistent: {cardDef.persistentEffect}
         </div>
       )}
       {pairChoice ? (
         <>
-          <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
+          <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginTop: '0.25rem' }}>
             Choose one:
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
@@ -476,11 +481,11 @@ function WorldChoicePanel({
                   className="primary"
                   onClick={() => onAction({ kind: 'world_choice', power: myPower, cardId, choices: { pair } })}
                   style={{
-                    background: '#1e1e3a',
-                    border: '2px solid #3a3a6e',
+                    background: CARD_FACE,
+                    border: `2px solid ${CARD_EDGE}`,
                     borderRadius: 5,
                     padding: '0.5rem 0.75rem',
-                    color: '#ddd',
+                    color: PAPER,
                     fontSize: '0.85rem',
                     cursor: 'pointer',
                     fontFamily: 'inherit',
@@ -494,27 +499,27 @@ function WorldChoicePanel({
         </>
       ) : (
       <>
-      {isTwoRegion && (
-        <div style={{ fontSize: '0.8rem', color: '#aaa', marginTop: '0.25rem' }}>
-          Choose up to 2 regions:
+      {isMultiRegion && (
+        <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginTop: '0.25rem' }}>
+          Choose up to {multiRegionCount} regions:
         </div>
       )}
-      {isTwoRegion ? (
+      {isMultiRegion ? (
         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
           {regions.map(r => {
             const sel = selectedRegions.includes(r);
-            const disabled = !sel && selectedRegions.length >= 2;
+            const disabled = !sel && selectedRegions.length >= multiRegionCount!;
             return (
               <button
                 key={r}
                 onClick={() => toggleRegion(r)}
                 disabled={disabled}
                 style={{
-                  background: sel ? '#312e81' : '#1e1e3a',
-                  border: `2px solid ${sel ? '#818cf8' : '#3a3a6e'}`,
+                  background: sel ? CARD_FACE_HI : CARD_FACE,
+                  border: `2px solid ${sel ? BRASS_HOT : CARD_EDGE}`,
                   borderRadius: 5,
                   padding: '0.3rem 0.5rem',
-                  color: sel ? '#c4b5fd' : disabled ? '#555' : '#ddd',
+                  color: sel ? PAPER : disabled ? PAPER_FADE : PAPER,
                   fontSize: '0.8rem',
                   cursor: disabled ? 'default' : 'pointer',
                   fontFamily: 'inherit',
@@ -528,9 +533,9 @@ function WorldChoicePanel({
       ) : (
         <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} allowedRegions={allowedRegions} />
       )}
-      {(isTwoRegion ? selectedRegions.length > 0 : selectedRegion) && (
+      {(isMultiRegion ? selectedRegions.length > 0 : selectedRegion) && (
         <button className="primary" onClick={handleSubmit}>
-          Confirm{isTwoRegion
+          Confirm{isMultiRegion
             ? `: ${selectedRegions.map(r => REGION_LABELS[r]).join(', ')}`
             : `: ${REGION_LABELS[selectedRegion!]}`}
         </button>
@@ -558,7 +563,7 @@ function TenzenApprenticePanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Carry the Chaos Stone from {REGION_LABELS[fromRegion]} to {REGION_LABELS[toRegion]}?
       </div>
       <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -598,7 +603,7 @@ function CorruptionHarvestPanel({
   const maxKills = (context['maxKills'] as number | undefined) ?? 1;
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  if (!regionId) return <p style={{ color: '#f87171' }}>Missing region in context.</p>;
+  if (!regionId) return <p style={{ color: ERROR }}>Missing region in context.</p>;
   const safeRegionId: RegionId = regionId;
 
   const enemyFigures = followersInRegion(state, safeRegionId).filter(
@@ -630,7 +635,7 @@ function CorruptionHarvestPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Choose {required} figure(s) to kill in {REGION_LABELS[regionId]}:
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -669,14 +674,14 @@ function UpgradeChoicePanel({
   const upgrades = myState?.availableUpgradeIds ?? [];
 
   if (upgrades.length === 0) {
-    return <p style={{ color: '#aaa', fontSize: '0.8rem' }}>No upgrades available.</p>;
+    return <p style={{ color: PAPER_DIM, fontSize: '0.8rem' }}>No upgrades available.</p>;
   }
 
   const powerColor = POWER_COLORS[myPower];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>Choose an upgrade:</div>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>Choose an upgrade:</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         {upgrades.map((upgradeId) => {
           const def = UPGRADE_BY_ID[upgradeId];
@@ -697,7 +702,7 @@ function UpgradeChoicePanel({
                 {def?.name ?? formatId(upgradeId)}
               </div>
               {def?.effect && (
-                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: '#d1d5db', marginTop: '0.15rem' }}>
+                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: PAPER, marginTop: '0.15rem' }}>
                   {def.effect}
                 </div>
               )}
@@ -725,7 +730,7 @@ function HeroRemovalPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Choose a figure to remove (Hero token effect):
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -782,7 +787,7 @@ export function CardOnPlayChoicePanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#a78bfa', fontWeight: 600 }}>
+      <div style={{ fontSize: '0.8rem', color: BRASS_HOT, fontWeight: 600 }}>
         {cardTitle}
       </div>
 
@@ -831,12 +836,12 @@ function StolenThoughtsPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>
         Choose opponent to discard 2 cards:
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {eligiblePowers.length === 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible opponents.</span>
+          <span style={{ fontSize: '0.75rem', color: ERROR }}>No eligible opponents.</span>
         )}
         {eligiblePowers.map(p => (
           <button key={p} className="danger"
@@ -868,11 +873,11 @@ function InvisibleHandPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>
         Move a token from {REGION_LABELS[regionId]}:
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {sourceTokens.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No tokens here.</span>}
+        {sourceTokens.length === 0 && <span style={{ fontSize: '0.75rem', color: ERROR }}>No tokens here.</span>}
         {sourceTokens.map(t => (
           <button key={t} className={chosenToken === t ? 'primary' : 'secondary'}
             onClick={() => { setChosenToken(t); setChosenRegion(null); }}
@@ -882,7 +887,7 @@ function InvisibleHandPanel({
       </div>
       {chosenToken && (
         <>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Destination:</div>
+          <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>Destination:</div>
           <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
             {validDests.map(r => (
               <button key={r} className={chosenRegion === r ? 'primary' : 'secondary'}
@@ -929,11 +934,11 @@ function WarMarchPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>
         Choose up to 2 figures to move here (selected: {selected.size}):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No figures to move.</span>}
+        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: ERROR }}>No figures to move.</span>}
         {moveable.map(f => (
           <button key={f.id} className={selected.has(f.id) ? 'primary' : 'secondary'}
             onClick={() => toggle(f.id)}
@@ -981,9 +986,9 @@ function PhaseShiftPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Choose figure to move:</div>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>Choose figure to move:</div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible figures.</span>}
+        {moveable.length === 0 && <span style={{ fontSize: '0.75rem', color: ERROR }}>No eligible figures.</span>}
         {moveable.map(f => (
           <button key={f.id} className={chosenFig === f.id ? 'primary' : 'secondary'}
             onClick={() => { setChosenFig(f.id); setChosenRegion(null); setCarry(false); }}
@@ -995,7 +1000,7 @@ function PhaseShiftPanel({
       </div>
       {chosenFig && (
         <>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Destination:</div>
+          <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>Destination:</div>
           <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
             {validDests.map(r => (
               <button key={r} className={chosenRegion === r ? 'primary' : 'secondary'}
@@ -1005,7 +1010,7 @@ function PhaseShiftPanel({
             ))}
           </div>
           {canCarry && (
-            <label style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
+            <label style={{ fontSize: '0.75rem', color: PAPER_DIM, display: 'flex', alignItems: 'center', gap: '0.3rem', cursor: 'pointer' }}>
               <input type="checkbox" checked={carry} onChange={e => setCarry(e.target.checked)} />
               Carry Chaos Stone
             </label>
@@ -1036,11 +1041,11 @@ function FatesAegisPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>
         Choose a figure to protect this battle:
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {figures.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No figures here.</span>}
+        {figures.length === 0 && <span style={{ fontSize: '0.75rem', color: ERROR }}>No figures here.</span>}
         {figures.map(f => (
           <button key={f.id} className="primary"
             onClick={() => onSubmit({ followerId: f.id })}
@@ -1068,11 +1073,11 @@ function EnthrallmentPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+      <div style={{ fontSize: '0.75rem', color: PAPER_DIM }}>
         Choose an enemy cultist to control:
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
-        {targets.length === 0 && <span style={{ fontSize: '0.75rem', color: '#f87171' }}>No eligible cultists.</span>}
+        {targets.length === 0 && <span style={{ fontSize: '0.75rem', color: ERROR }}>No eligible cultists.</span>}
         {targets.map(f => (
           <button key={f.id} className="primary"
             onClick={() => onSubmit({ followerId: f.id })}
@@ -1135,7 +1140,7 @@ function ForcedDiscardPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
+      <div style={{ fontSize: '0.8rem', color: ERROR }}>
         Meddling of Rats — choose {count} card{count !== 1 ? 's' : ''} to discard ({selectedIndices.size}/{count} selected):
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
@@ -1262,13 +1267,13 @@ function BattleHitAssignmentPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#f87171' }}>
+      <div style={{ fontSize: '0.8rem', color: ERROR }}>
         Battle in {REGION_LABELS[safeRegionId]} — {hitsRemaining} hit(s) to assign
         ({totalHitsUsed}/{hitsRemaining} used):
       </div>
       {peasantsAvailable > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-          <span style={{ fontSize: '0.8rem', color: '#fbbf24' }}>Peasants ({peasantsAvailable}):</span>
+          <span style={{ fontSize: '0.8rem', color: BRASS_HOT }}>Peasants ({peasantsAvailable}):</span>
           <button
             className="secondary"
             style={{ fontSize: '0.75rem', padding: '0.1rem 0.4rem' }}
@@ -1286,7 +1291,7 @@ function BattleHitAssignmentPanel({
       )}
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {targets.length === 0 && peasantsAvailable === 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No valid targets.</span>
+          <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No valid targets.</span>
         )}
         {targets.map(f => (
           <button
@@ -1297,7 +1302,7 @@ function BattleHitAssignmentPanel({
             disabled={!selectedIds.has(f.id) && getDefense(f) > hitsLeft}
           >
             {POWER_LABELS_LOCAL[f.controlledBy ?? f.power] ?? f.power} {formatId(f.class)}
-            <span style={{ color: '#94a3b8', marginLeft: 4 }}>def {getDefense(f)}</span>
+            <span style={{ color: PAPER_DIM, marginLeft: 4 }}>def {getDefense(f)}</span>
           </button>
         ))}
       </div>
@@ -1336,7 +1341,7 @@ function WorldCardEffectPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         World card effect {cardId ? `(${formatId(cardId)})` : ''} — choose a region:
       </div>
       <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} />
@@ -1388,8 +1393,8 @@ function DialPlaceTokenPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
-        Dial reward — place <strong style={{ color: '#facc15' }}>{tokenLabel}</strong> token(s)
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
+        Dial reward — place <strong style={{ color: HIGHLIGHT }}>{tokenLabel}</strong> token(s)
         ({remaining} of {count} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
@@ -1406,7 +1411,7 @@ function DialPlaceTokenPanel({
         ))}
       </div>
       {picks.length > 0 && (
-        <div style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
+        <div style={{ fontSize: '0.75rem', color: PAPER }}>
           Selected: {picks.map((r, i) => (
             <button
               key={i}
@@ -1490,12 +1495,12 @@ function DialRemoveCorruptionPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Dial reward — remove corruption ({remaining} of {count} remaining):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {candidates.length === 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No corruption to remove.</span>
+          <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No corruption to remove.</span>
         )}
         {candidates.map(({ regionId, targetPower }) => {
           const avail = availableFor(regionId, targetPower);
@@ -1517,7 +1522,7 @@ function DialRemoveCorruptionPanel({
         })}
       </div>
       {picks.length > 0 && (
-        <div style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
+        <div style={{ fontSize: '0.75rem', color: PAPER }}>
           Selected: {picks.map((p, i) => (
             <button
               key={i}
@@ -1619,12 +1624,12 @@ function DialRemoveWorldTokenPanel({
   if (remaining === 1) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+        <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
           Dial reward — remove a world token:
         </div>
         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
           {options.length === 0 && (
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No tokens to remove.</span>
+            <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No tokens to remove.</span>
           )}
           {options.map(({ regionId, tokenType }) => (
             <button
@@ -1643,12 +1648,12 @@ function DialRemoveWorldTokenPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: '#aaa' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
         Dial reward — remove {remaining} world tokens (select {remaining}):
       </div>
       <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
         {options.length === 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No tokens to remove.</span>
+          <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No tokens to remove.</span>
         )}
         {options.map(({ regionId, tokenType }) => {
           const sel = isSelected({ regionId, tokenType });

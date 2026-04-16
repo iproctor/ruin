@@ -4,6 +4,7 @@ import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
 import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
+import { INK, SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_HOT, CARD_FACE, CARD_INK, MAGIC, HIGHLIGHT, RUINED, RUINED_TEXT, PENDING, ERROR } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
 import BattlePane from './BattlePane.js';
@@ -225,7 +226,7 @@ function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, 
         const isAnimKilled = members.every((m) => animationKilledIds?.has(m.id) ?? false);
         const op = (fig.tipped || isAnimKilled) ? 0.3 : 0.9;
         const controlledColor = fig.controlledBy ? POWER_COLORS[fig.controlledBy] : undefined;
-        const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? '#facc15' : controlledColor;
+        const glowStroke = isAnimKilled ? '#ef4444' : fig.protected ? HIGHLIGHT : controlledColor;
         const needsOuterRing = !!controlledColor && glowStroke !== controlledColor;
         const sp = { fill: color, opacity: op, stroke: glowStroke ?? '#111', strokeWidth: glowStroke ? 1.5 : 0.5 };
         const isAppearing = members.some((m) => summoningAnim?.appearingFigures.has(m.id) ?? false);
@@ -259,9 +260,9 @@ function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, 
               {slot.kind === 'group' && (
                 <text
                   x={fx + 7} y={fy + 3}
-                  fill="#f1f5f9" fontSize="8" fontWeight={700}
+                  fill={PAPER} fontSize="8" fontWeight={700}
                   style={{ userSelect: 'none', paintOrder: 'stroke' }}
-                  stroke="#0d0d1f" strokeWidth={2}
+                  stroke={INK} strokeWidth={2}
                   strokeLinejoin="round"
                 >
                   ×{slot.count}
@@ -272,7 +273,7 @@ function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, 
         );
       })}
       {overflow > 0 && (
-        <text x={x + FIGURE_COLS * FIGURE_STEP + 2} y={y + 11} fill="#9ca3af" fontSize="8" fontStyle="italic">+{overflow}</text>
+        <text x={x + FIGURE_COLS * FIGURE_STEP + 2} y={y + 11} fill={PAPER_DIM} fontSize="8" fontStyle="italic">+{overflow}</text>
       )}
       {hovered && (
         <FollowerTooltip
@@ -323,13 +324,15 @@ function MiniCard({ cardId, width, height, onHover, isPending, isAppearing }: {
         style={{ cursor: 'default' }}
       >
         <rect width={width} height={height} rx={3}
-          fill={isPending ? '#1a2a1a' : '#1a1433'}
-          stroke={isPending ? '#22c55e' : isPersistent ? accentColor : '#3a3a6e'}
+          fill={isPending ? '#1a2a1a' : CARD_FACE}
+          stroke={isPending ? PENDING : isPersistent ? accentColor : BORDER}
           strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
           strokeDasharray={isPending ? '3 2' : undefined}
         />
-      <rect width={width} height={3} rx={1} fill={accentColor} opacity={0.85} />
-      <text x={3} y={12} fill="#e5e7eb" fontSize="8" fontWeight="700" style={{ userSelect: 'none' }}>
+      <rect width={width} height={3} rx={1} fill={accentColor} opacity={0.95} />
+      <text x={3} y={12} fill={CARD_INK} fontSize="8" fontWeight="600"
+        fontFamily="'Cinzel', serif" letterSpacing="0.02em"
+        style={{ userSelect: 'none' }}>
         {name.slice(0, 10)}
       </text>
       {cost !== null && (
@@ -338,7 +341,7 @@ function MiniCard({ cardId, width, height, onHover, isPending, isAppearing }: {
           <text x={6} y={9} textAnchor="middle" fill="#fff" fontSize="8" fontWeight="700">{cost}</text>
         </g>
       )}
-      {hasMagic && <text x={3} y={height - 3} fill="#a78bfa" fontSize="8">✦</text>}
+      {hasMagic && <text x={3} y={height - 3} fill={MAGIC} fontSize="8">✦</text>}
     </g>
     </g>
   );
@@ -365,7 +368,7 @@ function RegionDropZone({ regionId, pos, onClick, active }: {
         height: `${(pos.h / 615) * 100}%`,
         borderRadius: 6,
         background: isOver ? 'rgba(250,204,21,0.12)' : 'transparent',
-        border:    isOver ? '2px solid #facc15' : '2px solid transparent',
+        border:    isOver ? `2px solid ${HIGHLIGHT}` : '2px solid transparent',
         boxSizing: 'border-box',
         transition: 'background 0.1s, border-color 0.1s',
         pointerEvents: active ? 'all' : 'none',
@@ -498,11 +501,11 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Background */}
       <rect x={x} y={y} width={w} height={h} rx={6}
-        fill={isRuined ? '#1a0808' : '#1e1e3a'}
+        fill={isRuined ? '#1a0808' : SOOT}
         stroke={
           isAnimationTarget ? '#ef4444' :
-          isHighlighted ? '#facc15' :
-          isRuined ? '#7f1d1d' : '#3a3a6e'
+          isHighlighted ? HIGHLIGHT :
+          isRuined ? RUINED : BORDER
         }
         strokeWidth={isAnimationTarget ? 3 : isHighlighted ? 2.5 : 1}
         style={isAnimationTarget ? { filter: 'drop-shadow(0 0 8px #ef4444)' } : undefined}
@@ -510,7 +513,9 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
       {/* Name */}
       <text x={x + w / 2} y={y + 14} textAnchor="middle"
-        fill={isRuined ? '#f87171' : '#e5e7eb'} fontSize="10" fontWeight="700"
+        fill={isRuined ? ERROR : PAPER} fontSize="11" fontWeight="600"
+        fontFamily="'Cinzel', serif"
+        letterSpacing="0.05em"
         style={{ userSelect: 'none' }}>
         {pos.label}
       </text>
@@ -538,13 +543,13 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         for (const [pw, n] of Object.entries(ruinerScore) as [Power, number][]) {
           if (n > topCount) { topCount = n; topRuiner = pw; }
         }
-        const cColor = topRuiner ? POWER_COLORS[topRuiner] : '#64748b';
+        const cColor = topRuiner ? POWER_COLORS[topRuiner] : PAPER_FADE;
         const parts: { label: string; color: string; bold?: boolean }[] = [
-          { label: `R${R}`, color: '#64748b' },
-          { label: `V${V}`, color: '#64748b' },
+          { label: `R${R}`, color: PAPER_FADE },
+          { label: `V${V}`, color: PAPER_FADE },
         ];
         if (isRuined) {
-          parts.push({ label: 'RUINED', color: '#f87171', bold: true });
+          parts.push({ label: 'RUINED', color: ERROR, bold: true });
         } else {
           if (dom.leader) parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
           parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
@@ -562,7 +567,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         );
       })()}
       {region.populous && (
-        <text x={x + w - 5} y={y + 25} textAnchor="end" fill="#facc15" fontSize="8" fontWeight="700">POP</text>
+        <text x={x + w - 5} y={y + 25} textAnchor="end" fill={HIGHLIGHT} fontSize="8" fontWeight="700">POP</text>
       )}
 
       {/* Tokens */}
@@ -616,11 +621,11 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             onClick={(e) => { e.stopPropagation(); onSummonClick(regionId, e.clientX, e.clientY); }}
           >
             <circle cx={cx} cy={cy} r={6}
-              fill="#1e1e3a" stroke="#7c3aed" strokeWidth={1.1} />
+              fill={SOOT} stroke={BRASS} strokeWidth={1.1} />
             <text
               x={cx + 0.25} y={cy-0.6}
               textAnchor="middle" dominantBaseline="central"
-              fill="#c4b5fd" fontSize="10" fontWeight={800}
+              fill={PAPER} fontSize="10" fontWeight={800}
               style={{ userSelect: 'none', pointerEvents: 'none' }}
             >
               +
@@ -643,8 +648,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
                   isAppearing={summoningAnim?.appearingCards.has(`${regionId}-${si}`) ?? false} />
               ) : (
                 <rect width={cardSlotW} height={cardSlotH} rx={3}
-                  fill={canClick ? '#1e1e3a' : 'none'}
-                  stroke={canClick ? '#7c3aed' : '#2a2a4e'}
+                  fill={canClick ? SOOT : 'none'}
+                  stroke={canClick ? BRASS : BORDER}
                   strokeWidth={canClick ? 1 : 0.75}
                   strokeDasharray="3 2"
                   style={canClick ? { cursor: 'pointer' } : undefined}
@@ -754,7 +759,7 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
         )}
       </div>
       {region.ruinationCardIndex !== null ? (
-        <div className="gt-divider" style={{ paddingTop: 6, fontFamily: "'Cinzel', serif", fontWeight: 800, letterSpacing: '0.24em', color: '#ff7a7a', fontSize: '0.85rem' }}>
+        <div className="gt-divider" style={{ paddingTop: 6, fontFamily: "'Cinzel', serif", fontWeight: 800, letterSpacing: '0.24em', color: RUINED_TEXT, fontSize: '0.85rem' }}>
           RUINED
         </div>
       ) : (
@@ -773,7 +778,7 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
             {cultCount > 0 && <span className="gt-fade"> (+{cultCount} incoming)</span>}
           </div>
           {willRuin && (
-            <div style={{ marginTop: 6, color: '#ff7a7a', fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: '0.72rem', letterSpacing: '0.18em' }}>
+            <div style={{ marginTop: 6, color: RUINED_TEXT, fontFamily: "'Cinzel', serif", fontWeight: 700, fontSize: '0.72rem', letterSpacing: '0.18em' }}>
               ⚠ May ruin this round
             </div>
           )}
@@ -857,7 +862,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
       {/* SVG board */}
       <svg
         viewBox="0 0 800 615"
-        style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: '#0d0d1f' }}
+        style={{ width: '100%', height: '100%', display: 'block', borderRadius: 8, background: INK }}
       >
         {/* Connection lines between adjacent regions */}
         <g>
@@ -877,7 +882,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                 const y2 = pb.y + pb.h / 2;
                 lines.push(
                   <line key={key} x1={x1} y1={y1} x2={x2} y2={y2}
-                    stroke="#3a3a6e" strokeWidth={1.5} opacity={0.35} strokeDasharray="4 3" />
+                    stroke={BORDER} strokeWidth={1.5} opacity={0.35} strokeDasharray="4 3" />
                 );
               }
             }
@@ -1050,14 +1055,14 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
             whiteSpace: 'nowrap',
             padding: '3px 8px',
             borderRadius: 4,
-            background: '#0d0d1fee',
+            background: `${INK}ee`,
             border: `1.5px solid ${POWER_COLORS[label.power]}`,
             fontSize: '0.72rem',
             fontWeight: 700,
-            color: '#e5e7eb',
+            color: PAPER,
             boxShadow: `0 0 8px ${POWER_COLORS[label.power]}66`,
           }}>
-            Domination: <span style={{ color: POWER_COLORS[label.power] }}>{label.power[0]!.toUpperCase() + label.power.slice(1)}</span> <span style={{ color: '#fbbf24' }}>+{label.vp} VP</span>
+            Domination: <span style={{ color: POWER_COLORS[label.power] }}>{label.power[0]!.toUpperCase() + label.power.slice(1)}</span> <span style={{ color: BRASS_HOT }}>+{label.vp} VP</span>
           </div>
         );
       })}

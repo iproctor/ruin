@@ -5,7 +5,7 @@ import {
 } from '../constants.js';
 import {
   updatePower, updateRegion, isWorldCardActive, lowestThreatPower,
-  highestThreatPower, isRuined, followersInRegion,
+  isRuined, followersInRegion,
 } from '../helpers.js';
 import { checkVictory } from '../victory.js';
 
@@ -260,7 +260,6 @@ function applyWorldCardPersistentEffect(
 ): { state: GameState } {
   let s = state;
   const lowest = lowestThreatPower(s);
-  const highest = highestThreatPower(s);
 
   switch (cardId) {
     case 'normagne_heir': {
@@ -277,31 +276,31 @@ function applyWorldCardPersistentEffect(
     }
 
     case 'northern_heir': {
-      // Lowest threat player places a Noble on a region already containing a Noble
-      const nobleRegions = REGION_ORDER.filter(r =>
-        s.regions[r]!.tokens.includes('noble')
+      // Lowest threat player places a Hero on a region already containing a Hero
+      const heroRegions = REGION_ORDER.filter(r =>
+        s.regions[r]!.tokens.includes('hero')
       );
-      if (nobleRegions.length > 0) {
-        const target = nobleRegions[0]!;
+      if (heroRegions.length > 0) {
+        const target = heroRegions[0]!;
         s = log.apply(s, { type: 'world_card_effect', subtype: 'northern_heir', power: lowest, regionId: target });
       }
       break;
     }
 
     case 'diplomatic_envoy': {
-      // Lowest threat removes 1 Noble token
-      const nobleRegions = REGION_ORDER.filter(r =>
-        s.regions[r]!.tokens.includes('noble')
+      // Lowest threat removes 1 Hero token
+      const heroRegions = REGION_ORDER.filter(r =>
+        s.regions[r]!.tokens.includes('hero')
       );
-      if (nobleRegions.length > 0) {
-        const target = nobleRegions[0]!;
+      if (heroRegions.length > 0) {
+        const target = heroRegions[0]!;
         s = log.apply(s, { type: 'world_card_effect', subtype: 'diplomatic_envoy', power: lowest, regionId: target });
       }
       break;
     }
 
     case 'chaos_countermeasures': {
-      // Lowest threat places a Hero on any region with 1+ Chaos Stone
+      // Lowest threat places a Ratmen on any region with 1+ Chaos Stone
       const eligible = REGION_ORDER.filter(r =>
         s.regions[r]!.tokens.includes('chaos_stone')
       );
@@ -313,14 +312,14 @@ function applyWorldCardPersistentEffect(
     }
 
     case 'great_exorcism': {
-      // Remove all figures from regions with Event tokens;
+      // Remove all Cultists from regions with Event tokens;
       // then move all Event tokens to region with most corruption
       const eventRegions = REGION_ORDER.filter(r =>
         s.regions[r]!.tokens.includes('event')
       );
       for (const regionId of eventRegions) {
-        const figures = followersInRegion(s, regionId);
-        if (figures.length > 0) {
+        const cultists = followersInRegion(s, regionId).filter(f => f.class === 'cultist');
+        if (cultists.length > 0) {
           s = log.apply(s, { type: 'world_card_effect', subtype: 'great_exorcism_figures', regionId });
         }
       }
@@ -372,15 +371,15 @@ function applyWorldCardPersistentEffect(
     }
 
     case 'noble_scrutiny': {
-      // In each region with a Noble token, player with most VP removes 1 of their corruption tokens
+      // In each region with a Hero token, player with greatest Threat removes 1 of their corruption tokens
       for (const regionId of REGION_ORDER) {
-        if (!s.regions[regionId]!.tokens.includes('noble')) continue;
+        if (!s.regions[regionId]!.tokens.includes('hero')) continue;
         const withTokens = s.activePowers
           .filter(p => s.regions[regionId]!.corruptionTokens[p] > 0)
-          .sort((a, b) => s.powers[b]!.victoryPoints - s.powers[a]!.victoryPoints);
+          .sort((a, b) => s.powers[b]!.threatValue - s.powers[a]!.threatValue);
         if (withTokens.length === 0) continue;
-        const richest = withTokens[0]!;
-        s = log.apply(s, { type: 'world_card_effect', subtype: 'noble_scrutiny', power: richest, regionId });
+        const greatest = withTokens[0]!;
+        s = log.apply(s, { type: 'world_card_effect', subtype: 'noble_scrutiny', power: greatest, regionId });
       }
       break;
     }

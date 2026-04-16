@@ -3,7 +3,7 @@ import type { Power, TokenType } from '@ruin/engine';
 /** Power accent colors — single source of truth for the client. */
 export const POWER_COLORS: Record<Power, string> = {
   xarm:   '#ef4444',
-  gormen: '#22c55e',
+  gormen: '#9ebe48', // slime / bile — brighter sibling of POWER_DIM.gormen
   tenzen: '#2daade',
   lasha:  '#a855f7',
 };

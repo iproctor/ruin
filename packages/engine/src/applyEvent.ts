@@ -632,21 +632,23 @@ function applyWorldCardEffect(
       });
     }
     case 'northern_heir':
-      return addToken(state, event.regionId, 'noble');
-    case 'diplomatic_envoy':
-      return removeToken(state, event.regionId, 'noble');
-    case 'chaos_countermeasures':
       return addToken(state, event.regionId, 'hero');
+    case 'diplomatic_envoy':
+      return removeToken(state, event.regionId, 'hero');
+    case 'chaos_countermeasures':
+      return addToken(state, event.regionId, 'ratmen');
     case 'great_exorcism_figures': {
-      // Remove all figures from region
+      // Remove all Cultists from region
       let s = state;
       for (const power of s.activePowers) {
         const p = s.powers[power]!;
-        const hasInRegion = p.followers.some(f => f.regionId === event.regionId);
-        if (hasInRegion) {
+        const hasCultistInRegion = p.followers.some(f => f.regionId === event.regionId && f.class === 'cultist');
+        if (hasCultistInRegion) {
           s = patchPower(s, power, {
             followers: p.followers.map(f =>
-              f.regionId === event.regionId ? { ...f, regionId: null, controlledBy: null } : f
+              f.regionId === event.regionId && f.class === 'cultist'
+                ? { ...f, regionId: null, controlledBy: null }
+                : f
             ),
           });
         }

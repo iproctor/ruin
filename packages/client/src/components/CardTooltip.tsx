@@ -1,6 +1,7 @@
 import { createPortal } from 'react-dom';
 import { CARD_BY_ID, WORLD_CARD_BY_ID, UPGRADE_BY_ID } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { MAGIC } from '../lib/gameColors.js';
 
 interface CardTooltipProps {
   cardId: string;
@@ -62,21 +63,23 @@ export default function CardTooltip({ cardId, x, y }: CardTooltipProps) {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, fontFamily: "'Cinzel', serif", fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8, fontFamily: "'Cinzel', serif", fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
         {isWorld && (card as { hasCometIcon?: boolean }).hasCometIcon && (
-          <span style={{ color: 'var(--game-brass-hot)' }}>☄ Comet</span>
+          <span style={{ color: 'var(--game-brass-hot)', whiteSpace: 'nowrap' }}>☄ Comet</span>
         )}
         {isChaos && (
           <>
-            <span style={{ color: powerColor }}>
+            <span style={{ color: powerColor, whiteSpace: 'nowrap' }}>
               {POWER_LABELS[(card as { power: string }).power as keyof typeof POWER_LABELS]}
             </span>
             <span className="gt-fade">·</span>
-            <span className="gt-muted">{TIMING_LABELS[(card as { timing: string }).timing] ?? (card as { timing: string }).timing}</span>
+            <span className="gt-muted" style={{ whiteSpace: 'nowrap' }}>
+              {TIMING_LABELS[(card as { timing: string }).timing] ?? (card as { timing: string }).timing}
+            </span>
             {(card as { hasMagicSymbol: boolean }).hasMagicSymbol && (
               <>
                 <span className="gt-fade">·</span>
-                <span style={{ color: 'var(--game-tenzen, #3d8ec8)' }}>✦ Magic</span>
+                <span style={{ color: MAGIC, whiteSpace: 'nowrap' }}>✦ Magic</span>
               </>
             )}
           </>

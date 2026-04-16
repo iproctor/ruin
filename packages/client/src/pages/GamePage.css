@@ -20,6 +20,12 @@
   --game-brass:      #a97140;
   --game-brass-hot:  #c68c5a;
   --game-blood:      #c21818;
+
+  /* Cool slate — used for card face + tooltip surface */
+  --game-slate:      #222830;
+  --game-slate-hi:   #262d35;
+  --game-slate-deep: #161a1f;
+  --game-slate-line: #3a434d;
 }
 
 /* ── Status bar ──────────────────────────────────────────────────────────── */
@@ -120,8 +126,8 @@
   gap: 8px;
   padding: 3px 10px;
   border-radius: 1px;
-  border: 1px solid var(--game-border-hi);
-  background: linear-gradient(180deg, rgba(36, 27, 20, 0.75), rgba(10, 6, 4, 0.85));
+  border: 1px solid var(--game-slate-line);
+  background: linear-gradient(180deg, var(--game-slate-hi), var(--game-slate));
   font-family: 'Cinzel', serif;
   font-weight: 600;
   font-size: 0.72rem;
@@ -165,8 +171,8 @@
   height: 36px;
   border-radius: 1px;
   overflow: hidden;
-  border: 1px solid var(--game-border-hi);
-  background: linear-gradient(180deg, var(--game-parchment), var(--game-ink));
+  border: 1px solid var(--game-slate-line);
+  background: linear-gradient(180deg, var(--game-slate-hi), var(--game-slate));
   flex-shrink: 0;
   cursor: default;
   transition: border-color 0.2s ease;
@@ -207,8 +213,10 @@
   justify-content: center;
   padding: 11px 4px 4px;
   text-align: center;
-  font-family: 'IM Fell English', serif;
-  font-size: 0.62rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.6rem;
+  letter-spacing: 0.02em;
   color: var(--game-paper);
   line-height: 1.15;
   word-break: break-word;
@@ -313,9 +321,9 @@
 /* ── Tooltips (generic grimdark surface) ────────────────────────────────── */
 .gt {
   position: fixed;
-  background: linear-gradient(180deg, var(--game-parchment-hi), var(--game-ink));
-  /* Tint the neon accent with ink so the border sits in the grimdark palette */
-  border: 1px solid color-mix(in srgb, var(--tt-accent, var(--game-border-hi)) 45%, #0a0806 55%);
+  background: linear-gradient(180deg, var(--game-slate-hi), var(--game-slate-deep));
+  /* Tint the neon accent with slate so the border sits in the palette */
+  border: 1px solid color-mix(in srgb, var(--tt-accent, var(--game-slate-line)) 45%, var(--game-slate-deep) 55%);
   border-radius: 2px;
   padding: 10px 12px;
   pointer-events: none;
@@ -348,7 +356,7 @@
   font-size: 0.78rem;
 }
 .gt-divider {
-  border-top: 1px solid var(--game-border);
+  border-top: 1px solid var(--game-slate-line);
   margin: 6px 0;
 }
 .gt-body { color: var(--game-paper); }

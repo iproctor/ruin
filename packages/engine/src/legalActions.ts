@@ -15,8 +15,8 @@ import { getWorldChoiceRegions } from './phases/world.js';
 import { getFollowerCost, getCardCost } from './phases/summoning.js';
 import type { Rng } from './dice.js';
 
-const WORLD_TWO_REGION_CARDS = new Set(['peasant_prosperity', 'ratmen_incursion', 'chaos_storm']);
-const WORLD_PAIR_CHOICE_CARDS = new Set(['northern_heir', 'heroes_of_order']);
+const WORLD_THREE_REGION_CARDS = new Set(['chaos_storm']);
+const WORLD_PAIR_CHOICE_CARDS = new Set(['northern_heir', 'ratmens_price']);
 
 /**
  * Returns all legal actions for the given power in the current game state.
@@ -152,28 +152,31 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
         return actions;
       }
 
-      // grand_muster: choose regions for peasants, nobles, and ratmen (2 each)
+      // grand_muster: choose regions for peasants, heroes, and nobles (2 each)
       if (cardId === 'grand_muster') {
         // Simple strategy: split regions across the three types
         const r = regions;
         const peasantRegions = r.slice(0, 2);
-        const nobleRegions = r.slice(2, 4);
-        const ratmenRegions = r.slice(4, 6);
-        return [{ kind: 'world_choice' as const, power, cardId, choices: { peasantRegions, nobleRegions, ratmenRegions } }];
+        const heroRegions = r.slice(2, 4);
+        const nobleRegions = r.slice(4, 6);
+        return [{ kind: 'world_choice' as const, power, cardId, choices: { peasantRegions, heroRegions, nobleRegions } }];
       }
 
-      // {regions: [r1, r2]} cards
-      if (WORLD_TWO_REGION_CARDS.has(cardId)) {
+      // {regions: [r1, r2, r3]} cards
+      if (WORLD_THREE_REGION_CARDS.has(cardId)) {
         const actions: WorldChoiceAction[] = [];
         for (let i = 0; i < regions.length; i++) {
           for (let j = i + 1; j < regions.length; j++) {
-            actions.push({ kind: 'world_choice', power, cardId, choices: { regions: [regions[i], regions[j]] } });
+            for (let k = j + 1; k < regions.length; k++) {
+              actions.push({ kind: 'world_choice', power, cardId, choices: { regions: [regions[i], regions[j], regions[k]] } });
+            }
           }
         }
-        if (regions.length === 1) {
-          actions.push({ kind: 'world_choice', power, cardId, choices: { regions: [regions[0]] } });
+        if (actions.length === 0) {
+          // Fewer than 3 regions available — use whatever we have
+          actions.push({ kind: 'world_choice', power, cardId, choices: { regions: regions.slice(0, 3) } });
         }
-        return actions.length > 0 ? actions : [{ kind: 'world_choice', power, cardId, choices: { regions: [] } }];
+        return actions;
       }
 
       // Default: {regionId} cards

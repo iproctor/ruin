@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   DndContext,
@@ -23,11 +23,46 @@ import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
 import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_DIM, CARD_FACE, CARD_INK, RUINED, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
 
 export type { DragItem } from '../types/drag.js';
+
+// ── useClampedPopupPosition — keep floating popups on screen ─────────────────
+// Measures the popup after render and, if its preferred top/left would spill
+// past the viewport, flips it above the anchor or clamps it to the edge.
+
+function useClampedPopupPosition(anchor: { x: number; y: number } | null) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; ready: boolean }>(
+    { top: 0, left: 0, ready: false },
+  );
+
+  useLayoutEffect(() => {
+    if (!anchor) {
+      setPos({ top: 0, left: 0, ready: false });
+      return;
+    }
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    const margin = 8;
+    let top = anchor.y + 6;
+    let left = anchor.x + 6;
+    if (top + height > window.innerHeight - margin) {
+      const above = anchor.y - height - 6;
+      top = above >= margin ? above : Math.max(margin, window.innerHeight - height - margin);
+    }
+    if (left + width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - width - margin);
+    }
+    setPos({ top, left, ready: true });
+  }, [anchor]);
+
+  return { ref, pos };
+}
 
 // ── DragGhost — what renders under the cursor while dragging ──────────────────
 
@@ -37,10 +72,12 @@ function DragGhost({ item }: { item: DragItem }) {
     const def = CARD_BY_ID[item.cardId];
     return (
       <div style={{
-        width: 52, height: 72, background: '#1a1433',
+        width: 52, height: 72, background: CARD_FACE,
         border: `2px solid ${color}`, borderRadius: 6,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: '0.65rem', fontWeight: 700, color: '#fff', padding: 4,
+        fontFamily: "'Cinzel', serif",
+        fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.03em',
+        color: CARD_INK, padding: 4,
         textAlign: 'center', boxShadow: `0 0 16px ${color}88`, opacity: 0.9,
         pointerEvents: 'none',
       }}>
@@ -88,15 +125,15 @@ function CollapsibleLog(props: {
         onClick={() => setCollapsed(c => !c)}
         style={{
           width: 20,
-          background: '#13121f',
-          border: '1px solid #2d2d5e',
+          background: SOOT,
+          border: `1px solid ${BORDER}`,
           borderRight: 'none',
           borderRadius: '16px 0 0 16px',
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: '#64748b',
+          color: PAPER_FADE,
           fontSize: '0.6rem',
           flexShrink: 0,
           padding: 0,
@@ -267,7 +304,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
     [],
   );
 
-  // Deduped list of cards playable in the currently-open slot.
+  // Deduped list of cards playable in the currently-open slot, sorted the
+  // same way the hand is (cost asc, then short/name).
   const slotChoices = useMemo(() => {
     if (!slotPopup) return [];
     const ids = new Set<string>();
@@ -278,6 +316,16 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       ids.add(a.cardId);
       list.push(a.cardId);
     }
+    list.sort((a, b) => {
+      const ca = CARD_BY_ID[a];
+      const cb = CARD_BY_ID[b];
+      const costA = ca?.cost ?? 0;
+      const costB = cb?.cost ?? 0;
+      if (costA !== costB) return costA - costB;
+      const nameA = ca?.shortName ?? ca?.name ?? a;
+      const nameB = cb?.shortName ?? cb?.name ?? b;
+      return nameA.localeCompare(nameB);
+    });
     return list;
   }, [slotPopup, legalPlayCardActions]);
 
@@ -299,6 +347,14 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
   const [summonPopup, setSummonPopup] = useState<
     { regionId: RegionId; x: number; y: number } | null
   >(null);
+
+  // Clamped positions (measure after render, flip/clip if off-screen).
+  const { ref: slotPopupRef, pos: slotPopupPos } = useClampedPopupPosition(
+    slotPopup ? { x: slotPopup.x, y: slotPopup.y } : null,
+  );
+  const { ref: summonPopupRef, pos: summonPopupPos } = useClampedPopupPosition(
+    summonPopup ? { x: summonPopup.x, y: summonPopup.y } : null,
+  );
 
   const legalSummonActions = useMemo(() => {
     if (!displayState || !myPowerEarly) return [];
@@ -517,7 +573,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   if (!displayState) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#475569' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: PAPER_FADE }}>
         Connecting…
       </div>
     );
@@ -562,7 +618,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0d0d1f', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: INK, overflow: 'hidden' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
         <StatusBar
@@ -610,7 +666,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           {(needsOnPlayChoice || needsApprenticeChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
             <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
               {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
-                <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
                   <CardOnPlayChoicePanel
                     state={displayState}
                     myPower={myPower}
@@ -622,8 +678,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               )}
 
               {needsApprenticeChoice && myPower && afterPlayPending && (
-                <div style={{ background: '#1a1040', border: '2px solid #7c3aed', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
-                  <div style={{ fontSize: '0.8rem', color: '#c4b5fd', marginBottom: 6, fontWeight: 600 }}>
+                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.8rem', color: PAPER, marginBottom: 6, fontWeight: 600 }}>
                     Chaos Stone
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#aaa', marginBottom: 8 }}>
@@ -649,8 +705,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               )}
 
               {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
-                <div style={{ background: '#16213e', border: '2px solid #312e81', borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
-                  {submitError && <p style={{ color: '#f87171', fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
+                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS_DIM}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                  {submitError && <p style={{ color: ERROR, fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
                   <ActionPanel
                     state={displayState}
                     myPower={myPower}
@@ -675,7 +731,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         </div>
 
         {paused && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: '#16213e', borderTop: '1px solid #3a3a6e' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: PARCHMENT, borderTop: `1px solid ${BORDER_HI}` }}>
             <button
               onClick={resume}
               style={{
@@ -683,8 +739,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
                 padding: '8px 32px',
                 borderRadius: 6,
                 border: 'none',
-                background: '#7f1d1d',
-                color: '#fca5a5',
+                background: RUINED,
+                color: ERROR,
                 fontWeight: 700,
                 cursor: 'pointer',
               }}
@@ -720,12 +776,16 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           style={{ position: 'fixed', inset: 0, zIndex: 250 }}
         >
           <div
+            ref={slotPopupRef}
             onClick={(e) => e.stopPropagation()}
             className="gpopup"
             style={{
-              top: Math.min(slotPopup.y + 6, window.innerHeight - 260),
-              left: Math.min(slotPopup.x + 6, window.innerWidth - 200),
+              top: slotPopupPos.top,
+              left: slotPopupPos.left,
               minWidth: 190,
+              maxHeight: 'calc(100vh - 16px)',
+              overflowY: 'auto',
+              visibility: slotPopupPos.ready ? 'visible' : 'hidden',
             }}
           >
             <div className="gpopup-label">Play a Card</div>
@@ -758,11 +818,15 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           style={{ position: 'fixed', inset: 0, zIndex: 250 }}
         >
           <div
+            ref={summonPopupRef}
             onClick={(e) => e.stopPropagation()}
             className="gpopup"
             style={{
-              top: Math.min(summonPopup.y + 6, window.innerHeight - 260),
-              left: Math.min(summonPopup.x + 6, window.innerWidth - 220),
+              top: summonPopupPos.top,
+              left: summonPopupPos.left,
+              maxHeight: 'calc(100vh - 16px)',
+              overflowY: 'auto',
+              visibility: summonPopupPos.ready ? 'visible' : 'hidden',
             }}
           >
             <div className="gpopup-label">Summon a Follower</div>
@@ -786,7 +850,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       {/* Submitting overlay */}
       {submitting && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
-          <span style={{ color: '#e2e8f0', fontWeight: 600 }}>Submitting…</span>
+          <span style={{ color: PAPER, fontWeight: 600 }}>Submitting…</span>
         </div>
       )}
 
@@ -802,15 +866,15 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#16213e', border: '1px solid #3a3a6e', borderRadius: 8,
+              background: PARCHMENT, border: `1px solid ${BORDER_HI}`, borderRadius: 8,
               padding: '1.25rem 1.5rem', maxWidth: 420, width: '92%',
               boxShadow: '0 10px 40px rgba(0,0,0,0.6)',
             }}
           >
-            <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem', color: '#f87171' }}>
+            <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.05rem', color: ERROR }}>
               {isMultiplayer ? 'Leave this game?' : 'Delete this game?'}
             </h2>
-            <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: PAPER, lineHeight: 1.5 }}>
               {isMultiplayer ? (
                 <>
                   Your power will be taken over by AI and the game will continue without you.

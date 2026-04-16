@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
 import type { ChatMessage } from '../hooks/useGameStream.js';
 import type { GamePlayerInfo } from '../api/client.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_HOT, BRASS_DIM, ERROR } from '../lib/gameColors.js';
 import type { Power, GameEvent, RegionId, FollowerClass } from '@ruin/engine';
 import { REGIONS, FOLLOWERS, CARD_BY_ID, UPGRADE_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
 import CardTooltip from './CardTooltip.js';
@@ -26,7 +27,7 @@ const FIGURE_SYMBOLS: Record<FollowerClass, string> = {
 
 function Pw({ power }: { power: Power | string }) {
   const p = power as Power;
-  const color = POWER_COLORS[p] ?? '#94a3b8';
+  const color = POWER_COLORS[p] ?? PAPER_DIM;
   const label = POWER_LABELS[p] ?? power;
   return <span style={{ color }}>{label}</span>;
 }
@@ -37,14 +38,14 @@ function Rg({ id }: { id: RegionId | string }) {
 }
 
 function Fig({ power, cls }: { power: Power | string; cls: FollowerClass | string }) {
-  const color = POWER_COLORS[power as Power] ?? '#94a3b8';
+  const color = POWER_COLORS[power as Power] ?? PAPER_DIM;
   const sym = FIGURE_SYMBOLS[cls as FollowerClass] ?? '?';
   return <span style={{ color }} title={`${POWER_LABELS[power as Power] ?? power} ${FOLLOWERS[power as Power]?.[cls as FollowerClass]?.name ?? cls}`}>{sym}</span>;
 }
 
 function HoverCard({ cardId, name, power }: { cardId: string; name: string; power?: Power | string }) {
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
-  const color = power ? (POWER_COLORS[power as Power] ?? '#94a3b8') : '#94a3b8';
+  const color = power ? (POWER_COLORS[power as Power] ?? PAPER_DIM) : PAPER_DIM;
   const onEnter = useCallback((e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     // Position tooltip to the left of the element
@@ -113,9 +114,9 @@ function Tok({ type }: { type: string }) {
 function renderEvent(event: GameEvent): ReactNode | null {
   switch (event.type) {
     case 'phase_start':
-      return <div style={{ color: '#6b7a8a', fontSize: '0.65rem', letterSpacing: '0.05em', marginTop: 4, textTransform: 'uppercase' }}>— {event.phase} —</div>;
+      return <div style={{ color: PAPER_FADE, fontSize: '0.65rem', letterSpacing: '0.05em', marginTop: 4, textTransform: 'uppercase' }}>— {event.phase} —</div>;
     case 'round_start':
-      return <div style={{ color: '#8b95a5', fontWeight: 700, fontSize: '0.75rem', marginTop: 6, marginBottom: 2 }}>Round {event.round}</div>;
+      return <div style={{ color: PAPER_DIM, fontWeight: 700, fontSize: '0.75rem', marginTop: 6, marginBottom: 2 }}>Round {event.round}</div>;
     case 'game_over':
       return <>Game over! Winners: {event.winners.map((w, i) => <span key={w}>{i > 0 && ', '}<Pw power={w} /></span>)} ({event.condition}).</>;
     case 'awaiting_action':
@@ -195,7 +196,7 @@ function renderEvent(event: GameEvent): ReactNode | null {
     case 'vile_consumption':
       return <><Rg id={event.regionId} /><T>:</T> <Card cardId="gormen_vile_consumption" power="gormen" /> <T>— {event.figuresRemoved} removed, {event.tokensPlaced} corruption</T></>;
     case 'ruination':
-      return <><Rg id={event.regionId} /> <span style={{ color: '#f87171' }}>RUINED!</span> <T>Ruiners score {event.ruinerVP} VP each</T></>;
+      return <><Rg id={event.regionId} /> <span style={{ color: ERROR }}>RUINED!</span> <T>Ruiners score {event.ruinerVP} VP each</T></>;
     case 'ruination_blocked':
       return <><Rg id={event.regionId} /><T>: Would ruin but no cards remain</T></>;
     case 'dial_counter':
@@ -348,12 +349,12 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0" style={{ background: '#13121f', borderTop: '1px solid #2d2d5e', borderRadius: 0 }}>
+    <div className="flex flex-col h-full min-h-0" style={{ background: SOOT, borderTop: `1px solid ${BORDER}`, borderRadius: 0 }}>
       {/* Header */}
       {hasOtherHumans && (
         <div className="flex items-center justify-end px-3 py-2 shrink-0">
           {/* Filter tabs */}
-          <div className="flex gap-1" style={{ borderBottom: '1px solid #2d2d5e' }}>
+          <div className="flex gap-1" style={{ borderBottom: `1px solid ${BORDER}` }}>
             {(['all', 'events', 'chat'] as FilterMode[]).map((f) => (
               <button
                 key={f}
@@ -365,8 +366,8 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
                   fontWeight: 700,
                   cursor: 'pointer',
                   border: 'none',
-                  background: filter === f ? '#312e81' : 'transparent',
-                  color: filter === f ? '#c7d2fe' : '#64748b',
+                  background: filter === f ? BRASS_DIM : 'transparent',
+                  color: filter === f ? PAPER : PAPER_FADE,
                   textTransform: 'capitalize',
                 }}
               >
@@ -380,7 +381,7 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
       {/* Entries */}
       <div className="flex-1 overflow-y-auto px-2 py-1 min-h-0 space-y-px">
         {visible.length === 0 && (
-          <p style={{ color: '#334155', fontSize: '0.75rem', fontStyle: 'italic', padding: '4px 4px' }}>
+          <p style={{ color: PAPER_FADE, fontSize: '0.75rem', padding: '4px 4px' }}>
             {connected ? 'No entries yet.' : 'Connecting…'}
           </p>
         )}
@@ -389,7 +390,7 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
             return (
               <div
                 key={`e-${entry.idx}`}
-                style={{ fontSize: '0.72rem', lineHeight: 1.4, color: '#8d9bb0', padding: '1px 4px' }}
+                style={{ fontSize: '0.72rem', lineHeight: 1.4, color: PAPER_DIM, padding: '1px 4px' }}
               >
                 {entry.node}
               </div>
@@ -397,7 +398,7 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
           }
           const { msg } = entry;
           // Colour by the user's power (if any), but always show username.
-          const color = msg.power ? (POWER_COLORS[msg.power as Power] ?? '#6366f1') : '#6366f1';
+          const color = msg.power ? (POWER_COLORS[msg.power as Power] ?? BRASS) : BRASS;
           return (
             <div
               key={`c-${msg.id}`}
@@ -406,11 +407,11 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
                 lineHeight: 1.4,
                 padding: '2px 4px',
                 borderRadius: 3,
-                background: '#0d1a2d',
+                background: PARCHMENT,
               }}
             >
               <span style={{ color, fontWeight: 700 }}>{msg.username}: </span>
-              <span style={{ color: '#cbd5e1' }}>{msg.message}</span>
+              <span style={{ color: PAPER }}>{msg.message}</span>
             </div>
           );
         })}
@@ -430,10 +431,10 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
           style={{
             flex: 1,
             fontSize: '0.75rem',
-            background: '#1e1e3a',
-            border: '1px solid #2d2d5e',
+            background: PARCHMENT,
+            border: `1px solid ${BORDER}`,
             borderRadius: '4px 4px 0 0',
-            color: '#e2e8f0',
+            color: PAPER,
             padding: '4px 8px',
             outline: 'none',
           }}
@@ -446,8 +447,8 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
             padding: '4px 10px',
             borderRadius: '4px 0 0 0',
             border: 'none',
-            background: '#312e81',
-            color: '#c7d2fe',
+            background: BRASS_DIM,
+            color: PAPER,
             cursor: 'pointer',
             opacity: !input.trim() ? 0.4 : 1,
           }}
