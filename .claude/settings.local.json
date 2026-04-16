@@ -87,7 +87,12 @@
       "Bash(pnpm --filter engine exec tsc --noEmit)",
       "Bash(pnpm --filter server exec tsc --noEmit)",
       "Bash(pnpm --filter client exec tsc --noEmit)",
-      "Bash(pnpm remove *)"
+      "Bash(pnpm remove *)",
+      "Bash(pnpm benchmark:parallel --games 20 --seed 1 --out /tmp/bench-new-20.json)",
+      "Bash(pnpm benchmark:parallel --games 20 --seed 1 --out /tmp/bench-old-20.json)",
+      "Bash(pnpm benchmark:parallel --games 20 --seed 1 --out /tmp/bench-0625-20.json)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
