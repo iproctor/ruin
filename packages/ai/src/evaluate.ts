@@ -59,7 +59,7 @@ export function evaluateState(state: GameState, power: Power): number {
   // Power-specific handmade evaluators for early game. The learned model's
   // evaluation is too flat to guide MCTS effectively.
   // Env vars control cutoff rounds (0 = disabled).
-  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '3', 10);
+  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '4', 10);
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
@@ -492,14 +492,11 @@ const MAGIC_SYMBOL_CARD_IDS = new Set(
 /**
  * Tenzen-specific evaluation for rounds 1-4.
  *
- * Strategy priorities (from strategy guide):
- *   1. Get 8 cultists on board, spread across regions for DAC flexibility
- *   2. Play 3-4 cards per turn — cycle the deck aggressively
- *   3. Don't waste PP on warriors/incarnation
- *   4. Get Apprentices upgrade ASAP (carry chaos stones)
- *   5. Set up DAC conditions: ≥2 cultists in regions with ≥2 magic+chaos
- *   6. Dominate and ruin where possible — both VP and dial are viable
- *   7. Use Stasis Web to protect regions, Teleport for repositioning
+ * Core signal: Σ region_value × cultist_investment.
+ * region_value rewards corruption > 6, ≥2 cs+ms, high conquest VP, Stasis;
+ * penalizes enemy battle dice. cultist_investment is linear in cultists +
+ * bonus at DAC threshold (≥2 cultists with ≥2 cs+ms) and when ruin-imminent
+ * with a top-2 corruption rank.
  */
 function evaluateTenzen(state: GameState): number {
   const ps = state.powers['tenzen']!;
@@ -507,36 +504,16 @@ function evaluateTenzen(state: GameState): number {
   const hasApprentices = ps.upgradesInPlay.includes('tenzen_apprentices_up');
   const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
 
-  // ── Strategy (per guide): lay mass corruption across populous regions,
-  // accelerate ruining with chaos stones (via Apprentices) and Fatespinner
-  // (+2 corruption equivalent per tenzen incarnation). Chaos stones count
-  // toward the 12-threshold, so stone-stacking is the fast-ruin path.
-  // DAC/dial advancement is secondary — VP from ruining + domination wins.
-
-  let cultistsOnBoard = 0;
-  let safeCultists = 0;
-  let threatenedCultists = 0;
-  let regionsWithCultists = 0;
-  let stasisProtectedPiles = 0;
+  let regionSum = 0;
   let ruinParticipation = 0;
-
-  // The next ruination card determines VP for the next region that ruins.
-  // Use it to weight regions by their actual scoring potential (e.g. ruining
-  // Mittelreich with card 1 = 10 VP first place, but Norrsund = 6 VP).
-  const nextCard = RUINATION_CARDS[state.ruinationCardsUsed] ?? null;
-
-  // Per-region ruin-target scores (populated below).
-  const regionScores: number[] = [];
 
   for (const regionId of ALL_REGIONS) {
     const region = state.regions[regionId];
-    if (!region) { regionScores.push(0); continue; }
+    if (!region) continue;
 
     const myCorr = region.corruptionTokens['tenzen'] ?? 0;
     const totalCorr = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
 
-    // Ruin participation — handle ruined regions first. Tenzen scores here
-    // from the ruining-scorer VP (6-10 VP per region when ranked 1st/2nd).
     if (region.ruinationCardIndex !== null) {
       if (myCorr > 0 && totalCorr > 0) {
         const sorted = [...state.activePowers].sort(
@@ -545,7 +522,6 @@ function evaluateTenzen(state: GameState): number {
         const rank = sorted.indexOf('tenzen');
         ruinParticipation += rank === 0 ? 1.0 : rank === 1 ? 0.6 : 0.2;
       }
-      regionScores.push(0);
       continue;
     }
 
@@ -554,159 +530,103 @@ function evaluateTenzen(state: GameState): number {
       f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
     ).length;
 
-    if (myCultists > 0) {
-      cultistsOnBoard += myCultists;
-      regionsWithCultists++;
-    }
-
-    const nobles = region.tokens.filter(t => t === 'noble').length;
-    const conquestValue = region.baseValue + nobles;
-
-    // Threat detection for cultist safety accounting.
     const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
     const hasEcstasy = !changer && region.chaosCards.some(c => c?.cardId === 'lasha_ecstasy');
-    const hasStasis = region.chaosCards.some(c => c?.cardId === 'tenzen_stasis_web');
+    const hasStasis = !changer && region.chaosCards.some(c => c?.cardId === 'tenzen_stasis_web');
+    const warCry = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
 
-    let xarmAttack = 0;
-    if (!hasEcstasy) {
-      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
-      if (hasWarFrenzy) xarmAttack += 2;
-      for (const f of rFigs) {
-        if (f.tipped || (f.controlledBy ?? f.power) !== 'xarm') continue;
-        if (f.class === 'warrior' || f.class === 'incarnation') xarmAttack += 2;
-        else if (f.class === 'cultist' && xarmHasHeartseekers) xarmAttack += 1;
-      }
-    }
-    if (xarmAttack > 0) threatenedCultists += myCultists;
-    else safeCultists += myCultists;
-    if (hasStasis && myCultists >= 2) stasisProtectedPiles++;
-
-    const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
     const magicSymbols = region.chaosCards.filter(
       c => c !== null && MAGIC_SYMBOL_CARD_IDS.has(c.cardId),
     ).length;
-    const fatespinnerBonus = hasFatespinner &&
-      rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+    const csMs = chaosStones + magicSymbols;
 
-    // Effective corruption contribution toward the 12-ruin threshold.
-    // chaos stones count 1:1 toward ruin; Fatespinner is worth +2 via the
-    // incarnation-as-2-stones rule.
+    const nobles = region.tokens.filter(t => t === 'noble').length;
+    const conquestValue = region.baseValue + nobles;
+
+    const fatespinnerHere = hasFatespinner &&
+      rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped);
+    const fatespinnerBonus = fatespinnerHere ? 2 : 0;
     const ruinContribution = totalCorr + chaosStones + fatespinnerBonus;
 
-    if (myCultists === 0 && myCorr === 0) { regionScores.push(0); continue; }
+    // ─── region_value ──────────────────────────────────────────────────────
+    let regionValue = 1.0;
+    if (ruinContribution > 6) regionValue += (ruinContribution - 6) * 0.8;
+    if (csMs >= 2) regionValue += 3;
+    else if (csMs === 1) regionValue += 1;
+    regionValue += conquestValue * 0.5;
+    if (hasStasis) regionValue += 2;
+    if (!hasEcstasy) {
+      let enemyDice = 0;
+      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
+      if (hasWarFrenzy) enemyDice += 2;
+      for (const f of rFigs) {
+        if (f.tipped) continue;
+        const p = (f.controlledBy ?? f.power) as Power;
+        if (p === 'tenzen') continue;
+        if (f.class === 'incarnation') enemyDice += 3;
+        else if (f.class === 'warrior') enemyDice += 2;
+        else if (f.class === 'cultist' && p === 'xarm' && xarmHasHeartseekers) enemyDice += 1;
+      }
+      regionValue -= enemyDice * 0.8;
+    }
+    if (warCry) regionValue *= 0.3;
+    regionValue = Math.max(0, regionValue);
 
-    // ── Ruin-target score ──────────────────────────────────────────────
-    // Tenzen's plan: push ONE region to the 12-token threshold, be ranked
-    // #1 on corruption there at ruin time, collect the region's actual
-    // ruin VP. Scale the whole signal by the next ruination card's
-    // endPhaseVP.first for this region so valuable ruin targets
-    // (Mittelreich 10+) dominate cheap ones (Barrens 6).
-    const regionRuinVP = nextCard ? (nextCard.endPhaseVP[regionId]?.first ?? 0) : 0;
-    const regionValue = regionRuinVP > 0 ? regionRuinVP : conquestValue;
-
-    let score = 0;
-
-    // Cultists placing corruption each round.
-    score += Math.min(myCultists, 3) * 2;
-
-    // Chaos stones: each is +1 toward the 12. Apprentices upgrade enables
-    // moving them into a target region — the fast-ruin accelerator.
-    score += chaosStones * 3;
-
-    // Fatespinner + own incarnation = +2 chaos stones equivalent for ruin.
-    if (fatespinnerBonus > 0) score += 4;
-
-    // Corruption already placed by Tenzen — both ruin progress and, more
-    // importantly, rank on the ruining-scorer table.
-    score += myCorr * 2;
-
-    // Near-ruin ramp: the last tokens are worth the most.
-    if (ruinContribution >= 6)  score += (ruinContribution - 6) * 0.8;
-    if (ruinContribution >= 9)  score += (ruinContribution - 9) * 1.5;
-    if (ruinContribution >= 11) score += 8;  // one push away
-
-    // Rank bonus: want to be #1 on corruption tokens at ruin time.
-    if (myCorr > 0) {
+    // ─── cultist_investment ────────────────────────────────────────────────
+    if (myCultists === 0 && myCorr === 0) continue;
+    let investment = myCultists + myCorr * 0.5;
+    if (myCultists >= 2 && csMs >= 2) investment += 2;
+    if (ruinContribution >= RUINATION_THRESHOLD && myCorr > 0) {
       const sorted = [...state.activePowers].sort(
         (a, b) => (region.corruptionTokens[b] ?? 0) - (region.corruptionTokens[a] ?? 0),
       );
       const rank = sorted.indexOf('tenzen');
-      if (rank === 0) score += 4;
-      else if (rank === 1) score += 2;
+      if (rank === 0) investment += 3;
+      else if (rank === 1) investment += 1;
     }
 
-    // Stasis Web: small defensive bonus (opponents pay +2 PP here).
-    if (hasStasis) score += 1;
-
-    // Scale by the region's ruin VP (capped so one mega-region doesn't
-    // drown out everything else).
-    score *= Math.min(regionValue, 10) / 6;
-
-    // Domination: modest — Tenzen's VP path is ruining, not dom.
-    const { leader } = getRegionDomination(state, regionId);
-    if (leader === 'tenzen') score += conquestValue * 0.8;
-
-    // War Cry kills Tenzen's corruption placement this round.
-    if (warCry && !changer) score *= 0.3;
-
-    regionScores.push(score);
+    regionSum += regionValue * investment;
   }
 
-  // Tenzen focuses a ruin on one region at a time. The best region is the
-  // primary signal; runners-up get only small credit as backups.
-  const sortedScores = [...regionScores].sort((a, b) => b - a);
-  const topRegion = (sortedScores[0] ?? 0)
-    + (sortedScores[1] ?? 0) * 0.25
-    + (sortedScores[2] ?? 0) * 0.1;
-  const strongholdScore = Math.min(topRegion / 35, 1.0);
-
-  const effectiveCultists = safeCultists + threatenedCultists * 0.5;
-  const cultistScore = Math.min(effectiveCultists / 8, 1.0);
-  const spreadScore = Math.min(regionsWithCultists / 3, 1.0);
-  const defenseScore = Math.min(stasisProtectedPiles / 2, 1.0);
-
-  const threatPenalty = cultistsOnBoard > 0
-    ? (threatenedCultists / cultistsOnBoard) * 0.15
-    : 0;
-
-  const upgradeScore = hasApprentices ? 1.0 : 0.0;
-
+  // ─── Non-region scalars ──────────────────────────────────────────────────
   const maxDialPos = THREAT_DIALS['tenzen'].length - 1;
   const dialFraction = (ps.dialPosition + Math.min(ps.dialCounters / 3, 0.9)) / maxDialPos;
   const dialScore = Math.min(dialFraction, 1.0);
 
   const vpProgress = Math.min(ps.victoryPoints / 50, 1.0);
   let maxOpponentVP = 0;
+  let oppPPSum = 0;
+  let oppCount = 0;
   for (const p of state.activePowers) {
     if (p === 'tenzen') continue;
-    const opVP = state.powers[p]?.victoryPoints ?? 0;
-    if (opVP > maxOpponentVP) maxOpponentVP = opVP;
+    const opPS = state.powers[p];
+    if (!opPS) continue;
+    if (opPS.victoryPoints > maxOpponentVP) maxOpponentVP = opPS.victoryPoints;
+    oppPPSum += opPS.powerPoints;
+    oppCount++;
   }
   const vpLeadScore = Math.max(0, Math.min((ps.victoryPoints - maxOpponentVP + 50) / 100, 1.0));
+  const avgOppPP = oppCount > 0 ? oppPPSum / oppCount : 0;
+  const ppLeadScore = Math.max(0, Math.min((ps.powerPoints - avgOppPP) / 10, 1.0));
 
-  const ruinScore = Math.min(ruinParticipation / 3, 1.0);
-
-  // Warriors are Tenzen-inefficiency (no corruption, no DAC). Incarnations
-  // are fine — Fatespinner needs one for the +2 ruin-contribution bonus.
   const warriorsOnBoard = ps.followers.filter(
     f => f.regionId !== null && f.class === 'warrior',
   ).length;
-  const noCombatPenalty = -0.03 * warriorsOnBoard;
+
+  const regionScore = Math.min(regionSum / 50, 1.0);
+  const ruinScore = Math.min(ruinParticipation / 3, 1.0);
 
   const raw =
-    0.28 * strongholdScore +   // concentrated corruption-laying in top regions
-    0.14 * cultistScore +      // total effective cultists deployed
-    0.05 * spreadScore +       // some spread helps but don't over-reward
-    0.08 * defenseScore +      // Stasis-protected piles
-    0.08 * ruinScore +         // ruination scorer VP
-    0.10 * vpProgress +        // VP progress — secondary win path
-    0.05 * vpLeadScore +       // relative lead
-    0.06 * dialScore +         // dial progress — tertiary
-    0.06 * upgradeScore +      // Apprentices upgrade
-    0.10 * Math.min(ps.followers.filter(f => f.regionId !== null).length / 8, 1.0) // figures deployed
-    - threatPenalty +
-    noCombatPenalty;
+    0.45 * regionScore +
+    0.10 * ruinScore +
+    0.13 * vpProgress +
+    0.07 * vpLeadScore +
+    0.06 * ppLeadScore +
+    0.07 * dialScore +
+    0.06 * (hasApprentices ? 1 : 0) +
+    0.06 * Math.min(ps.followers.filter(f => f.regionId !== null).length / 8, 1.0)
+    - 0.03 * warriorsOnBoard;
 
   return Math.max(0.0, Math.min(1.0, raw));
 }
