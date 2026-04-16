@@ -84,7 +84,7 @@ export default function NewGamePage() {
 
       <header className="newgame-head">
         <Link to="/home" className="newgame-back">← return</Link>
-        <h1 className="newgame-title">Solitary Ruin</h1>
+        <h1 className="newgame-title">Solo Game</h1>
         <span className="newgame-head-spacer" aria-hidden="true" />
       </header>
 
