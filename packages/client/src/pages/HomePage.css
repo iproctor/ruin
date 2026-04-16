@@ -1,0 +1,316 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Home — the player's hall. Inherits the landing aesthetic: ink, parchment,
+   brass rail, blood accents. Two mode gates across the top (solo / rivals),
+   then the player's games listed as parchment slips beneath.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.home {
+  --ink:        #0a0806;
+  --ink-deep:   #050302;
+  --parchment:  #1c1510;
+  --border:     #3a2a1e;
+  --border-hi:  #5a4028;
+  --paper:      #d9c7a7;
+  --paper-dim:  #9a8a74;
+  --paper-fade: #6b5c4c;
+
+  --brass:      #a97140;
+  --brass-hot:  #c68c5a;
+  --blood:      #c21818;
+
+  --xarm:       #c21818;
+  --gormen:     #8aa234;
+  --tenzen:     #3d8ec8;
+  --lasha:      #9e3fc2;
+
+  min-height: 100vh;
+  padding: clamp(1.25rem, 3.5vh, 2.5rem) clamp(1rem, 4vw, 3.5rem) clamp(2rem, 4vh, 3rem);
+  background:
+    radial-gradient(ellipse 60% 30% at 50% 0%, rgba(169, 113, 64, 0.08), transparent 55%),
+    radial-gradient(ellipse 40% 25% at 50% 100%, rgba(194, 24, 24, 0.05), transparent 60%),
+    linear-gradient(180deg, var(--ink) 0%, var(--ink-deep) 100%);
+  color: var(--paper);
+  font-family: 'IM Fell English', 'EB Garamond', Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.45;
+  isolation: isolate;
+  position: relative;
+}
+
+/* ── Texture layers ─────────────────────────────────────────────────────── */
+.home-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.28;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.7  0 0 0 0 0.5  0 0 0 0 0.35  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+.home-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 100% 85% at 50% 50%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+}
+.home-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.home-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  padding-bottom: clamp(1.25rem, 2.5vh, 2rem);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: clamp(1.5rem, 3vh, 2.5rem);
+}
+.home-wordmark {
+  margin: 0;
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: clamp(2.25rem, 5vw, 3.5rem);
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  background: linear-gradient(180deg, var(--paper) 30%, var(--brass) 82%, #6e451f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.7));
+}
+.home-tagline {
+  margin: 0.35rem 0 0;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: var(--paper-dim);
+}
+
+.home-signout {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--paper-fade);
+  background: transparent;
+  border: 1px solid var(--border);
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  border-radius: 1px;
+  transition: color 0.3s ease, border-color 0.3s ease, letter-spacing 0.3s ease;
+}
+.home-signout:hover {
+  color: var(--brass-hot);
+  border-color: var(--brass);
+  letter-spacing: 0.32em;
+}
+
+/* ── Mode gates ─────────────────────────────────────────────────────────── */
+.home-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(0.75rem, 1.5vw, 1.25rem);
+  margin-bottom: clamp(2rem, 4vh, 3rem);
+}
+.home-mode {
+  position: relative;
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  padding: clamp(1.5rem, 3vh, 2.25rem) 1.5rem;
+  background: linear-gradient(180deg, rgba(28, 21, 16, 0.55), rgba(10, 8, 6, 0.85));
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: border-color 0.35s ease, transform 0.4s ease, box-shadow 0.5s ease;
+  border-radius: 1px;
+}
+/* Accent glow from below — the god's color bleeding up */
+.home-mode::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 130%, var(--accent-glow) 0%, transparent 70%);
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.5s ease, transform 0.6s ease;
+  mix-blend-mode: screen;
+}
+.home-mode:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 38px -12px var(--accent-glow);
+  transform: translateY(-2px);
+}
+.home-mode:hover::after { opacity: 1; transform: scale(1.06); }
+
+.home-mode {
+  --accent: var(--brass);
+  --accent-glow: rgba(169, 113, 64, 0.45);
+}
+
+.home-mode-label {
+  position: relative;
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: clamp(1rem, 1.4vw, 1.2rem);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--paper);
+  margin: 0;
+  text-shadow: 0 0 20px var(--accent-glow);
+}
+.home-mode-sub {
+  position: relative;
+  margin: 0.4rem 0 0;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.88rem;
+  color: var(--paper-dim);
+}
+
+/* ── Section title ──────────────────────────────────────────────────────── */
+.home-section-title {
+  margin: 0 0 clamp(0.9rem, 2vh, 1.25rem);
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.75rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--brass);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.home-section-title::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+.home-status {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  color: var(--paper-fade);
+  text-align: center;
+  padding: clamp(1.5rem, 3vh, 2.5rem) 0;
+}
+.home-status-error { color: var(--blood); }
+
+/* ── Game row ───────────────────────────────────────────────────────────── */
+.home-games {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.home-game {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem 0.85rem 1.15rem;
+  background: linear-gradient(90deg, rgba(28, 21, 16, 0.6), rgba(10, 8, 6, 0.4));
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, var(--border-hi));
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.3s ease, background 0.3s ease, transform 0.3s ease;
+  border-radius: 1px;
+}
+.home-game:hover {
+  border-color: var(--accent, var(--brass));
+  background: linear-gradient(90deg, rgba(40, 28, 20, 0.7), rgba(14, 10, 7, 0.6));
+  transform: translateX(2px);
+}
+.home-game-xarm   { --accent: var(--xarm); }
+.home-game-gormen { --accent: var(--gormen); }
+.home-game-tenzen { --accent: var(--tenzen); }
+.home-game-lasha  { --accent: var(--lasha); }
+
+.home-game-body { min-width: 0; flex: 1; }
+.home-game-name {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.08em;
+  color: var(--paper);
+  margin: 0 0 0.25rem;
+}
+.home-game-powers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.8rem;
+  margin-bottom: 0.25rem;
+}
+.home-game-power {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent, var(--paper));
+}
+.home-game-power-xarm   { --accent: var(--xarm); }
+.home-game-power-gormen { --accent: var(--gormen); }
+.home-game-power-tenzen { --accent: var(--tenzen); }
+.home-game-power-lasha  { --accent: var(--lasha); }
+
+.home-game-meta {
+  font-family: 'IM Fell English', serif;
+  font-size: 0.8rem;
+  color: var(--paper-fade);
+  letter-spacing: 0.02em;
+}
+.home-game-meta-you {
+  margin-left: 0.4rem;
+  font-style: italic;
+}
+
+.home-game-status {
+  text-align: right;
+  flex-shrink: 0;
+  font-family: 'Cinzel', serif;
+}
+.home-game-status-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.home-game-status-lobby    { color: var(--brass-hot); }
+.home-game-status-complete { color: var(--paper-fade); }
+.home-game-status-active   { color: var(--brass); }
+.home-game-status-time {
+  font-family: 'IM Fell English', serif;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: var(--paper-fade);
+  margin-top: 0.2rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 400;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .home-modes { grid-template-columns: 1fr; }
+  .home-header { flex-direction: column; align-items: flex-start; }
+  .home-signout { align-self: flex-end; }
+  .home-game { flex-direction: column; align-items: flex-start; }
+  .home-game-status { text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home *, .home *::before, .home *::after {
+    transition-duration: 0.01ms !important;
+  }
+}

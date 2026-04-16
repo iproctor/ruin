@@ -1,8 +1,6 @@
 import React from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
-import LoginPage from './pages/LoginPage.js';
-import RegisterPage from './pages/RegisterPage.js';
 import LandingPage from './pages/LandingPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
@@ -11,7 +9,7 @@ import MultiplayerLobbyPage from './pages/MultiplayerLobbyPage.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
-  if (!token) return <Navigate to="/login" replace />;
+  if (!token) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -28,8 +26,6 @@ function RootEntry() {
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
       <Route
         path="/home"
         element={

@@ -1,14 +1,14 @@
 import { useState, useRef, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import type { Power } from '@ruin/engine';
 import { login, register, ApiError } from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.js';
+import { PowerSigil } from '../components/PowerSigil.js';
 import './LandingPage.css';
-
-type Slug = 'xarm' | 'gormen' | 'tenzen' | 'lasha';
 
 interface PowerMeta {
   numeral: string;
-  slug: Slug;
+  slug: Power;
   name: string;
   epithet: string;
 }
@@ -20,56 +20,6 @@ const POWERS: PowerMeta[] = [
   { numeral: 'IV',  slug: 'lasha',  name: 'Lasha',  epithet: 'you asked for this' },
 ];
 
-function Sigil({ slug }: { slug: Slug }) {
-  const common = { width: 44, height: 44, viewBox: '0 0 32 32', fill: 'none', strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
-  switch (slug) {
-    case 'xarm':
-      return (
-        <svg {...common} aria-hidden="true">
-          <path d="M6 6 L26 26 M26 6 L6 26" stroke="currentColor" strokeWidth="1.3" />
-          <circle cx="16" cy="16" r="5.5" fill="currentColor" opacity="0.18" />
-          <circle cx="16" cy="16" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-          <circle cx="13.6" cy="15.5" r="0.9" fill="currentColor" />
-          <circle cx="18.4" cy="15.5" r="0.9" fill="currentColor" />
-          <path d="M14 19 L14.8 20.5 L16 19.2 L17.2 20.5 L18 19" stroke="currentColor" strokeWidth="1" />
-        </svg>
-      );
-    case 'gormen':
-      return (
-        <svg {...common} aria-hidden="true">
-          <circle cx="16" cy="10.5" r="5.5" stroke="currentColor" strokeWidth="1.3" fill="currentColor" fillOpacity="0.12" />
-          <circle cx="10.5" cy="20" r="5.5" stroke="currentColor" strokeWidth="1.3" fill="currentColor" fillOpacity="0.12" />
-          <circle cx="21.5" cy="20" r="5.5" stroke="currentColor" strokeWidth="1.3" fill="currentColor" fillOpacity="0.12" />
-          <circle cx="16" cy="10.5" r="1.3" fill="currentColor" />
-          <circle cx="10.5" cy="20" r="1.3" fill="currentColor" />
-          <circle cx="21.5" cy="20" r="1.3" fill="currentColor" />
-        </svg>
-      );
-    case 'tenzen':
-      return (
-        <svg {...common} aria-hidden="true">
-          {Array.from({ length: 9 }).map((_, i) => {
-            const a = (i / 9) * Math.PI * 2 - Math.PI / 2;
-            const x = 16 + Math.cos(a) * 12;
-            const y = 16 + Math.sin(a) * 12;
-            return <line key={i} x1="16" y1="16" x2={x} y2={y} stroke="currentColor" strokeWidth="1.1" />;
-          })}
-          <circle cx="16" cy="16" r="3.4" fill="currentColor" opacity="0.18" />
-          <circle cx="16" cy="16" r="3.4" stroke="currentColor" strokeWidth="1.2" />
-          <circle cx="16" cy="16" r="1.1" fill="currentColor" />
-        </svg>
-      );
-    case 'lasha':
-      return (
-        <svg {...common} aria-hidden="true">
-          <path d="M16 6 C 10 10, 10 16, 16 16 C 22 16, 22 10, 16 6 Z" stroke="currentColor" strokeWidth="1.3" fill="currentColor" fillOpacity="0.12" />
-          <path d="M10 16 C 7 21, 11 27, 16 24" stroke="currentColor" strokeWidth="1.3" />
-          <path d="M22 16 C 25 21, 21 27, 16 24" stroke="currentColor" strokeWidth="1.3" />
-          <circle cx="16" cy="11.5" r="1.1" fill="currentColor" />
-        </svg>
-      );
-  }
-}
 
 type Mode = 'continue' | 'register';
 
@@ -149,7 +99,7 @@ export default function LandingPage() {
             </span>
           ))}
         </h1>
-        <p className="landing-tagline">Four powers. A tired world. Ruin it.</p>
+        <p className="landing-tagline">Four powers. A tired world. Chaos will reign.</p>
       </section>
 
       <section className="landing-powers" aria-label="The four powers">
@@ -159,7 +109,7 @@ export default function LandingPage() {
             className={`landing-power landing-power-${p.slug}`}
             style={{ animationDelay: `${0.55 + i * 0.08}s` }}
           >
-            <div className="landing-power-sigil"><Sigil slug={p.slug} /></div>
+            <div className="landing-power-sigil"><PowerSigil power={p.slug} /></div>
             <div className="landing-power-numeral">{p.numeral}</div>
             <div className="landing-power-name">{p.name}</div>
             <div className="landing-power-epithet">{p.epithet}</div>
@@ -170,7 +120,7 @@ export default function LandingPage() {
       <form className={`landing-auth landing-auth-${mode}`} onSubmit={onSubmit} noValidate>
         <div className="landing-auth-row">
           <label className="landing-field">
-            <span className="landing-field-label">Name</span>
+            <span className="landing-field-label">Username</span>
             <input
               className="landing-input"
               type="text"
@@ -228,11 +178,11 @@ export default function LandingPage() {
             <span className="landing-auth-error">{error}</span>
           ) : mode === 'register' ? (
             <span className="landing-auth-hint">
-              No such name — a new oath will be sworn.
+              No such username — a new oath will be sworn.
             </span>
           ) : (
             <span className="landing-auth-hint landing-auth-hint-dim">
-              If the name is unknown you will be asked to register.
+              If the username is unknown you will be asked to register.
             </span>
           )}
         </div>

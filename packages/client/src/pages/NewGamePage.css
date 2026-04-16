@@ -1,0 +1,334 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   New Game — grimdark continuation of the landing aesthetic.
+   Cinzel display, IM Fell English body, brown/ink ground, canonical god
+   colors infused into the four power cards.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.newgame {
+  --ink:        #0a0806;
+  --ink-deep:   #050302;
+  --parchment:  #1c1510;
+  --border:     #3a2a1e;
+  --border-hi:  #5a4028;
+  --paper:      #d9c7a7;
+  --paper-dim:  #9a8a74;
+  --paper-fade: #6b5c4c;
+
+  --brass:      #a97140;
+  --brass-hot:  #c68c5a;
+  --blood:      #c21818;
+
+  --xarm:   #c21818;
+  --gormen: #8aa234;
+  --tenzen: #3d8ec8;
+  --lasha:  #9e3fc2;
+
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  padding: clamp(1.25rem, 3vh, 2.25rem) clamp(1rem, 4vw, 3.5rem) clamp(2rem, 4vh, 3.5rem);
+  background:
+    radial-gradient(ellipse 70% 40% at 50% 0%, rgba(169, 113, 64, 0.06), transparent 55%),
+    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(194, 24, 24, 0.05), transparent 60%),
+    linear-gradient(180deg, var(--ink) 0%, var(--ink-deep) 100%);
+  color: var(--paper);
+  font-family: 'IM Fell English', Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.45;
+  isolation: isolate;
+}
+
+.newgame-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: overlay;
+  opacity: 0.32;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.7  0 0 0 0 0.5  0 0 0 0 0.35  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+.newgame-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(ellipse 100% 85% at 50% 50%, transparent 45%, rgba(0, 0, 0, 0.55) 100%);
+}
+.newgame > *:not(.newgame-grain):not(.newgame-vignette) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+.newgame-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  max-width: 1100px;
+  margin: 0 auto clamp(1.5rem, 3vh, 2.25rem);
+  gap: 1rem;
+}
+.newgame-back {
+  justify-self: start;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.95rem;
+  letter-spacing: 0.14em;
+  color: var(--paper-fade);
+  text-decoration: none;
+  transition: color 0.25s ease;
+}
+.newgame-back:hover { color: var(--brass-hot); }
+.newgame-head-spacer { display: block; }
+
+.newgame-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4vw, 3rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--paper);
+  background: linear-gradient(180deg, var(--paper) 40%, var(--brass) 95%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* ── Form wrappers ──────────────────────────────────────────────────────── */
+.newgame-form {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ── Powers grid ────────────────────────────────────────────────────────── */
+.newgame-powers {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: clamp(0.75rem, 1.5vw, 1.15rem);
+  margin-bottom: 1rem;
+}
+@media (max-width: 900px) { .newgame-powers { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .newgame-powers { grid-template-columns: 1fr; } }
+
+.newgame-power {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 1.3rem 1rem 1.15rem;
+  background: linear-gradient(180deg, rgba(28, 21, 16, 0.7), rgba(10, 6, 4, 0.85));
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--paper);
+  font-family: 'IM Fell English', serif;
+  font-size: 1rem;
+  cursor: pointer;
+  text-align: center;
+  overflow: hidden;
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.35s ease, box-shadow 0.45s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 10px 24px -16px rgba(0, 0, 0, 0.8);
+}
+.newgame-power-bleed {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 140% 110% at 50% 120%, var(--accent-glow) 0%, transparent 72%),
+    linear-gradient(180deg, transparent 40%, var(--accent-flat) 130%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 1;
+  transition: opacity 0.45s ease, transform 0.55s ease;
+}
+.newgame-power > *:not(.newgame-power-bleed) { position: relative; z-index: 1; }
+
+.newgame-power-sigil {
+  color: var(--accent);
+  filter: drop-shadow(0 0 12px var(--accent-glow-soft));
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.4s ease;
+  display: inline-flex;
+}
+.newgame-power-name {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  text-shadow: 0 0 14px var(--accent-glow-soft);
+}
+.newgame-power-epithet {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  opacity: 0.9;
+  margin-top: -0.2rem;
+}
+.newgame-power-desc {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--paper);
+  opacity: 0.78;
+  margin-top: 0.25rem;
+  max-width: 22ch;
+}
+.newgame-power-setting {
+  margin-top: auto;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  color: var(--accent);
+  background: rgba(0, 0, 0, 0.4);
+  transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+.newgame-power[data-setting] { /* preserved for clarity */ }
+.newgame-power.is-ai .newgame-power-setting {
+  color: var(--paper-dim);
+  border-color: var(--border-hi);
+  background: rgba(0, 0, 0, 0.6);
+}
+.newgame-power.is-off .newgame-power-setting {
+  color: var(--paper-fade);
+  border-color: var(--border);
+  background: rgba(0, 0, 0, 0.7);
+}
+
+/* Inactive (off) power — drain it visually */
+.newgame-power.is-off {
+  opacity: 0.42;
+  filter: grayscale(0.55);
+}
+.newgame-power.is-off:hover { opacity: 0.7; filter: grayscale(0.3); }
+
+.newgame-power:hover {
+  transform: translateY(-4px);
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 32px -18px rgba(0, 0, 0, 0.9),
+    0 0 24px -6px var(--accent-glow);
+}
+.newgame-power:hover .newgame-power-sigil {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 16px var(--accent));
+}
+.newgame-power:focus-visible {
+  outline: none;
+  border-color: var(--brass);
+  box-shadow: 0 0 0 2px rgba(169, 113, 64, 0.4);
+}
+
+.newgame-power-xarm {
+  --accent: var(--xarm);
+  --accent-glow: rgba(194, 24, 24, 0.6);
+  --accent-glow-soft: rgba(194, 24, 24, 0.25);
+  --accent-flat: rgba(124, 14, 14, 0.32);
+}
+.newgame-power-gormen {
+  --accent: var(--gormen);
+  --accent-glow: rgba(138, 162, 52, 0.55);
+  --accent-glow-soft: rgba(138, 162, 52, 0.22);
+  --accent-flat: rgba(74, 94, 22, 0.32);
+}
+.newgame-power-tenzen {
+  --accent: var(--tenzen);
+  --accent-glow: rgba(61, 142, 200, 0.58);
+  --accent-glow-soft: rgba(61, 142, 200, 0.24);
+  --accent-flat: rgba(22, 72, 114, 0.36);
+}
+.newgame-power-lasha {
+  --accent: var(--lasha);
+  --accent-glow: rgba(158, 63, 194, 0.6);
+  --accent-glow-soft: rgba(158, 63, 194, 0.26);
+  --accent-flat: rgba(88, 30, 120, 0.36);
+}
+
+.newgame-hint {
+  text-align: center;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--paper-fade);
+  letter-spacing: 0.02em;
+  margin: 0 0 clamp(1rem, 2vh, 1.5rem);
+}
+.newgame-hint em { color: var(--brass); font-style: italic; }
+
+/* ── Footer (submit + error) ────────────────────────────────────────────── */
+.newgame-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.newgame-error {
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.9rem;
+  color: var(--blood);
+  margin: 0;
+}
+
+.newgame-submit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7em;
+  padding: 0.85rem 2.5rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--paper);
+  background: linear-gradient(180deg, rgba(40, 20, 14, 0.85), rgba(20, 10, 7, 0.85));
+  border: 1px solid var(--brass);
+  border-radius: 1px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: color 0.4s ease, letter-spacing 0.45s ease, border-color 0.4s ease, box-shadow 0.5s ease;
+  box-shadow: 0 0 28px -12px rgba(194, 24, 24, 0.18);
+  min-width: 220px;
+}
+.newgame-submit::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #3a0a0a 0%, var(--blood) 60%, var(--brass) 100%);
+  transform: translateX(-101%);
+  transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.newgame-submit:hover:not(:disabled) {
+  color: #fff;
+  letter-spacing: 0.34em;
+  border-color: var(--brass-hot);
+  box-shadow: 0 0 32px -6px rgba(194, 24, 24, 0.45);
+}
+.newgame-submit:hover:not(:disabled)::before { transform: translateX(0); }
+.newgame-submit:disabled { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.3); }
+.newgame-submit-label,
+.newgame-submit-arrow { position: relative; z-index: 1; }
+.newgame-submit-arrow { transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.newgame-submit:hover:not(:disabled) .newgame-submit-arrow { transform: translateX(0.3em); }
+
+@media (prefers-reduced-motion: reduce) {
+  .newgame *, .newgame *::before, .newgame *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
