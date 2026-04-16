@@ -31,6 +31,7 @@ import {
   type StreamEvent,
 } from '../api/sse.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import './LobbyPage.css';
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
@@ -293,51 +294,44 @@ export default function MultiplayerLobbyPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', padding: '0.75rem', gap: '0.75rem' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <Link to="/home" style={{ color: '#aaa', fontSize: '0.85rem' }}>← Home</Link>
-        <h1 style={{ margin: 0, fontSize: '1.1rem' }}>Multiplayer Lobby</h1>
-        <span style={{ fontSize: '0.75rem', color: '#888', marginLeft: 'auto' }}>
-          {snap?.online.length ?? 0} online
-        </span>
-        <button className="secondary" onClick={logout} style={{ fontSize: '0.75rem' }}>
-          Sign out
-        </button>
-      </div>
+    <main className="lobby">
+      <div className="lobby-grain" aria-hidden="true" />
+      <div className="lobby-vignette" aria-hidden="true" />
+
+      <header className="lobby-head">
+        <Link to="/home" className="lobby-back">← return</Link>
+        <h1 className="lobby-title">Lobby</h1>
+        <span className="lobby-head-spacer" aria-hidden="true" />
+        <span className="lobby-online-count">{snap?.online.length ?? 0} online</span>
+        <button className="lobby-signout" onClick={logout}>Sign out</button>
+      </header>
 
       {error && (
-        <div className="error-msg" style={{ fontSize: '0.8rem' }} onClick={() => setError('')}>
+        <div className="lobby-error" onClick={() => setError('')} role="alert">
           {error}
         </div>
       )}
 
-      {/* Two-column layout */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', minHeight: 0 }}>
-        {/* LEFT: chat + online users */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0.5rem' }}>
-          {/* Chat tabs */}
-          <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '0.4rem' }}>
+      <div className="lobby-body">
+        <section className="lobby-panel lobby-chat">
+          <div className="lobby-chat-tabs">
             <button
-              className={chatTab === 'global' ? 'primary' : 'secondary'}
+              className={`lobby-tab ${chatTab === 'global' ? 'is-active' : ''}`}
               onClick={() => setChatTab('global')}
-              style={{ fontSize: '0.75rem', padding: '3px 10px' }}
             >
               Global
             </button>
             {showGameTab && (
               <button
-                className={chatTab === 'game' ? 'primary' : 'secondary'}
+                className={`lobby-tab ${chatTab === 'game' ? 'is-active' : ''}`}
                 onClick={() => setChatTab('game')}
-                style={{ fontSize: '0.75rem', padding: '3px 10px' }}
               >
                 Game
               </button>
             )}
           </div>
 
-          {/* Chat body: online users (left col) + chat history (right col) */}
-          <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '160px 1fr', gap: '0.5rem', minHeight: 0 }}>
+          <div className="lobby-chat-body">
             <OnlineUsersList
               users={snap?.online ?? []}
               currentUserId={userId}
@@ -359,29 +353,27 @@ export default function MultiplayerLobbyPage() {
             />
           </div>
 
-          {/* Chat input */}
-          <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+          <div className="lobby-chat-input">
             <input
+              className="lobby-input"
               type="text"
-              placeholder={chatTab === 'global' ? 'Say hello…' : 'Game chat…'}
+              placeholder={chatTab === 'global' ? 'Speak freely…' : 'Game chat…'}
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSendChat())}
-              style={{ flex: 1, fontSize: '0.8rem' }}
             />
             <button
-              className="primary"
+              className="lobby-send"
               onClick={handleSendChat}
               disabled={!chatInput.trim()}
-              style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+              aria-label="Send"
             >
               →
             </button>
           </div>
-        </div>
+        </section>
 
-        {/* RIGHT: game list / create / game lobby */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, padding: '0.5rem' }}>
+        <section className="lobby-panel lobby-games">
           {rightMode === 'list' && (
             <GameListPane
               games={sortedGames}
@@ -410,11 +402,11 @@ export default function MultiplayerLobbyPage() {
             />
           )}
           {rightMode === 'game' && !gameLobby && (
-            <p style={{ color: '#aaa', fontSize: '0.85rem' }}>Loading game…</p>
+            <p className="lobby-games-empty">Loading game…</p>
           )}
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 
 }
@@ -435,17 +427,18 @@ function OnlineUsersList({
   onInvite: (u: LobbyOnlineUser) => void;
 }) {
   return (
-    <div style={{
-      borderRight: '1px solid #2d2d5e', paddingRight: '0.4rem', overflowY: 'auto',
-      fontSize: '0.78rem',
-    }}>
-      <div style={{ color: '#888', fontSize: '0.7rem', marginBottom: '0.3rem', textTransform: 'uppercase' }}>
-        Online ({users.length})
-      </div>
-      {users.length === 0 && <div style={{ color: '#666' }}>No one online</div>}
+    <div className="lobby-online">
+      <div className="lobby-online-label">Online · {users.length}</div>
+      {users.length === 0 && <div className="lobby-online-empty">No gods are watching.</div>}
       {users.map((u) => {
         const isMe = u.userId === currentUserId;
         const clickable = canInvite && !isMe && !u.inGame;
+        const classes = [
+          'lobby-online-row',
+          clickable && 'is-clickable',
+          isMe && 'is-me',
+          u.inGame && 'is-busy',
+        ].filter(Boolean).join(' ');
         return (
           <div
             key={u.userId}
@@ -456,21 +449,10 @@ function OnlineUsersList({
               clickable ? 'Click to invite to your game' :
               'Create a game to invite this player'
             }
-            style={{
-              padding: '3px 6px', borderRadius: 4, marginBottom: 2,
-              cursor: clickable ? 'pointer' : 'default',
-              background: clickable ? '#1e1e3a' : 'transparent',
-              opacity: u.inGame ? 0.55 : 1,
-              display: 'flex', alignItems: 'center', gap: '0.3rem',
-            }}
+            className={classes}
           >
-            <span style={{
-              width: 6, height: 6, borderRadius: '50%',
-              background: u.inGame ? '#facc15' : '#22c55e', flexShrink: 0,
-            }} />
-            <span style={{ color: isMe ? '#a78bfa' : '#cbd5e1', fontWeight: isMe ? 700 : 400 }}>
-              {u.username}
-            </span>
+            <span className="lobby-online-dot" aria-hidden="true" />
+            <span>{u.username}</span>
           </div>
         );
       })}
@@ -510,37 +492,37 @@ function ChatHistory({
     const onlineUser = online.find((o) => o.userId === m.userId);
     const isMe = m.userId === currentUserId;
     const clickable = canInvite && !isMe && onlineUser && !onlineUser.inGame;
+    const nameClass = [
+      'lobby-chat-name',
+      isMe && 'is-me',
+      clickable && 'is-clickable',
+    ].filter(Boolean).join(' ');
     globalRows.push(
-      <div key={m.id} style={{ marginBottom: '0.2rem' }}>
+      <div key={m.id} className="lobby-chat-row">
         <span
+          className={nameClass}
           onClick={() => clickable && onInviteByUserId(m.userId)}
           title={clickable ? 'Click to invite to your game' : ''}
-          style={{
-            fontWeight: 600,
-            color: isMe ? '#a78bfa' : '#7dd3fc',
-            cursor: clickable ? 'pointer' : 'default',
-            textDecoration: clickable ? 'underline dotted' : 'none',
-          }}
         >
           {m.username}:
         </span>{' '}
-        <span style={{ color: '#cbd5e1' }}>{m.message}</span>
+        <span className="lobby-chat-text">{m.message}</span>
       </div>,
     );
   }
 
   return (
-    <div style={{ overflowY: 'auto', fontSize: '0.8rem', paddingRight: '0.25rem' }}>
+    <div className="lobby-chat-history">
       {tab === 'global' && globalRows}
       {tab === 'game' && game.map((m) => (
-        <div key={m.id} style={{ marginBottom: '0.2rem' }}>
-          <span style={{
-            fontWeight: 600,
-            color: m.power ? POWER_COLORS[m.power as Power] : '#7dd3fc',
-          }}>
+        <div key={m.id} className="lobby-chat-row">
+          <span
+            className="lobby-chat-name"
+            style={m.power ? { color: POWER_COLORS[m.power as Power] } : undefined}
+          >
             {m.username}:
           </span>{' '}
-          <span style={{ color: '#cbd5e1' }}>{m.message}</span>
+          <span className="lobby-chat-text">{m.message}</span>
         </div>
       ))}
       <div ref={bottomRef} />
@@ -560,18 +542,7 @@ function ChatTimestampSeparator({ ts }: { ts: number }) {
   const label = sameDay
     ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
     : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  return (
-    <div style={{
-      textAlign: 'center',
-      fontSize: '0.65rem',
-      color: '#64748b',
-      textTransform: 'uppercase',
-      letterSpacing: '0.06em',
-      margin: '0.5rem 0 0.3rem',
-    }}>
-      {label}
-    </div>
-  );
+  return <div className="lobby-chat-sep">{label}</div>;
 }
 
 function GameListPane({
@@ -610,17 +581,22 @@ function GameListPane({
 
   if (showCreate) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-          <button className="secondary" onClick={() => setShowCreate(false)} style={{ fontSize: '0.75rem' }}>
-            ← Back
+      <div className="lobby-create-panel">
+        <div className="lobby-create-head">
+          <button
+            type="button"
+            className="lobby-back"
+            onClick={() => setShowCreate(false)}
+          >
+            ← back
           </button>
-          <h2 style={{ margin: 0, fontSize: '1rem' }}>Create Game</h2>
+          <h2 className="lobby-create-title">New Game</h2>
         </div>
-        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          <div className="form-group">
-            <label htmlFor="game-name">Game name</label>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <label className="lobby-field">
+            <span className="lobby-field-label">Game Name</span>
             <input
+              className="lobby-field-input"
               id="game-name"
               type="text"
               value={name}
@@ -629,29 +605,28 @@ function GameListPane({
               maxLength={60}
               autoFocus
             />
-          </div>
-          <label
-            style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              padding: '0.5rem 0.6rem', borderRadius: 6,
-              border: `2px solid ${isPublic ? '#6366f1' : '#2d2d5e'}`,
-              background: isPublic ? '#1e1b4b' : '#16213e',
-              cursor: 'pointer', fontSize: '0.85rem',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={isPublic}
-              onChange={(e) => setIsPublic(e.target.checked)}
-              style={{ width: 'auto' }}
-            />
-            <span style={{ color: isPublic ? '#c7d2fe' : '#888' }}>
-              Public (anyone can find and join)
-            </span>
           </label>
-          {createError && <p className="error-msg">{createError}</p>}
-          <button type="submit" className="primary" disabled={creating || !name.trim()}>
-            {creating ? 'Creating…' : 'Create Lobby'}
+          <button
+            type="button"
+            onClick={() => setIsPublic((v) => !v)}
+            className={`lobby-toggle ${isPublic ? 'is-on' : ''}`}
+            aria-pressed={isPublic}
+          >
+            <span className="lobby-toggle-box" aria-hidden="true">{isPublic && '✕'}</span>
+            <span className="lobby-toggle-body">
+              <span className="lobby-toggle-name">Public</span>
+              <span className="lobby-toggle-note">
+                {isPublic
+                  ? 'Any god may answer. Seen in the open lobby.'
+                  : 'Only invited names may enter.'}
+              </span>
+            </span>
+          </button>
+          {createError && <p className="lobby-error" style={{ marginTop: '0.25rem' }}>{createError}</p>}
+          <button type="submit" className="lobby-create" disabled={creating || !name.trim()}>
+            <span className="lobby-create-label">
+              {creating ? 'Creating…' : 'Create Game'}
+            </span>
           </button>
         </form>
       </div>
@@ -659,70 +634,56 @@ function GameListPane({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <h2 style={{ fontSize: '1rem', margin: '0 0 0.5rem 0' }}>Open Games</h2>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+    <>
+      <div className="lobby-games-head">
+        <h2 className="lobby-games-title">Open Games</h2>
+        <span className="lobby-games-count">
+          {games.length === 0 ? '' : `${games.length} open`}
+        </span>
+      </div>
+      <div className="lobby-games-list">
         {games.length === 0 && (
-          <p style={{ color: '#888', fontSize: '0.85rem' }}>No open games right now.</p>
+          <p className="lobby-games-empty">The halls are empty.</p>
         )}
         {games.map((g) => {
           const isYours = g.createdBy === currentUserId;
           return (
-            <div
+            <button
+              type="button"
               key={g.id}
               onClick={() => isYours ? navigate(`/lobby/g/${g.id}`) : onJoin(g)}
-              style={{
-                padding: '0.6rem', marginBottom: '0.4rem', borderRadius: 6,
-                cursor: 'pointer',
-                border: g.invitedYou ? '2px solid #facc15' : '1px solid #2d2d5e',
-                background: g.invitedYou ? '#3a2f0c' : '#16213e',
-              }}
+              className={`lobby-game ${g.invitedYou ? 'is-invited' : ''}`}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontWeight: 600 }}>
-                  {g.name ?? '(unnamed)'}
-                  {g.invitedYou && (
-                    <span style={{
-                      marginLeft: '0.5rem', fontSize: '0.65rem', padding: '1px 6px',
-                      borderRadius: 3, background: '#facc15', color: '#1f1300', fontWeight: 700,
-                    }}>
-                      INVITED
-                    </span>
-                  )}
-                  {!g.isPublic && (
-                    <span style={{
-                      marginLeft: '0.4rem', fontSize: '0.65rem', padding: '1px 5px',
-                      borderRadius: 3, background: '#374151', color: '#cbd5e1',
-                    }}>
-                      PRIVATE
-                    </span>
-                  )}
-                </div>
-                <span style={{ fontSize: '0.7rem', color: '#888' }}>
-                  {g.players.length}/4
+              <div className="lobby-game-row-top">
+                <span className="lobby-game-name">{g.name ?? '(unnamed)'}</span>
+                <span className="lobby-game-badges">
+                  {g.invitedYou && <span className="lobby-badge invited">Invited</span>}
+                  {!g.isPublic && <span className="lobby-badge private">Private</span>}
+                  <span className="lobby-game-count">{g.players.length} / 4</span>
                 </span>
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.2rem' }}>
-                Host: {g.createdByUsername}
+              <div className="lobby-game-meta">
+                <em>host</em> {g.createdByUsername}
                 {g.players.length > 1 && (
-                  <span> · {g.players.map((p) => p.username).join(', ')}</span>
+                  <> · {g.players.slice(1).map((p) => p.username).join(', ')}</>
                 )}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
       <button
-        className="primary"
+        className="lobby-create"
         onClick={() => {
           if (myCreatedGameId) navigate(`/lobby/g/${myCreatedGameId}`);
           else setShowCreate(true);
         }}
-        style={{ marginTop: '0.5rem' }}
       >
-        {myCreatedGameId ? 'Open Your Game' : '+ Create Game'}
+        <span className="lobby-create-label">
+          {myCreatedGameId ? 'Open Your Game' : 'Create Game'}
+        </span>
       </button>
-    </div>
+    </>
   );
 }
 
@@ -789,61 +750,50 @@ function GameLobbyPane({
     && humanAssignedCount + aiAssignedCount >= 2;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflowY: 'auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-        <h2 style={{ margin: 0, fontSize: '1rem', flex: 1 }}>{lobby.game.name ?? 'Game'}</h2>
-        <span style={{
-          fontSize: '0.7rem', padding: '2px 6px', borderRadius: 3,
-          background: lobby.game.isPublic ? '#1e3a5e' : '#374151',
-          color: lobby.game.isPublic ? '#7dd3fc' : '#cbd5e1',
-        }}>
-          {lobby.game.isPublic ? 'PUBLIC' : 'PRIVATE'}
+    <div className="glp">
+      <div className="glp-head">
+        <h2 className="glp-name">{lobby.game.name ?? 'Game'}</h2>
+        <span className={`glp-badge ${lobby.game.isPublic ? 'public' : 'private'}`}>
+          {lobby.game.isPublic ? 'Public' : 'Private'}
         </span>
         {isCreator ? (
-          <button className="danger" onClick={onCancel} style={{ fontSize: '0.7rem' }}>
+          <button className="glp-head-btn is-danger" onClick={onCancel}>
             Cancel Game
           </button>
         ) : (
-          <button className="secondary" onClick={onLeave} style={{ fontSize: '0.7rem' }}>
+          <button className="glp-head-btn" onClick={onLeave}>
             Leave
           </button>
         )}
       </div>
 
-      {/* Invite */}
       {isCreator && lobby.players.length < 4 && (
-        <div style={{ marginBottom: '0.75rem' }}>
-          <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.3rem' }}>Invite</div>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
+        <div className="glp-invite">
+          <div className="glp-label">Invite</div>
+          <div className="glp-invite-row">
             <input
               type="text"
               placeholder="username"
               value={inviteInput}
               onChange={(e) => setInviteInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), onInvite())}
-              style={{ flex: 1, fontSize: '0.8rem' }}
             />
             <button
-              className="primary"
+              className="glp-invite-send"
               onClick={onInvite}
               disabled={!inviteInput.trim()}
-              style={{ fontSize: '0.75rem' }}
             >
               Send
             </button>
           </div>
           {pendingInvites.length > 0 && (
-            <div style={{ marginTop: '0.4rem' }}>
+            <div className="glp-pending">
               {pendingInvites.map((i) => (
-                <div key={i.id} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: '0.7rem', color: '#888', padding: '2px 0',
-                }}>
-                  <span>{i.label} <em style={{ color: '#facc15' }}>(pending)</em></span>
+                <div key={i.id} className="glp-pending-row">
+                  <span>{i.label} <em>pending</em></span>
                   <button
-                    className="secondary"
+                    className="glp-pending-revoke"
                     onClick={() => onRevoke(i.id)}
-                    style={{ fontSize: '0.6rem', padding: '1px 5px' }}
                   >
                     Revoke
                   </button>
@@ -854,99 +804,82 @@ function GameLobbyPane({
         </div>
       )}
 
-      {/* Power slots (visible to everyone) */}
       <div>
-        <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: '0.3rem' }}>
-          Power Assignment
-        </div>
+        <div className="glp-label">Power Assignment</div>
 
-        {/* Human slots (alphabetical) */}
-        {sortedPlayers.map((p) => {
-          const isMe = p.userId === currentUserId;
-          const canInteract =
-            // creator can set any human's power
-            isCreator ||
-            // joiner (me), only if not locked
-            (isMe && !p.locked);
-          return (
+        <div className="glp-slots">
+          {sortedPlayers.map((p) => {
+            const isMe = p.userId === currentUserId;
+            const canInteract = isCreator || (isMe && !p.locked);
+            return (
+              <SlotRow
+                key={`h-${p.userId}`}
+                label={
+                  <>
+                    {p.username}
+                    {p.isCreator && <span className="glp-mark-creator">★</span>}
+                    {p.locked && <span className="glp-mark-lock">🔒</span>}
+                  </>
+                }
+                currentPower={p.power}
+                takenPowers={takenPowers}
+                disabled={!canInteract}
+                allowTakeover={isCreator}
+                onPick={(pw) => {
+                  if (isCreator) onAssignPlayer(p.userId, pw);
+                  else if (isMe) onPickPower(pw as Power | null);
+                }}
+                hintWhenDisabled={isMe && p.locked ? 'Host has locked your power' : null}
+                rightAction={
+                  isCreator && !p.isCreator ? (
+                    <button className="glp-slot-kick" onClick={() => onKick(p.userId)}>
+                      Kick
+                    </button>
+                  ) : null
+                }
+              />
+            );
+          })}
+
+          {aiSlots.map((slot, i) => (
             <SlotRow
-              key={`h-${p.userId}`}
+              key={`ai-${i}`}
+              isAi
               label={
                 <>
-                  {p.username}
-                  {p.isCreator && <span style={{ color: '#facc15', marginLeft: '0.3rem' }}>★</span>}
-                  {p.locked && <span style={{ opacity: 0.6, marginLeft: '0.3rem' }}>🔒</span>}
+                  AI #{i + 1}
+                  {slot.locked && <span className="glp-mark-lock">🔒</span>}
                 </>
               }
-              currentPower={p.power}
+              currentPower={slot.power}
               takenPowers={takenPowers}
-              disabled={!canInteract}
+              disabled={!isCreator}
+              allowOff
               allowTakeover={isCreator}
-              onPick={(pw) => {
-                if (isCreator) {
-                  onAssignPlayer(p.userId, pw);
-                } else if (isMe) {
-                  onPickPower(pw as Power | null);
-                }
-              }}
-              hintWhenDisabled={
-                isMe && p.locked ? 'Host has locked your power' :
-                !isMe && !isCreator ? null :
-                null
-              }
-              rightAction={
-                isCreator && !p.isCreator ? (
-                  <button
-                    className="secondary"
-                    onClick={() => onKick(p.userId)}
-                    style={{ fontSize: '0.65rem', padding: '2px 6px' }}
-                  >
-                    Kick
-                  </button>
-                ) : null
-              }
+              onPick={(pw) => onAssignAi(i, pw)}
+              hintWhenDisabled={null}
             />
-          );
-        })}
+          ))}
+        </div>
 
-        {/* AI padding slots */}
-        {aiSlots.map((slot, i) => (
-          <SlotRow
-            key={`ai-${i}`}
-            label={
-              <span style={{ color: '#93c5fd' }}>
-                AI #{i + 1}
-                {slot.locked && <span style={{ opacity: 0.6, marginLeft: '0.3rem' }}>🔒</span>}
-              </span>
-            }
-            currentPower={slot.power}
-            takenPowers={takenPowers}
-            disabled={!isCreator}
-            allowOff
-            allowTakeover={isCreator}
-            onPick={(pw) => onAssignAi(i, pw)}
-            hintWhenDisabled={null}
-          />
-        ))}
-
-        {isCreator && (
+        {isCreator ? (
           <button
-            className="primary"
+            className="lobby-create"
+            style={{ marginTop: '0.85rem' }}
             onClick={onStart}
             disabled={starting || !canStart}
-            style={{ width: '100%', marginTop: '0.75rem', padding: '0.5rem' }}
             title={!canStart ? 'Every player needs a power and at least 2 powers must be active' : ''}
           >
-            {starting ? 'Starting…' : 'Start Game'}
+            <span className="lobby-create-label">
+              {starting ? 'Starting…' : 'Begin'}
+            </span>
           </button>
-        )}
-
-        {!isCreator && (
-          <div style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.4rem' }}>
+        ) : (
+          <p className="glp-hint">
             {myLocked
               ? 'The host has locked your power assignment.'
               : 'Pick a power. The host can override.'}
-          </div>
+          </p>
         )}
       </div>
     </div>
@@ -963,6 +896,7 @@ function SlotRow({
   onPick,
   hintWhenDisabled,
   rightAction = null,
+  isAi = false,
 }: {
   label: React.ReactNode;
   currentPower: string | null;
@@ -975,19 +909,22 @@ function SlotRow({
   hintWhenDisabled: string | null;
   /** Rendered at the far right of the row (e.g. Kick). */
   rightAction?: React.ReactNode;
+  isAi?: boolean;
 }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '0.5rem',
-      padding: '0.3rem 0.5rem', borderBottom: '1px solid #2d2d5e',
-      fontSize: '0.8rem',
-    }}>
-      <span style={{ minWidth: 90, flex: '0 0 auto' }}>{label}</span>
-      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', flex: 1 }}>
+    <div className="glp-slot">
+      <span className={`glp-slot-label ${isAi ? 'is-ai' : ''}`}>{label}</span>
+      <div className="glp-slot-buttons">
         {ALL_POWERS.map((power) => {
           const isCurrent = currentPower === power;
           const isTakenElsewhere = !isCurrent && takenPowers.has(power);
           const btnDisabled = disabled || (isTakenElsewhere && !allowTakeover);
+          const classes = [
+            'glp-pwr',
+            `pwr-${power}`,
+            isCurrent && 'is-current',
+            isTakenElsewhere && allowTakeover && !isCurrent && 'is-takeover',
+          ].filter(Boolean).join(' ');
           return (
             <button
               key={power}
@@ -999,15 +936,7 @@ function SlotRow({
                 isTakenElsewhere ? 'Already taken' :
                 isCurrent ? 'Click to unselect' : `Pick ${POWER_LABELS[power]}`
               }
-              style={{
-                fontSize: '0.7rem', padding: '3px 0',
-                width: 72, textAlign: 'center',
-                background: isCurrent ? POWER_COLORS[power] : 'transparent',
-                color: isCurrent ? '#fff' : POWER_COLORS[power],
-                border: `1px ${isTakenElsewhere && allowTakeover ? 'dashed' : 'solid'} ${POWER_COLORS[power]}`,
-                fontWeight: isCurrent ? 700 : 400,
-                opacity: btnDisabled && !isCurrent ? 0.45 : 1,
-              }}
+              className={classes}
             >
               {POWER_LABELS[power]}
             </button>
@@ -1020,24 +949,14 @@ function SlotRow({
               disabled={disabled}
               onClick={() => onPick(null)}
               title={isOff ? 'Already off' : 'Disable this AI slot'}
-              style={{
-                fontSize: '0.7rem', padding: '3px 0',
-                width: 72, textAlign: 'center',
-                background: isOff ? '#64748b' : 'transparent',
-                color: isOff ? '#fff' : '#94a3b8',
-                border: '1px solid #64748b',
-                fontWeight: isOff ? 700 : 400,
-                opacity: disabled && !isOff ? 0.45 : 1,
-              }}
+              className={`glp-pwr pwr-off ${isOff ? 'is-current' : ''}`}
             >
               Off
             </button>
           );
         })()}
       </div>
-      {rightAction && (
-        <div style={{ flex: '0 0 auto', marginLeft: 'auto' }}>{rightAction}</div>
-      )}
+      {rightAction}
     </div>
   );
 }

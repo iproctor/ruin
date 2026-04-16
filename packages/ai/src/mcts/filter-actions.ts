@@ -202,3 +202,67 @@ export function isZeroCostCardPlay(state: GameState, action: Action): boolean {
   return !isPointlessAction(state, action);
 }
 
+/**
+ * Can xarm deal battle damage in this region? Checks figures (warriors,
+ * incarnation, upgraded cultists) plus War Frenzy card presence.
+ */
+function xarmCanAttackInRegion(state: GameState, regionId: string): boolean {
+  const region = state.regions[regionId as import('@ruin/engine').RegionId];
+  if (!region) return false;
+
+  // Battle-suppressing effects: Ecstasy (no dice rolled) and Mittelreich
+  // Diplomacy world card + event token (no battle at all).
+  const hasEcstasy = region.chaosCards.some(c => c !== null && c.cardId === 'lasha_ecstasy');
+  if (hasEcstasy) return false;
+
+  // Mittelreich Diplomacy world card: no battles in regions with event tokens.
+  const hasDiplomacy = state.worldTrack.slot1 === 'mittelreich_diplomacy'
+    || state.worldTrack.slot2 === 'mittelreich_diplomacy';
+  if (hasDiplomacy && region.tokens.includes('event')) return false;
+
+  const hasWarFrenzy = region.chaosCards.some(
+    c => c !== null && c.cardId === 'xarm_war_frenzy',
+  );
+  if (hasWarFrenzy) return true;
+
+  const xarmHasHeartseekers =
+    state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+
+  return followersInRegion(state, regionId as import('@ruin/engine').RegionId).some(f => {
+    if (f.tipped) return false;
+    if ((f.controlledBy ?? f.power) !== 'xarm') return false;
+    if (f.class === 'warrior' || f.class === 'incarnation') return true;
+    if (f.class === 'cultist' && xarmHasHeartseekers) return true;
+    return false;
+  });
+}
+
+/**
+ * Urgent retreat: moving a solo (≤1) cultist OUT of a region where xarm
+ * can attack INTO a region where xarm can't attack. This is the "save
+ * your only cultist from certain death" case — should get a very strong
+ * prior boost for all non-xarm powers.
+ */
+export function isUrgentRetreatFromXarm(state: GameState, action: Action): boolean {
+  if (action.kind !== 'summoning_summon_figure') return false;
+  if (action.power === 'xarm') return false;
+
+  const ps = state.powers[action.power];
+  if (!ps) return false;
+  const follower = ps.followers.find(f => f.id === action.followerId);
+  if (!follower || follower.regionId === null) return false; // from reserve
+
+  // Source region must be Xarm-threatened
+  if (!xarmCanAttackInRegion(state, follower.regionId)) return false;
+  // Must be moving to a DIFFERENT region
+  if (action.toRegion === follower.regionId) return false;
+  // Destination must be SAFE from Xarm
+  if (xarmCanAttackInRegion(state, action.toRegion)) return false;
+
+  // Only fires when this is a lone cultist (≤1 own cultists there).
+  // If there's a pile, the concentration is worth more than the losses.
+  const ownCultists = followersInRegion(state, follower.regionId as import('@ruin/engine').RegionId, action.power)
+    .filter(f => !f.tipped && f.class === 'cultist').length;
+  return ownCultists <= 1;
+}
+
