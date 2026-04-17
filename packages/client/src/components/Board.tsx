@@ -14,7 +14,7 @@ import type { DragItem } from '../types/drag.js';
 
 // SVG viewBox: 800 × 615
 export const BOARD_VIEWBOX_W = 800;
-export const BOARD_VIEWBOX_H = 800;
+export const BOARD_VIEWBOX_H = 730;
 // Canvas is 800×720 — slightly rectangular, with the top 80 of the original
 // 800×800 source image cropped so the map sits flush under the status bar.
 // Region positions are rotated 90° CW around the board centre (400, 360)
@@ -30,7 +30,7 @@ export const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: numbe
   almerida:    { x: 80,  y: 550, w: 170, h: 120, label: 'Almerida' },
   toscavar:    { x: 275, y: 600, w: 170, h: 120, label: 'Toscavar' },
   pelascos:    { x: 580, y: 460, w: 170, h: 120, label: 'Pelascos' },
-  the_barrens: { x: 590, y: 630, w: 170, h: 120, label: 'The Barrens' },
+  the_barrens: { x: 610, y: 600, w: 170, h: 120, label: 'The Barrens' },
 };
 
 // ── Token display ─────────────────────────────────────────────────────────────
@@ -883,7 +883,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
       style={{
         position: 'relative',
         height: '100%',
-        aspectRatio: '1 / 1',
+        aspectRatio: '800 / 730',
         maxWidth: '100%',
         overflow: 'hidden',
         borderRadius: 8,
@@ -891,7 +891,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
     >
       {/* Square board. Map at original orientation, sliced to cover. */}
       <svg
-        viewBox="0 0 800 800"
+        viewBox="0 0 800 730"
         style={{ position: 'relative', width: '100%', height: '100%', display: 'block', borderRadius: 8, background: 'transparent' }}
       >
         <image
@@ -904,7 +904,7 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
           opacity={0.9}
         />
         {/* Subtle darken so region boxes stay legible over the map */}
-        <rect x={0} y={0} width={800} height={800} fill={INK} opacity={0.22} />
+        <rect x={0} y={0} width={800} height={730} fill={INK} opacity={0.22} />
         {/* Connection lines between adjacent regions. Lines run center-to-center
             but are clipped to the gap between the two region rects so they don't
             disappear behind the (now semi-transparent) region backgrounds. */}
@@ -943,11 +943,13 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                 const t1 = tExitA + pad;
                 const t2 = tEnterB - pad;
                 if (t2 <= t1) continue;  // regions overlap or touch — no gap to draw in
+                const darkEdges = new Set(['pelascos|toscavar']);
+                const edgeColor = darkEdges.has(key) ? INK : BRASS;
                 lines.push(
                   <line key={key}
                     x1={ax + dx * t1} y1={ay + dy * t1}
                     x2={ax + dx * t2} y2={ay + dy * t2}
-                    stroke={BRASS} strokeWidth={2} opacity={0.6}
+                    stroke={edgeColor} strokeWidth={2} opacity={0.6}
                     strokeDasharray="6 4" strokeLinecap="round" />
                 );
               }
