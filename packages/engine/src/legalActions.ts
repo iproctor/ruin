@@ -15,6 +15,9 @@ import { getWorldChoiceRegions } from './phases/world.js';
 import { getFollowerCost, getCardCost } from './phases/summoning.js';
 import type { Rng } from './dice.js';
 
+const CLASS_IDX: Record<string, number> = { cultist: 0, warrior: 1, incarnation: 2 };
+const REGION_IDX: Record<string, number> = Object.fromEntries(REGION_ORDER.map((r, i) => [r, i]));
+
 const WORLD_THREE_REGION_CARDS = new Set(['chaos_storm']);
 const WORLD_PAIR_CHOICE_CARDS = new Set(['northern_heir', 'ratmens_price']);
 
@@ -485,48 +488,76 @@ export function sampleLegalSummoningAction(
     if (rng() * count < 1) chosen = a;
   };
 
-  // Reserve figures
-  for (const follower of p.followers) {
-    if (follower.regionId !== null) continue;
-    for (const regionId of legalRegions) {
-      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
-      if (p.powerPoints < cost) continue;
-      consider({
-        kind: 'summoning_summon_figure', power,
-        followerId: follower.id, toRegion: regionId,
-      });
+  // Group freely-movable figures by (class, regionId|null). Figures in the
+  // same group are equivalent for action selection — cost depends on class
+  // and destination, not which specific follower ID. Check cost once per
+  // (class, destination), then weight the reservoir sample by group size.
+  type FigureGroup = { cls: string; ids: string[]; regionId: RegionId | null };
+  const groups: FigureGroup[] = [];
+  const groupKey = new Map<string, FigureGroup>();
+  for (const f of p.followers) {
+    if (f.controlledBy && f.controlledBy !== power) continue;
+    if (f.regionId !== null) {
+      const hasKillingGround = state.regions[f.regionId]!.chaosCards.some(
+        c => c?.cardId === 'xarm_carnage_trap',
+      );
+      if (hasKillingGround && (f.controlledBy ?? f.power) !== 'xarm') continue;
+    }
+    const k = `${f.class}|${f.regionId ?? 'R'}`;
+    let g = groupKey.get(k);
+    if (!g) { g = { cls: f.class, ids: [], regionId: f.regionId }; groupKey.set(k, g); groups.push(g); }
+    g.ids.push(f.id);
+  }
+
+  // Flat cost cache: 3 classes × 9 regions. -1 = not computed yet.
+  const costArr = new Int8Array(27).fill(-1);
+  const getCost = (cls: string, clsIdx: number, repId: string, toRegionIdx: number, toRegion: RegionId): number => {
+    const idx = clsIdx * 9 + toRegionIdx;
+    let c = costArr[idx]!;
+    if (c === -1) {
+      c = getFollowerCost(state, power, cls as 'cultist' | 'warrior' | 'incarnation', repId, toRegion);
+      costArr[idx] = c;
+    }
+    return c;
+  };
+
+  // Weighted reservoir sampling: advance count by N (group size), only
+  // construct the action object when we actually select this group.
+  let chosenGroup: FigureGroup | null = null;
+  let chosenRegion: RegionId | null = null;
+
+  for (const g of groups) {
+    const repId = g.ids[0]!;
+    const n = g.ids.length;
+    const clsIdx = CLASS_IDX[g.cls] ?? 0;
+
+    if (g.regionId === null) {
+      for (const regionId of legalRegions) {
+        if (p.powerPoints < getCost(g.cls, clsIdx, repId, REGION_IDX[regionId]!, regionId)) continue;
+        count += n;
+        if (rng() * count < n) { chosenGroup = g; chosenRegion = regionId; }
+      }
+    } else {
+      const currentRegion = g.regionId;
+      let legalRegionsForMove = moveCache.get(currentRegion);
+      if (!legalRegionsForMove) {
+        legalRegionsForMove = (regionCounts[currentRegion] ?? 0) > 1
+          ? legalRegions
+          : legalPlacementRegions(state, power, repId);
+        moveCache.set(currentRegion, legalRegionsForMove);
+      }
+      for (const regionId of legalRegionsForMove) {
+        if (regionId === currentRegion) continue;
+        if (p.powerPoints < getCost(g.cls, clsIdx, repId, REGION_IDX[regionId]!, regionId)) continue;
+        count += n;
+        if (rng() * count < n) { chosenGroup = g; chosenRegion = regionId; }
+      }
     }
   }
 
-  // Board figures (own)
-  for (const follower of p.followers) {
-    if (follower.regionId === null) continue;
-    if (follower.controlledBy && follower.controlledBy !== power) continue;
-    const currentRegion = follower.regionId;
-    const hasKillingGround = state.regions[currentRegion]!.chaosCards.some(
-      c => c?.cardId === 'xarm_carnage_trap',
-    );
-    if (hasKillingGround && (follower.controlledBy ?? follower.power) !== 'xarm') continue;
-
-    let legalRegionsForMove = moveCache.get(currentRegion);
-    if (!legalRegionsForMove) {
-      legalRegionsForMove = (regionCounts[currentRegion] ?? 0) > 1
-        ? legalRegions
-        : legalPlacementRegions(state, power, follower.id);
-      moveCache.set(currentRegion, legalRegionsForMove);
-    }
-    for (const regionId of legalRegionsForMove) {
-      if (regionId === follower.regionId) continue;
-      const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
-      if (p.powerPoints < cost) continue;
-      consider({
-        kind: 'summoning_summon_figure', power,
-        followerId: follower.id, toRegion: regionId,
-      });
-    }
-  }
-
-  // Controlled figures from other powers (Narcotic Musk etc)
+  // Card and controlled-figure candidates (materialized only at the end).
+  let chosenCard: { cardId: string; toRegion: RegionId; slotIndex: 0 | 1 } | null = null;
+  let chosenControlled: { followerId: string; toRegion: RegionId } | null = null;
   for (const otherPower of state.activePowers) {
     if (otherPower === power) continue;
     for (const follower of state.powers[otherPower]!.followers) {
@@ -543,10 +574,11 @@ export function sampleLegalSummoningAction(
         if (regionId === currentRegion) continue;
         const cost = getFollowerCost(state, power, follower.class, follower.id, regionId);
         if (p.powerPoints < cost) continue;
-        consider({
-          kind: 'summoning_summon_figure', power,
-          followerId: follower.id, toRegion: regionId,
-        });
+        count += 1;
+        if (rng() * count < 1) {
+          chosenGroup = null; chosenCard = null;
+          chosenControlled = { followerId: follower.id, toRegion: regionId };
+        }
       }
     }
   }
@@ -567,17 +599,30 @@ export function sampleLegalSummoningAction(
         region.chaosCards[0] === null ? 0 :
         region.chaosCards[1] === null ? 1 : -1;
       if (slotIndex === -1) continue;
-      consider({
-        kind: 'summoning_play_card', power, cardId,
-        toRegion: regionId, slotIndex,
-      });
+      count += 1;
+      if (rng() * count < 1) {
+        chosenGroup = null; chosenControlled = null;
+        chosenCard = { cardId, toRegion: regionId, slotIndex };
+      }
     }
   }
 
-  if (chosen === null) return pass;
-  if (rng() < preferNonPassProb) return chosen;
-  // Uniform over (non-pass + pass): pass with prob 1/(count+1).
-  return rng() * (count + 1) < 1 ? pass : chosen;
+  // Materialize the chosen action.
+  if (count === 0) return pass;
+  const useNonPass = rng() < preferNonPassProb || rng() * (count + 1) >= 1;
+  if (!useNonPass) return pass;
+
+  if (chosenGroup && chosenRegion) {
+    const pickId = chosenGroup.ids[Math.floor(rng() * chosenGroup.ids.length)]!;
+    return { kind: 'summoning_summon_figure', power, followerId: pickId, toRegion: chosenRegion };
+  }
+  if (chosenControlled) {
+    return { kind: 'summoning_summon_figure', power, followerId: chosenControlled.followerId, toRegion: chosenControlled.toRegion };
+  }
+  if (chosenCard) {
+    return { kind: 'summoning_play_card', power, cardId: chosenCard.cardId, toRegion: chosenCard.toRegion, slotIndex: chosenCard.slotIndex };
+  }
+  return pass;
 }
 
 /**
