@@ -13,7 +13,7 @@ import {
   createInitialState, applyAction, autoAdvance, getLegalActions, GameLog, type GameState, type Action, type Power,
 } from '@ruin/engine';
 import {
-  runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS,
+  runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS, powerIndex,
   canonicalActionIndex, ACTION_DIM,
   loadModelForPower, clearPerPowerModels, type ModelJson,
 } from '@ruin/ai';
@@ -89,6 +89,9 @@ const out = fs.openSync(outPath, 'a');
 
 interface Sample {
   x: number[];       // feature vector
+  // Power index (0-3) of the acting power. Used to route policy targets
+  // to the correct per-power policy head during training.
+  p?: number;
   // Optional policy training signal: visit counts on root children at this
   // decision point, mapped to canonical action slots. Sparse map for efficiency.
   visits?: Record<string, number>;
@@ -229,6 +232,7 @@ function runGame(seed: number): GameResult {
     if (pending.actionKind === 'summoning_action') {
       const sample: Sample = {
         x: Array.from(extractFeatures(state, pending.waitingFor)),
+        p: powerIndex(pending.waitingFor),
       };
       const isLearner = !leagueActive || pending.waitingFor === learnerPower;
       if (visitsForSample && isLearner) sample.visits = visitsForSample;
@@ -301,10 +305,11 @@ for (let i = 0; i < gameCount; i++) {
   // Each sample gets the same soft target vector for the value head, plus
   // its own visit distribution (when present) for the policy head.
   for (const s of samples) {
-    const row: { x: number[]; t: number[]; visits?: Record<string, number> } = {
+    const row: { x: number[]; t: number[]; p?: number; visits?: Record<string, number> } = {
       x: s.x,
       t: target,
     };
+    if (s.p !== undefined) row.p = s.p;
     if (s.visits && Object.keys(s.visits).length > 0) row.visits = s.visits;
     fs.writeSync(out, JSON.stringify(row) + '\n');
   }

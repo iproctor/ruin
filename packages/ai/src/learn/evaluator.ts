@@ -82,6 +82,6 @@ export function policyForState(state: GameState, power: Power): Float32Array | n
   if (model === null || model === undefined) return null;
   if (!model.hasPolicyHead()) return null;
   const x = extractFeatures(state, power);
-  const { policy } = model.forwardWithPolicy(x);
+  const { policy } = model.forwardWithPolicy(x, power);
   return policy;
 }

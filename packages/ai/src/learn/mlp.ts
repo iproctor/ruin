@@ -39,6 +39,18 @@ export interface DualHeadMlpJson {
   policyHead: LayerJson;
 }
 
+// v4: shared trunk + value head + per-power policy heads.
+// Each power has its own policy head so policy gradients don't interfere
+// across powers. The shared trunk and value head are identical to v3.
+export interface MultiPolicyMlpJson {
+  version: 4;
+  type: 'mlp_multi_policy';
+  featureDim: number;
+  actionDim: number;
+  layers: LayerJson[];
+  policyHeads: Record<string, LayerJson>;  // keyed by power name
+}
+
 // Legacy v1 format for backward compat
 export interface LinearJson {
   version: 1;
@@ -48,7 +60,7 @@ export interface LinearJson {
   b: number[];
 }
 
-export type ModelJson = MlpJson | DualHeadMlpJson | LinearJson;
+export type ModelJson = MlpJson | DualHeadMlpJson | MultiPolicyMlpJson | LinearJson;
 
 interface CompiledLayer {
   W: Float32Array;    // flat row-major, length inDim*outDim; row i starts at i*outDim
@@ -94,16 +106,25 @@ function applyLayer(input: Float32Array, layer: CompiledLayer, out: Float32Array
 export class Mlp {
   layers: CompiledLayer[];
   policyHead: CompiledLayer | null;
+  perPowerPolicyHeads: Map<string, CompiledLayer> | null;
   private scratchA: Float32Array;
   private scratchB: Float32Array;
   private scratchC: Float32Array;
 
-  constructor(layers: CompiledLayer[], policyHead: CompiledLayer | null = null) {
+  constructor(
+    layers: CompiledLayer[],
+    policyHead: CompiledLayer | null = null,
+    perPowerPolicyHeads: Map<string, CompiledLayer> | null = null,
+  ) {
     this.layers = layers;
     this.policyHead = policyHead;
+    this.perPowerPolicyHeads = perPowerPolicyHeads;
     let maxDim = 0;
     for (const l of layers) if (l.outDim > maxDim) maxDim = l.outDim;
     if (policyHead && policyHead.outDim > maxDim) maxDim = policyHead.outDim;
+    if (perPowerPolicyHeads) {
+      for (const h of perPowerPolicyHeads.values()) if (h.outDim > maxDim) maxDim = h.outDim;
+    }
     this.scratchA = new Float32Array(maxDim);
     this.scratchB = new Float32Array(maxDim);
     this.scratchC = new Float32Array(maxDim);
@@ -133,9 +154,13 @@ export class Mlp {
    * The policy head branches off the LAST HIDDEN layer (the input to the
    * value head), so we run trunk -> last_hidden, then run two heads in
    * parallel from there.
+   *
+   * When per-power policy heads are available and `power` is given, uses
+   * that power's dedicated head. Falls back to the shared head otherwise.
    */
-  forwardWithPolicy(x: Float32Array): { value: Float32Array; policy: Float32Array } {
-    if (this.policyHead === null) {
+  forwardWithPolicy(x: Float32Array, power?: string): { value: Float32Array; policy: Float32Array } {
+    const activePolicyHead = (power !== undefined ? this.perPowerPolicyHeads?.get(power) : undefined) ?? this.policyHead;
+    if (activePolicyHead === null) {
       throw new Error('Mlp.forwardWithPolicy: no policy head loaded');
     }
     // Run all layers EXCEPT the last (which is the value head)
@@ -155,17 +180,17 @@ export class Mlp {
     const valueOut = scratches[scratchIdx]!;
     applyLayer(input, valueHead, valueOut);
     const policyOut = this.scratchC;
-    applyLayer(input, this.policyHead, policyOut);
+    applyLayer(input, activePolicyHead, policyOut);
 
     const valueResult = new Float32Array(valueHead.outDim);
     for (let j = 0; j < valueHead.outDim; j++) valueResult[j] = valueOut[j]!;
-    const policyResult = new Float32Array(this.policyHead.outDim);
-    for (let j = 0; j < this.policyHead.outDim; j++) policyResult[j] = policyOut[j]!;
+    const policyResult = new Float32Array(activePolicyHead.outDim);
+    for (let j = 0; j < activePolicyHead.outDim; j++) policyResult[j] = policyOut[j]!;
     return { value: valueResult, policy: policyResult };
   }
 
   hasPolicyHead(): boolean {
-    return this.policyHead !== null;
+    return this.policyHead !== null || (this.perPowerPolicyHeads !== null && this.perPowerPolicyHeads.size > 0);
   }
 
   static fromJson(j: ModelJson): Mlp {
@@ -175,10 +200,17 @@ export class Mlp {
 
     const compiled: CompiledLayer[] = [];
     let policyHead: CompiledLayer | null = null;
+    let perPowerPolicyHeads: Map<string, CompiledLayer> | null = null;
 
-    const dual = j as DualHeadMlpJson;
-    if (dual.version === 3 && dual.policyHead) {
-      // v3 dual-head MLP
+    const multi = j as MultiPolicyMlpJson;
+    if (multi.version === 4 && multi.policyHeads) {
+      for (const layer of multi.layers) compiled.push(compileLayer(layer));
+      perPowerPolicyHeads = new Map();
+      for (const [power, head] of Object.entries(multi.policyHeads)) {
+        perPowerPolicyHeads.set(power, compileLayer(head));
+      }
+    } else if ((j as DualHeadMlpJson).version === 3 && (j as DualHeadMlpJson).policyHead) {
+      const dual = j as DualHeadMlpJson;
       for (const layer of dual.layers) compiled.push(compileLayer(layer));
       policyHead = compileLayer(dual.policyHead);
     } else if ((j as MlpJson).layers) {
@@ -202,6 +234,6 @@ export class Mlp {
       throw new Error(`Mlp: value head output dim mismatch — model ${last.outDim}, powers ${POWERS.length}`);
     }
 
-    return new Mlp(compiled, policyHead);
+    return new Mlp(compiled, policyHead, perPowerPolicyHeads);
   }
 }
