@@ -558,7 +558,20 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         if (isRuined) {
           parts.push({ label: 'RUINED', color: ERROR, bold: true });
         } else {
-          if (dom.leader) parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
+          if (dom.leader) {
+            parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
+          } else {
+            const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+            let bestPw: Power | null = null;
+            let bestDom = 0;
+            for (const pw of allPowers) {
+              const d = getPowerDomination(state, regionId, pw);
+              if (d > bestDom) { bestDom = d; bestPw = pw; }
+            }
+            if (bestPw && bestDom > 0) {
+              parts.push({ label: `D${bestDom - R}`, color: POWER_COLORS[bestPw], bold: false });
+            }
+          }
           parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
         }
         const step = (w / 2) / parts.length;
@@ -937,8 +950,8 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
                   <line key={key}
                     x1={ax + dx * t1} y1={ay + dy * t1}
                     x2={ax + dx * t2} y2={ay + dy * t2}
-                    stroke={BRASS} strokeWidth={1.25} opacity={0.45}
-                    strokeDasharray="5 4" strokeLinecap="round" />
+                    stroke={BRASS} strokeWidth={2} opacity={0.6}
+                    strokeDasharray="6 4" strokeLinecap="round" />
                 );
               }
             }

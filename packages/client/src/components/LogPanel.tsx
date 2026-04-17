@@ -200,7 +200,7 @@ function renderEvent(event: GameEvent): ReactNode | null {
     case 'ruination_blocked':
       return <><Rg id={event.regionId} /><T>: Would ruin but no cards remain</T></>;
     case 'dial_counter':
-      return <><Rg id={event.regionId} /><T>:</T> <Pw power={event.power} /> <T>earns dial counter</T></>;
+      return <><Rg id={event.regionId} /><T>:</T> <Pw power={event.power} /> <T>earns DAC</T></>;
     case 'provender_score':
       return <><Pw power={event.power} /> <T>scores {event.vp} VP ({UPGRADE_BY_ID['gormen_provender_of_rot']!.name})</T></>;
 

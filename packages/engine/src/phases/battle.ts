@@ -53,11 +53,20 @@ function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
   // After hit assignment: resume from nextStep
   s = { ...s, battleState: { ...s.battleState!, nextStep: null } };
 
-  // War Frenzy clears tipped figures before normal battle starts
+  // War Frenzy clears tipped figures before normal battle starts.
+  // If Xarm killed enemies via War Frenzy, award the DAC here (these
+  // figures won't be visible to the normal runPostNormal DAC check).
   if (nextStep.type === 'normal_battle' && nextStep.clearTipped) {
     const tipped = followersInRegion(s, regionId).filter(f => f.tipped);
+    const xarmPresent = s.activePowers.includes('xarm') &&
+      followersInRegion(s, regionId).some(f => (f.controlledBy ?? f.power) === 'xarm');
+    const enemyKilledByFrenzy = xarmPresent &&
+      tipped.some(f => (f.controlledBy ?? f.power) !== 'xarm');
     for (const f of tipped) {
       s = removeFigureFromBoard(s, regionId, f.id, log).state;
+    }
+    if (enemyKilledByFrenzy) {
+      s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
     }
   }
 

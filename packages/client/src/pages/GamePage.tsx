@@ -636,13 +636,13 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         />
 
         {/* Main area */}
-        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
+        <div style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
 
           {/* Board */}
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
             {anim.phaseBanner && (
               <div className="phase-banner" key={anim.phaseBanner}>
-                {anim.phaseBanner}
+                <span className="phase-banner-text">{anim.phaseBanner}</span>
               </div>
             )}
             <Board

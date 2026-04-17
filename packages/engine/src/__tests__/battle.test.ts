@@ -211,6 +211,32 @@ describe('War Zone (no battle if event token)', () => {
     expect(log.entries.some(l => l.includes('Mittelreich: Xarm rolls'))).toBe(true);
   });
 
+  test('one upgraded Xarm cultist rolls exactly 1 die (attack 1, not 2)', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 42 });
+    s = withUpgrade(s, 'xarm', 'xarm_heartseekers_up');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    const { log } = autoResolveBattle(resolveBattlePhase(s));
+    const rollEntry = log.entries.find(l => l.includes('Norrsund: Xarm rolls'));
+    expect(rollEntry).toBeDefined();
+    // Parse dice from "Norrsund: Xarm rolls X → N hit(s)." or "Norrsund: Xarm rolls X,Y → N hit(s)."
+    const dice = rollEntry!.match(/rolls ([\d,]+)/)?.[1]?.split(',') ?? [];
+    expect(dice.length).toBe(1);
+  });
+
+  test('two upgraded Xarm cultists roll exactly 2 dice', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 42 });
+    s = withUpgrade(s, 'xarm', 'xarm_heartseekers_up');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    const { log } = autoResolveBattle(resolveBattlePhase(s));
+    const rollEntry = log.entries.find(l => l.includes('Norrsund: Xarm rolls'));
+    expect(rollEntry).toBeDefined();
+    const dice = rollEntry!.match(/rolls ([\d,]+)/)?.[1]?.split(',') ?? [];
+    expect(dice.length).toBe(2);
+  });
+
   test('event token + great_exorcism does not suppress battle (only mittelreich_diplomacy does)', () => {
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 42 });
     s = withUpgrade(s, 'xarm', 'xarm_heartseekers_up');
@@ -271,6 +297,29 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
     const { state } = autoResolveBattle(resolveBattlePhase(s));
     expect(state.phase).not.toBe('battle');
+  });
+
+  test('War Frenzy kill earns Xarm a dial counter even without attack figures (regression)', () => {
+    // Xarm has only cultists (0 attack), but War Frenzy rolls dice via the
+    // card. If the card kills an enemy, Xarm should still earn a DAC.
+    // autoAdvance runs past battle into the end phase which consumes+resets
+    // dialCounters, so we check the log for the counter event.
+    let found = false;
+    for (let seed = 0; seed < 500; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+      s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+      s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+      const { state, log } = autoResolveBattle(resolveBattlePhase(s));
+      const frenzyEntry = log.entries.find(l => l.includes('War Frenzy'));
+      const killEntry = log.entries.find(l => l.includes('kills'));
+      if (frenzyEntry && killEntry) {
+        expect(log.entries.some(l => l.includes('earns') && l.includes('dial'))).toBe(true);
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
   });
 
   test('War Frenzy is cancelled by Null Weave', () => {

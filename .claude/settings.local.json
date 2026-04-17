@@ -98,7 +98,12 @@
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__wait_for",
       "Bash(npx tsx *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(ls *)",
+      "Bash(pnpm --filter engine exec npx jest --testPathPattern battle.test --verbose)",
+      "Bash(pnpm --filter engine exec npx jest --testPathPattern battle.test)",
+      "Bash(pnpm --filter engine exec npx jest --testPathPattern battle.test -t \"War Frenzy kill\")",
+      "Bash(pnpm --filter engine exec npx jest --testPathPattern battle.test -t \"upgraded Xarm cultist\")"
     ]
   }
 }
