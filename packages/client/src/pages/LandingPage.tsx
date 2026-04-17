@@ -29,6 +29,8 @@ type Mode = 'continue' | 'register';
 // give the circle a gemstone convex feel, framed by a polished brass ring.
 function RuinEmblem() {
   const comma = 'M 0 -40 A 40 40 0 0 1 40 0 A 20 20 0 0 0 0 0 A 20 20 0 0 1 0 -40 Z';
+  // Each boundary arc: a semicircle from a rim point to centre, radius 20.
+  // Four of them (rotated 90° each) trace all the borders between commas.
   return (
     <svg
       className="landing-emblem"
@@ -65,11 +67,11 @@ function RuinEmblem() {
       {/* Base disk */}
       <circle cx="0" cy="0" r="40" fill="#0a0806" />
 
-      {/* Four commas in darker, muted god-colours */}
-      <path d={comma} fill="#a11414" />
-      <path d={comma} fill="#5e7a28" transform="rotate(90)" />
-      <path d={comma} fill="#2f6e9a" transform="rotate(180)" />
-      <path d={comma} fill="#7a2f98" transform="rotate(270)" />
+      {/* Four commas in vivid gem-like god-colours */}
+      <path d={comma} fill="#d01020" />
+      <path d={comma} fill="#78b820" transform="rotate(90)" />
+      <path d={comma} fill="#1870b8" transform="rotate(180)" />
+      <path d={comma} fill="#9428c0" transform="rotate(270)" />
 
       {/* Rim darken + sheen + glint for the jewel effect */}
       <circle cx="0" cy="0" r="40" fill="url(#ruin-shade)" />
