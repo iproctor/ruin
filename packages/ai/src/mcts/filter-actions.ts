@@ -1,5 +1,5 @@
-import type { GameState, Action } from '@ruin/engine';
-import { CHAOS_CARDS, followersInRegion } from '@ruin/engine';
+import type { GameState, Action, RegionId } from '@ruin/engine';
+import { CHAOS_CARDS, REGIONS, followersInRegion } from '@ruin/engine';
 
 /**
  * Hard-block "pointless" card plays — actions where the card's prerequisites
@@ -75,7 +75,6 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
 
   switch (action.cardId) {
     // Need own figures present
-    case 'xarm_ritual_death':
     case 'xarm_the_red_throne':
     case 'tenzen_persistence_matrix':
     case 'tenzen_fate_shield':
@@ -83,17 +82,34 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
     case 'gormen_vile_consumption':
       return ownFigs.length === 0;
 
-    // Need own figures AND enemies (extra battle is wasted on empty region)
+    // Need own figures AND enemies
+    case 'xarm_ritual_death':
     case 'xarm_bloody_rebirth':
       return ownFigs.length === 0 || enemyFigs.length === 0;
 
     // Need enemy figures present (any class)
     case 'xarm_carnage_trap':
     case 'lasha_hollow_pact':
-    case 'xarm_war_frenzy':
     case 'tenzen_the_meddling_of_rats':
     case 'gormen_pestilent_touch':
       return enemyFigs.length === 0;
+
+    // War Frenzy: pointless here if no enemies AND there's a better region
+    // (enemies + free card slot) to play it in.
+    case 'xarm_war_frenzy': {
+      if (enemyFigs.length > 0) return false;
+      const ALL_REGIONS = Object.keys(REGIONS) as RegionId[];
+      const betterRegionExists = ALL_REGIONS.some(r => {
+        if (r === action.toRegion) return false;
+        const reg = state.regions[r];
+        if (!reg || reg.ruinationCardIndex !== null) return false;
+        if (reg.chaosCards[0] !== null && reg.chaosCards[1] !== null) return false;
+        return followersInRegion(state, r).some(
+          f => (f.controlledBy ?? f.power) !== power,
+        );
+      });
+      return betterRegionExists;
+    }
 
     // Ecstasy stops dice from being rolled — useless if there are no enemy
     // dice to stop. Cultists usually have 0 attack and don't count, EXCEPT

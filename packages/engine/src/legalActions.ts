@@ -13,6 +13,7 @@ import {
 } from './helpers.js';
 import { getWorldChoiceRegions } from './phases/world.js';
 import { getFollowerCost, getCardCost } from './phases/summoning.js';
+import { effectiveDefense } from './phases/battle.js';
 import type { Rng } from './dice.js';
 
 const CLASS_IDX: Record<string, number> = { cultist: 0, warrior: 1, incarnation: 2 };
@@ -244,8 +245,9 @@ export function enumerateBattleHitStrategies(state: GameState, power: Power): Ba
   for (const f of followersInRegion(state, regionId)) {
     const ctrl = f.controlledBy ?? f.power;
     if (ctrl === power || f.tipped || f.protected) continue;
+    const def = effectiveDefense(state, regionId, f, power);
     const stats = FOLLOWERS[f.power as import('./types.js').Power]?.[f.class]?.base;
-    annotated.push({ id: f.id, cls: f.class, def: stats?.defense ?? 1, atk: stats?.attack ?? 0 });
+    annotated.push({ id: f.id, cls: f.class, def, atk: stats?.attack ?? 0 });
   }
 
   const actions: BattleHitAssignmentAction[] = [];
@@ -260,8 +262,11 @@ export function enumerateBattleHitStrategies(state: GameState, power: Power): Ba
       : { kind: 'battle_hit_assignment', power, regionId, followerIds: ids });
   };
 
-  // Strategy 1: cultists first (cheapest def first)
-  const cultistFirst = annotated.filter(a => a.cls === 'cultist').sort((a, b) => a.def - b.def);
+  // Strategy 1: cultists first, then remaining enemies by cheapest def
+  const cultistFirst = [
+    ...annotated.filter(a => a.cls === 'cultist').sort((a, b) => a.def - b.def),
+    ...annotated.filter(a => a.cls !== 'cultist').sort((a, b) => a.def - b.def),
+  ];
   const cultistKills = greedyKill(cultistFirst, hitsRemaining);
   if (cultistKills.length > 0) add(cultistKills);
 

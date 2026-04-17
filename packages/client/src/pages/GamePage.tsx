@@ -736,7 +736,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         </div>
 
         {paused && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 8px', background: PARCHMENT, borderTop: `1px solid ${BORDER_HI}` }}>
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', padding: '12px 8px', background: PARCHMENT, borderTop: `1px solid ${BORDER_HI}`, zIndex: 50 }}>
             <button
               onClick={resume}
               style={{

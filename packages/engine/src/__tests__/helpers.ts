@@ -355,7 +355,6 @@ export function setWorldCard(
 export function autoResolveBattle(
   result: { state: GameState; log: GameLog },
 ): { state: GameState; log: GameLog } {
-  const DEFENSE: Record<string, number> = { cultist: 1, warrior: 2, incarnation: 3 };
   let { state: s, log } = result;
   let iters = 0;
 
@@ -365,16 +364,20 @@ export function autoResolveBattle(
     const hitsRemaining = ctx['hitsRemaining'] as number;
     const power = s.pendingAction.waitingFor;
 
-    // Greedily pick cheapest enemies up to hitsRemaining
+    // Use actual follower stats (accounts for per-power base defense)
     const enemies = followersInRegion(s, regionId)
       .filter(f => (f.controlledBy ?? f.power) !== power && !f.tipped && !f.protected)
-      .sort((a, b) => (DEFENSE[a.class] ?? 1) - (DEFENSE[b.class] ?? 1));
+      .map(f => {
+        const stats = FOLLOWERS[f.power as Power]?.[f.class];
+        const def = stats?.base.defense ?? 1;
+        return { ...f, def };
+      })
+      .sort((a, b) => a.def - b.def);
 
     let remaining = hitsRemaining;
     const chosen: string[] = [];
     for (const f of enemies) {
-      const def = DEFENSE[f.class] ?? 1;
-      if (def <= remaining) { chosen.push(f.id); remaining -= def; }
+      if (f.def <= remaining) { chosen.push(f.id); remaining -= f.def; }
     }
 
     const hitResult = applyBattleHitAssignment(s, {

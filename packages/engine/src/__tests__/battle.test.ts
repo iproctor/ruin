@@ -8,6 +8,7 @@
  */
 import type { GameState } from '../types.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from '../phases/battle.js';
+import { enumerateBattleHitStrategies } from '../legalActions.js';
 import { applyAction } from '../reducers.js';
 import { REGION_ORDER } from '../constants.js';
 import { GameLog } from '../gameLog.js';
@@ -61,6 +62,61 @@ describe('basic battle mechanics', () => {
         expect(f.protected).toBe(false);
       }
     }
+  });
+});
+
+// ─── Gormen warrior defense ──────────────────────────────────────────────────
+
+describe('gormen warrior defense in battle', () => {
+  test('4 hits vs 4 def-1 Gormen figures yields one strategy: kill all', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'battle_hit_assignment',
+        context: { regionId: 'norrsund', hitsRemaining: 4, peasantsAvailable: 0, changerOfFateActive: false },
+      },
+    };
+    const strategies = enumerateBattleHitStrategies(s, 'xarm');
+    expect(strategies).toHaveLength(1);
+    expect(strategies[0]!.followerIds).toHaveLength(4);
+  });
+
+  test('enumerateBattleHitStrategies includes a strategy that kills all 4 Gormen', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'battle_hit_assignment',
+        context: {
+          regionId: 'norrsund',
+          hitsRemaining: 4,
+          peasantsAvailable: 0,
+          changerOfFateActive: false,
+        },
+      },
+    };
+
+    const strategies = enumerateBattleHitStrategies(s, 'xarm');
+
+    // At least one strategy should kill all 4 enemy figures
+    const killsAll = strategies.some(
+      (a: any) => a.followerIds.length === 4,
+    );
+    expect(killsAll).toBe(true);
   });
 });
 
@@ -314,7 +370,7 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
       const frenzyEntry = log.entries.find(l => l.includes('War Frenzy'));
       const killEntry = log.entries.find(l => l.includes('kills'));
       if (frenzyEntry && killEntry) {
-        expect(log.entries.some(l => l.includes('earns') && l.includes('dial'))).toBe(true);
+        expect(log.entries.some(l => l.includes('earns DAC'))).toBe(true);
         found = true;
         break;
       }

@@ -559,8 +559,8 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           parts.push({ label: 'RUINED', color: ERROR, bold: true });
         } else {
           if (dom.leader) {
-            // Surplus over resistance (D > R → surplus ≥ 1, never 0)
-            parts.push({ label: `D${dom.value - R}`, color: POWER_COLORS[dom.leader], bold: true });
+            // Raw domination value when dominating
+            parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
           } else {
             // Closest-to-dominating power, shown as deficit from threshold
             // (need R+1 to dominate → deficit = D - R - 1, always ≤ -1)

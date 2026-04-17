@@ -8,7 +8,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
-import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions, followersInRegion } from '@ruin/engine';
+import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions, followersInRegion, effectiveDefense } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -1201,25 +1201,7 @@ function BattleHitAssignmentPanel({
     });
 
   function getDefense(fig: FollowerInstance): number {
-    const owner = fig.power as Power;
-    const def = FOLLOWERS[owner]?.[fig.class];
-    if (!def) return 1;
-    const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
-      UPGRADES.find(up => up.id === u)?.upgradeType === fig.class
-    );
-    let d = isUpgraded ? def.upgraded.defense : def.base.defense;
-
-    const regionCards = state.regions[safeRegionId]!.chaosCards;
-    const rottingGrasp = regionCards.some(c => c?.cardId === 'gormen_pestilent_touch');
-    const blightWard   = regionCards.some(c => c?.cardId === 'gormen_rain_of_bile');
-    const nullWeave    = regionCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
-
-    if (!nullWeave) {
-      if (blightWard   && (fig.controlledBy ?? fig.power) === 'gormen') d += 1;
-      if (rottingGrasp && (fig.controlledBy ?? fig.power) !== 'gormen') d = Math.max(1, d - 1);
-    }
-
-    return d;
+    return effectiveDefense(state, safeRegionId, fig, myPower);
   }
 
   const figureHitsUsed = Array.from(selectedIds).reduce((sum, fid) => {
