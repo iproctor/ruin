@@ -249,16 +249,7 @@ function runGame(seed: number): GameResult {
 
     try {
       const result = applyAction(state, action);
-      const prevRound = state.round;
       state = result.state;
-      // Sample at the FIRST state of each new round (post-end-phase snapshot).
-      // Use the upcoming acting power's viewpoint (what they'd see when MCTS
-      // queries from their perspective on the next decision). These samples
-      // have no visits — pure value-head training data, so always recorded.
-      if (state.round !== prevRound && state.winners === null && state.phase !== 'completed') {
-        const viewpoint = state.pendingAction?.waitingFor ?? ALL_POWERS[0]!;
-        samples.push({ x: Array.from(extractFeatures(state, viewpoint)) });
-      }
     } catch (err) {
       const e = err instanceof Error ? { message: err.message, stack: err.stack } : { message: String(err), stack: null };
       try {
