@@ -152,7 +152,7 @@ export function renderText(event: GameEvent): string | null {
     case 'ruination_blocked':
       return `${R(event.regionId)}: Would be ruined but no ruination cards remain.`;
     case 'dial_counter':
-      return `${R(event.regionId)}: ${P(event.power)} earns a dial advancement counter.`;
+      return `${R(event.regionId)}: ${P(event.power)} earns DAC.`;
     case 'provender_score':
       return `${UPGRADE_BY_ID['gormen_provender_of_rot']!.name}: ${P(event.power)} scores ${event.vp} VP.`;
 
