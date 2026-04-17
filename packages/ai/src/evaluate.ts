@@ -59,7 +59,7 @@ export function evaluateState(state: GameState, power: Power): number {
   // Power-specific handmade evaluators for early game. The learned model's
   // evaluation is too flat to guide MCTS effectively.
   // Env vars control cutoff rounds (0 = disabled).
-  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '3', 10);
+  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '5', 10);
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
@@ -490,13 +490,13 @@ const MAGIC_SYMBOL_CARD_IDS = new Set(
 );
 
 /**
- * Tenzen-specific evaluation for rounds 1-4.
+ * Tenzen-specific evaluation.
  *
- * Core signal: Σ region_value × cultist_investment.
- * region_value rewards corruption > 6, ≥2 cs+ms, high conquest VP, Stasis;
- * penalizes enemy battle dice. cultist_investment is linear in cultists +
- * bonus at DAC threshold (≥2 cultists with ≥2 cs+ms) and when ruin-imminent
- * with a top-2 corruption rank.
+ * Projects discounted ruination VP per region based on cultist count,
+ * corruption progress, and enemy figures. The evaluator fires at
+ * start-of-round (after end phase), so chaos card slots are empty —
+ * only persistent state (tokens, figures, corruption) is visible.
+ * Card effects are handled by MCTS rollouts, not the evaluator.
  */
 function evaluateTenzen(state: GameState): number {
   const ps = state.powers['tenzen']!;
@@ -504,8 +504,13 @@ function evaluateTenzen(state: GameState): number {
   const hasApprentices = ps.upgradesInPlay.includes('tenzen_apprentices_up');
   const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
 
-  let regionSum = 0;
+  const TIME_DISCOUNT = parseFloat(process.env['TENZEN_TIME_DISCOUNT'] ?? '0.8');
+  const nextCard = RUINATION_CARDS[state.ruinationCardsUsed] ?? null;
+
+  let projectedVP = 0;
   let ruinParticipation = 0;
+  let totalCultistsOnBoard = 0;
+  let dacRegions = 0;
 
   for (const regionId of ALL_REGIONS) {
     const region = state.regions[regionId];
@@ -529,18 +534,11 @@ function evaluateTenzen(state: GameState): number {
     const myCultists = rFigs.filter(
       f => !f.tipped && (f.controlledBy ?? f.power) === 'tenzen' && f.class === 'cultist',
     ).length;
+    totalCultistsOnBoard += myCultists;
 
-    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
-    const hasEcstasy = !changer && region.chaosCards.some(c => c?.cardId === 'lasha_ecstasy');
-    const hasStasis = !changer && region.chaosCards.some(c => c?.cardId === 'tenzen_stasis_web');
-    const warCry = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+    if (myCultists === 0 && myCorr === 0) continue;
 
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
-    const magicSymbols = region.chaosCards.filter(
-      c => c !== null && MAGIC_SYMBOL_CARD_IDS.has(c.cardId),
-    ).length;
-    const csMs = chaosStones + magicSymbols;
-
     const nobles = region.tokens.filter(t => t === 'noble').length;
     const conquestValue = region.baseValue + nobles;
 
@@ -548,85 +546,99 @@ function evaluateTenzen(state: GameState): number {
       rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped);
     const fatespinnerBonus = fatespinnerHere ? 2 : 0;
     const ruinContribution = totalCorr + chaosStones + fatespinnerBonus;
+    const remaining = RUINATION_THRESHOLD - ruinContribution;
 
-    // ─── region_value ──────────────────────────────────────────────────────
-    let regionValue = 1.0;
-    if (ruinContribution > 6) regionValue += (ruinContribution - 6) * 0.8;
-    if (csMs >= 2) regionValue += 3;
-    else if (csMs === 1) regionValue += 1;
-    regionValue += conquestValue * 0.5;
-    if (hasStasis) regionValue += 2;
-    if (!hasEcstasy) {
-      let enemyDice = 0;
-      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
-      if (hasWarFrenzy) enemyDice += 2;
-      for (const f of rFigs) {
-        if (f.tipped) continue;
-        const p = (f.controlledBy ?? f.power) as Power;
-        if (p === 'tenzen') continue;
-        if (f.class === 'incarnation') enemyDice += 3;
-        else if (f.class === 'warrior') enemyDice += 2;
-        else if (f.class === 'cultist' && p === 'xarm' && xarmHasHeartseekers) enemyDice += 1;
-      }
-      regionValue -= enemyDice * 0.8;
+    // Enemy figures = expected cultist losses per round.
+    let enemyDice = 0;
+    for (const f of rFigs) {
+      if (f.tipped) continue;
+      const p = (f.controlledBy ?? f.power) as Power;
+      if (p === 'tenzen') continue;
+      if (f.class === 'incarnation') enemyDice += 3;
+      else if (f.class === 'warrior') enemyDice += 2;
+      else if (f.class === 'cultist' && p === 'xarm' && xarmHasHeartseekers) enemyDice += 1;
     }
-    if (warCry) regionValue *= 0.3;
-    regionValue = Math.max(0, regionValue);
+    const expectedKills = enemyDice * 0.33;
+    const effectiveCultists = Math.max(0, myCultists - expectedKills);
 
-    // ─── cultist_investment ────────────────────────────────────────────────
-    if (myCultists === 0 && myCorr === 0) continue;
-    let investment = myCultists + myCorr * 0.5;
-    if (myCultists >= 2 && csMs >= 2) investment += 2;
-    if (ruinContribution >= RUINATION_THRESHOLD && myCorr > 0) {
-      const sorted = [...state.activePowers].sort(
-        (a, b) => (region.corruptionTokens[b] ?? 0) - (region.corruptionTokens[a] ?? 0),
-      );
-      const rank = sorted.indexOf('tenzen');
-      if (rank === 0) investment += 3;
-      else if (rank === 1) investment += 1;
+    // Project rounds to ruin.
+    let roundsToRuin: number;
+    if (remaining <= 0) {
+      roundsToRuin = 0;
+    } else if (effectiveCultists > 0) {
+      roundsToRuin = remaining / effectiveCultists;
+    } else {
+      roundsToRuin = 20;
     }
 
-    regionSum += regionValue * investment;
+    // VP from ruination: rank-based from the next ruination card.
+    const sorted = [...state.activePowers].sort(
+      (a, b) => (region.corruptionTokens[b] ?? 0) - (region.corruptionTokens[a] ?? 0),
+    );
+    const rank = sorted.indexOf('tenzen');
+    const vpEntry = nextCard?.endPhaseVP[regionId];
+    const ruinVP = vpEntry
+      ? (rank === 0 ? vpEntry.first : rank === 1 ? vpEntry.second : 0)
+      : conquestValue;
+    const ruinersBonus = nextCard ? nextCard.ruinersScore : 3;
+    const totalRuinVP = ruinVP + (myCorr > 0 ? ruinersBonus : 0);
+    const discountedRuinVP = totalRuinVP * Math.pow(TIME_DISCOUNT, roundsToRuin);
+
+    // Domination VP (per-round income).
+    const { leader } = getRegionDomination(state, regionId);
+    const domVP = leader === 'tenzen' ? conquestValue : 0;
+
+    // DAC: ≥2 cultists + ≥2 chaos stones (only tokens persist across rounds).
+    let dacBonus = 0;
+    if (myCultists >= 2 && chaosStones + fatespinnerBonus >= 2) {
+      dacBonus = 3;
+      dacRegions++;
+    } else if (myCultists >= 2 && chaosStones + fatespinnerBonus >= 1) {
+      dacBonus = 1;
+    }
+
+    // Cultist presence: each cultist has standalone value.
+    const presenceValue = myCultists * 1.5;
+
+    projectedVP += discountedRuinVP + domVP * 0.5 + dacBonus + presenceValue;
   }
 
-  // ─── Non-region scalars ──────────────────────────────────────────────────
-  const maxDialPos = THREAT_DIALS['tenzen'].length - 1;
-  const dialFraction = (ps.dialPosition + Math.min(ps.dialCounters / 3, 0.9)) / maxDialPos;
-  const dialScore = Math.min(dialFraction, 1.0);
+  // Non-region scalars.
+  // Dial is only valuable as a path to Apprentices upgrade.
+  // Once obtained, further dial advancement is marginal.
+  const needsApprentices = !hasApprentices;
+  const apprenticeProgress = needsApprentices ? Math.min(ps.dialPosition / 4, 1.0) : 0;
 
   const vpProgress = Math.min(ps.victoryPoints / 50, 1.0);
   let maxOpponentVP = 0;
-  let oppPPSum = 0;
+  let oppHandSum = 0;
   let oppCount = 0;
   for (const p of state.activePowers) {
     if (p === 'tenzen') continue;
     const opPS = state.powers[p];
     if (!opPS) continue;
     if (opPS.victoryPoints > maxOpponentVP) maxOpponentVP = opPS.victoryPoints;
-    oppPPSum += opPS.powerPoints;
+    oppHandSum += opPS.hand.length;
     oppCount++;
   }
   const vpLeadScore = Math.max(0, Math.min((ps.victoryPoints - maxOpponentVP + 50) / 100, 1.0));
-  const avgOppPP = oppCount > 0 ? oppPPSum / oppCount : 0;
-  const ppLeadScore = Math.max(0, Math.min((ps.powerPoints - avgOppPP) / 10, 1.0));
+  const avgOppHand = oppCount > 0 ? oppHandSum / oppCount : 5;
+  const handDepletionScore = Math.max(0, Math.min((5 - avgOppHand) / 5, 1.0));
 
-  const warriorsOnBoard = ps.followers.filter(
-    f => f.regionId !== null && f.class === 'warrior',
-  ).length;
-
-  const regionScore = Math.min(regionSum / 50, 1.0);
+  const regionScore = Math.min(projectedVP / 30, 1.0);
   const ruinScore = Math.min(ruinParticipation / 3, 1.0);
+  const cultistScore = Math.min(totalCultistsOnBoard / 8, 1.0);
 
   const raw =
-    0.45 * regionScore +
+    0.40 * regionScore +
     0.10 * ruinScore +
-    0.13 * vpProgress +
+    0.15 * vpProgress +
     0.07 * vpLeadScore +
-    0.06 * ppLeadScore +
-    0.07 * dialScore +
-    0.06 * (hasApprentices ? 1 : 0) +
-    0.06 * Math.min(ps.followers.filter(f => f.regionId !== null).length / 8, 1.0)
-    - 0.03 * warriorsOnBoard;
+    0.03 * handDepletionScore +
+    0.05 * apprenticeProgress +
+    0.07 * (hasApprentices ? 1 : 0) +
+    0.10 * cultistScore +
+    0.03 * Math.min(dacRegions / 2, 1.0);
 
   return Math.max(0.0, Math.min(1.0, raw));
 }
