@@ -14,7 +14,7 @@ import type { DragItem } from '../types/drag.js';
 
 // SVG viewBox: 800 × 615
 export const BOARD_VIEWBOX_W = 800;
-export const BOARD_VIEWBOX_H = 720;
+export const BOARD_VIEWBOX_H = 800;
 // Canvas is 800×720 — slightly rectangular, with the top 80 of the original
 // 800×800 source image cropped so the map sits flush under the status bar.
 // Region positions are rotated 90° CW around the board centre (400, 360)
@@ -22,15 +22,15 @@ export const BOARD_VIEWBOX_H = 720;
 // The cards themselves stay axis-aligned (horizontal) — only the centres
 // move. For an old centre (cx, cy), the new top-left is (615 - cy, cx - 15).
 export const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: number; h: number; label: string }> = {
-  norrsund:    { x: 590, y: 190,   w: 170, h: 120, label: 'Norrsund' },
-  talvimaa:    { x: 600, y: 455, w: 170, h: 120, label: 'Talvimaa' },
-  volensk:     { x: 483, y: 590, w: 170, h: 120, label: 'Volensk' },
-  mittelreich: { x: 400, y: 350, w: 170, h: 120, label: 'Mittelreich' },
-  normagne:    { x: 263, y: 190, w: 170, h: 120, label: 'Normagne' },
-  almerida:    { x: 113, y: 20,   w: 170, h: 120, label: 'Almerida' },
-  toscavar:    { x: 30, y: 190, w: 170, h: 120, label: 'Toscavar' },
-  pelascos:    { x: 213, y: 555, w: 170, h: 120, label: 'Pelascos' },
-  the_barrens: { x: 20, y: 535, w: 170, h: 120, label: 'The Barrens' },
+  norrsund:    { x: 230,  y: 40, w: 170, h: 120, label: 'Norrsund' },
+  talvimaa:    { x: 550, y: 20, w: 170, h: 120, label: 'Talvimaa' },
+  volensk:     { x: 615, y: 180, w: 170, h: 120, label: 'Volensk' },
+  mittelreich: { x: 425, y: 272, w: 170, h: 120, label: 'Mittelreich' },
+  normagne:    { x: 245, y: 382, w: 170, h: 120, label: 'Normagne' },
+  almerida:    { x: 80,  y: 550, w: 170, h: 120, label: 'Almerida' },
+  toscavar:    { x: 275, y: 600, w: 170, h: 120, label: 'Toscavar' },
+  pelascos:    { x: 580, y: 460, w: 170, h: 120, label: 'Pelascos' },
+  the_barrens: { x: 590, y: 630, w: 170, h: 120, label: 'The Barrens' },
 };
 
 // ── Token display ─────────────────────────────────────────────────────────────
@@ -883,31 +883,28 @@ export default function Board({ state, highlightRegions, dimmedRegions, pendingA
       style={{
         position: 'relative',
         height: '100%',
-        aspectRatio: '800 / 720',
+        aspectRatio: '1 / 1',
         maxWidth: '100%',
         overflow: 'hidden',
         borderRadius: 8,
       }}
     >
-      {/* Slightly rectangular board. Map rotated 90° CW; the extra -80 on
-          the translate shifts it up so the top strip is cropped. */}
+      {/* Square board. Map at original orientation, sliced to cover. */}
       <svg
-        viewBox="0 0 800 720"
+        viewBox="0 0 800 800"
         style={{ position: 'relative', width: '100%', height: '100%', display: 'block', borderRadius: 8, background: 'transparent' }}
       >
-        <g transform="translate(800 -80) rotate(90)">
-          <image
-            href="/world_map.jpg"
-            x={0}
-            y={0}
-            width={800}
-            height={800}
-            preserveAspectRatio="xMidYMid slice"
-            opacity={0.9}
-          />
-        </g>
+        <image
+          href="/world_map.jpg"
+          x={0}
+          y={0}
+          width={800}
+          height={800}
+          preserveAspectRatio="xMidYMid slice"
+          opacity={0.9}
+        />
         {/* Subtle darken so region boxes stay legible over the map */}
-        <rect x={0} y={0} width={800} height={720} fill={INK} opacity={0.22} />
+        <rect x={0} y={0} width={800} height={800} fill={INK} opacity={0.22} />
         {/* Connection lines between adjacent regions. Lines run center-to-center
             but are clipped to the gap between the two region rects so they don't
             disappear behind the (now semi-transparent) region backgrounds. */}
