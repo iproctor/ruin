@@ -141,6 +141,14 @@ function runGame(seed: number): GameResult {
     return rngState / 0xffffffff;
   };
 
+  // Tenzen cutoff randomization: 20% of games, set TENZEN_EVAL_CUTOFF to a
+  // random value in [1,4]. Exposes the learned model to taking over at
+  // different rounds, helping it internalize Tenzen strategy faster.
+  const savedTenzenCutoff = process.env['TENZEN_EVAL_CUTOFF'];
+  if (rand() < 0.2) {
+    process.env['TENZEN_EVAL_CUTOFF'] = String(1 + Math.floor(rand() * 4));
+  }
+
   // League assignment: rotate learner across games, then probabilistically
   // load a snapshot as each non-learner power's opponent policy.
   const learnerPower: Power = leagueActive
@@ -270,6 +278,9 @@ function runGame(seed: number): GameResult {
   }
 
   if (leagueActive) clearPerPowerModels();
+  // Restore Tenzen cutoff after per-game randomization
+  if (savedTenzenCutoff !== undefined) process.env['TENZEN_EVAL_CUTOFF'] = savedTenzenCutoff;
+  else delete process.env['TENZEN_EVAL_CUTOFF'];
 
   const winners = state.winners;
   const target = winners && winners.length > 0
