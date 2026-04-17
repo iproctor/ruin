@@ -559,8 +559,11 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           parts.push({ label: 'RUINED', color: ERROR, bold: true });
         } else {
           if (dom.leader) {
-            parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
+            // Surplus over resistance (D > R → surplus ≥ 1, never 0)
+            parts.push({ label: `D${dom.value - R}`, color: POWER_COLORS[dom.leader], bold: true });
           } else {
+            // Closest-to-dominating power, shown as deficit from threshold
+            // (need R+1 to dominate → deficit = D - R - 1, always ≤ -1)
             const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
             let bestPw: Power | null = null;
             let bestDom = 0;
@@ -569,7 +572,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
               if (d > bestDom) { bestDom = d; bestPw = pw; }
             }
             if (bestPw && bestDom > 0) {
-              parts.push({ label: `D${bestDom - R}`, color: POWER_COLORS[bestPw], bold: false });
+              parts.push({ label: `D${bestDom - R - 1}`, color: POWER_COLORS[bestPw], bold: false });
             }
           }
           parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });

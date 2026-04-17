@@ -22,3 +22,4 @@ packages/ai/data/training_loop.log
 
 # CPU profile dumps
 *.cpuprofile
+.claude/settings.local.json
