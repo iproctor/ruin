@@ -42,7 +42,7 @@ TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-36}
 # archive/ most-recent-first to fill the window. This keeps training data size
 # stable even when workers produce small batches.
 TRAIN_WINDOW=${TRAIN_WINDOW:-54}
-TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
+TRAIN_EPOCHS=${TRAIN_EPOCHS:-120}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
@@ -158,7 +158,7 @@ while true; do
   T2=$(date +%s)
   if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
       --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --multi-policy \
+      --multi-policy --warm-start "$DATA_DIR/model.json" \
       --epochs "$TRAIN_EPOCHS" --batch 512 --policy-alpha 4.0 2>&1 \
       | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|power-tagged|warm-)" \
       | tee -a "$LOG_FILE"; then

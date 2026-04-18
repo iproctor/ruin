@@ -463,7 +463,7 @@ def main() -> int:
 
     best_val = float("inf")
     best_snap = None
-    patience = 8
+    patience = 20
     stale = 0
 
     for epoch in range(1, args.epochs + 1):
