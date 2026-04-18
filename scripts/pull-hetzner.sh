@@ -32,15 +32,18 @@ rsync -avz -e "ssh ${SSH_OPTS}" \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
   "${LOCAL_ROOT}/packages/ai/data/"
 
-echo "→ Pulling all model_iter_*.json snapshots (incremental, then prune old remote)"
+echo "→ Pulling all model_iter_*.json + per-power iter snapshots (incremental, then prune old remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
-  --include='model_iter_*.json' --exclude='*' \
+  --include='model_iter_*.json' \
+  --include='model_xarm_iter_*.json' --include='model_gormen_iter_*.json' \
+  --include='model_tenzen_iter_*.json' --include='model_lasha_iter_*.json' \
+  --exclude='*' \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
   "${LOCAL_ROOT}/packages/ai/data/"
 # Keep the KEEP_SNAPSHOTS most recent on the box (league pool needs them);
-# delete older ones.
+# delete older ones. Applies per-pattern so each power keeps its own window.
 ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
-  "cd ${REMOTE_PATH}/packages/ai/data && ls -t model_iter_*.json 2>/dev/null | tail -n +$((KEEP_SNAPSHOTS + 1)) | xargs -r rm -f"
+  "cd ${REMOTE_PATH}/packages/ai/data && for pat in 'model_iter_*.json' 'model_xarm_iter_*.json' 'model_gormen_iter_*.json' 'model_tenzen_iter_*.json' 'model_lasha_iter_*.json'; do ls -t \$pat 2>/dev/null | tail -n +$((KEEP_SNAPSHOTS + 1)) | xargs -r rm -f; done"
 
 echo "→ Pulling all bench_iter_*.json results (incremental, then clean remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
