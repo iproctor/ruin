@@ -90,36 +90,39 @@ export MKL_NUM_THREADS=$TRAIN_THREADS
 export NUMEXPR_NUM_THREADS=$TRAIN_THREADS
 
 while true; do
-  # ── 1. Local collection batch ───────────────────────────────────────────────
-  BATCH_COUNTER=$((BATCH_COUNTER + 1))
-  TS=$(date +%s)
-  SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
-  BATCH_FILE="${INBOX}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
-  rm -f "$DATA_DIR/training.jsonl"
-
-  T0=$(date +%s)
-  echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0.15 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
-      --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
-    echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
-    sleep 5
-    continue
-  fi
-  if [ ! -s "$DATA_DIR/training.jsonl" ]; then
-    echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
-    sleep 5
-    continue
-  fi
-  mv "$DATA_DIR/training.jsonl" "$BATCH_FILE"
-  SAMPLES=$(wc -l < "$BATCH_FILE")
-  T1=$(date +%s)
-  echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")" | tee -a "$LOG_FILE"
-
-  # ── 2. Count inbox files (coordinator's own batch + anything workers uploaded) ─
+  # ── 1. Check inbox first — skip collection if threshold already met ─────────
   INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$INBOX_COUNT" -lt "$TRAIN_THRESHOLD" ]; then
+    # Not enough yet — collect a local batch
+    BATCH_COUNTER=$((BATCH_COUNTER + 1))
+    TS=$(date +%s)
+    SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
+    BATCH_FILE="${INBOX}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
+    rm -f "$DATA_DIR/training.jsonl"
+
+    T0=$(date +%s)
+    echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
+    if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+        --workers "$WORKERS" --epsilon 0.15 \
+        --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+        --out "$DATA_DIR/training.jsonl" 2>&1 \
+        | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
+      echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
+      sleep 5
+      continue
+    fi
+    if [ ! -s "$DATA_DIR/training.jsonl" ]; then
+      echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
+      sleep 5
+      continue
+    fi
+    mv "$DATA_DIR/training.jsonl" "$BATCH_FILE"
+    SAMPLES=$(wc -l < "$BATCH_FILE")
+    T1=$(date +%s)
+    echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")" | tee -a "$LOG_FILE"
+
+    INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  fi
   echo "  · inbox: ${INBOX_COUNT}/${TRAIN_THRESHOLD} batches" | tee -a "$LOG_FILE"
 
   # ── 3. Train when threshold reached ─────────────────────────────────────────
