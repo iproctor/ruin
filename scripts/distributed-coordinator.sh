@@ -154,21 +154,37 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train
+  # 3b. Train — one model per power, each with its own policy head trained
+  #     on that power's MCTS visits. All share the same value-head training
+  #     (full dataset) but only see their own power's policy targets.
   T2=$(date +%s)
-  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-      --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --warm-start "$DATA_DIR/model.json" \
-      --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|power-tagged|warm-)" \
-      | tee -a "$LOG_FILE"; then
-    echo "  ! training failed" | tee -a "$LOG_FILE"
-    continue
-  fi
+  TRAIN_OK=1
+  for POWER in xarm gormen tenzen lasha; do
+    echo "  [train $POWER]" | tee -a "$LOG_FILE"
+    WARM_ARG=""
+    [ -f "$DATA_DIR/model_${POWER}.json" ] && WARM_ARG="--warm-start $DATA_DIR/model_${POWER}.json"
+    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+        --in "$RECENT_FILE" --out "$DATA_DIR/model_${POWER}.json" \
+        --power "$POWER" $WARM_ARG \
+        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|power-tagged|warm-|--power)" \
+        | tee -a "$LOG_FILE"; then
+      echo "  ! training $POWER failed" | tee -a "$LOG_FILE"
+      TRAIN_OK=0
+      break
+    fi
+  done
+  if [ "$TRAIN_OK" -eq 0 ]; then continue; fi
+  # Keep a combined model.json (copy xarm's as canonical for the value head —
+  # all 4 have the same value head since they train on the same value targets).
+  cp "$DATA_DIR/model_xarm.json" "$DATA_DIR/model.json"
   T3=$(date +%s)
   echo "[iter $ITER] trained in $((T3 - T2))s" | tee -a "$LOG_FILE"
 
   # 3c. Snapshot
+  for POWER in xarm gormen tenzen lasha; do
+    cp "$DATA_DIR/model_${POWER}.json" "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json"
+  done
   cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
 
   # 3d. Move processed inbox files to archive (so we don't double-train)

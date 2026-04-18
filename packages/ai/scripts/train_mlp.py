@@ -63,6 +63,9 @@ def parse_args() -> argparse.Namespace:
                     help="Weight on policy loss (relative to value loss).")
     ap.add_argument("--multi-policy", action="store_true",
                     help="Use per-power policy heads (v4 model). Data must have 'p' field.")
+    ap.add_argument("--power", type=str, default="",
+                    help="Filter training data to only this power's samples (by 'p' field). "
+                         "Trains a dedicated v3 model for one power.")
     ap.add_argument("--warm-start", type=str, default="",
                     help="Path to a v3 model.json. Trunk + value head are warm-started; "
                          "each per-power policy head is initialized from the shared head.")
@@ -385,6 +388,17 @@ def main() -> int:
             ct = int(((power_idx == i) & has_policy).sum())
             print(f"  {name} policy rows: {ct}")
     print(f"avg target distribution: {T_value.mean(axis=0).round(3).tolist()}")
+
+    # Per-power filtering: keep all value samples (every viewpoint is valid),
+    # but strip policy targets from other powers' samples so only this power's
+    # MCTS visits train the policy head.
+    if args.power:
+        pi = POWER_NAMES.index(args.power)
+        other_power_policy = has_policy & (power_idx >= 0) & (power_idx != pi)
+        has_policy = has_policy & ~other_power_policy
+        T_policy[other_power_policy] = 0
+        kept_policy = int(has_policy.sum())
+        print(f"--power {args.power}: kept {kept_policy} policy rows, stripped {int(other_power_policy.sum())} from other powers")
 
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)

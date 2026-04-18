@@ -6,7 +6,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadModel, type ModelJson } from '@ruin/ai';
+import { loadModel, loadModelForPower, type ModelJson } from '@ruin/ai';
+import type { Power } from '@ruin/engine';
 
 export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
   const candidates = explicitPath
@@ -21,6 +22,21 @@ export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
       loadModel(j);
       // eslint-disable-next-line no-console
       console.log(`[ai] loaded learned model: ${p}`);
+
+      // Load per-power models if available (separate policy heads per power).
+      const dir = path.dirname(p);
+      const powers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+      let perPowerCount = 0;
+      for (const power of powers) {
+        const pp = path.join(dir, `model_${power}.json`);
+        if (fs.existsSync(pp)) {
+          loadModelForPower(power, JSON.parse(fs.readFileSync(pp, 'utf-8')) as ModelJson);
+          perPowerCount++;
+        }
+      }
+      if (perPowerCount > 0) {
+        console.log(`[ai] loaded ${perPowerCount} per-power models`);
+      }
       return true;
     }
   }
