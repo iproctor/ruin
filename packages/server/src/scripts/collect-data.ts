@@ -149,20 +149,27 @@ function runGame(seed: number): GameResult {
     process.env['TENZEN_EVAL_CUTOFF'] = String(1 + Math.floor(rand() * 4));
   }
 
-  // League assignment: rotate learner across games, then probabilistically
-  // load a snapshot as each non-learner power's opponent policy.
-  const learnerPower: Power = leagueActive
-    ? ALL_POWERS[seed % ALL_POWERS.length]!
-    : ALL_POWERS[0]!;  // unused when league is off
+  // League assignment: 2 powers use the current model (their policy visits
+  // are valid training data), 2 may use a snapshot from the pool. Rotate
+  // which pair is "current" by seed so all powers get equal coverage.
+  const currentModelPowers = new Set<Power>();
   if (leagueActive) {
     clearPerPowerModels();
+    // Pick 2 powers for current model, rotating by seed
+    const offset = seed % ALL_POWERS.length;
+    currentModelPowers.add(ALL_POWERS[offset]!);
+    currentModelPowers.add(ALL_POWERS[(offset + 1) % ALL_POWERS.length]!);
     for (const p of ALL_POWERS) {
-      if (p === learnerPower) continue;
+      if (currentModelPowers.has(p)) continue;
       if (rand() < leagueMix) {
         const snap = snapshotPool[Math.floor(rand() * snapshotPool.length)]!;
         loadModelForPower(p, snap);
+      } else {
+        currentModelPowers.add(p);
       }
     }
+  } else {
+    for (const p of ALL_POWERS) currentModelPowers.add(p);
   }
 
   while (state.winners === null && state.phase !== 'completed') {
@@ -232,18 +239,17 @@ function runGame(seed: number): GameResult {
     }
 
     // Sample at every summoning decision point. Feature vector trains the
-    // value head (outcome-prediction from this viewpoint) regardless of which
-    // model picked the moves — the outcome target is valid either way.
-    // The visit distribution trains the policy head, and snapshot-driven
-    // visits would regress the current policy toward snapshots — so in
-    // league mode, strip visits for non-learner samples.
+    // value head (any viewpoint is valid). Policy visits are only kept for
+    // powers on the current model — snapshot-driven visits would regress
+    // the current policy.
     if (pending.actionKind === 'summoning_action') {
       const sample: Sample = {
         x: Array.from(extractFeatures(state, pending.waitingFor)),
         p: powerIndex(pending.waitingFor),
       };
-      const isLearner = !leagueActive || pending.waitingFor === learnerPower;
-      if (visitsForSample && isLearner) sample.visits = visitsForSample;
+      if (visitsForSample && currentModelPowers.has(pending.waitingFor)) {
+        sample.visits = visitsForSample;
+      }
       samples.push(sample);
     }
 

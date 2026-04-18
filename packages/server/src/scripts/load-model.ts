@@ -6,7 +6,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { loadModel, type ModelJson } from '@ruin/ai';
+import { Mlp, loadModel, loadModelForPower, type ModelJson } from '@ruin/ai';
+import type { Power } from '@ruin/engine';
 
 export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
   const candidates = explicitPath
@@ -18,9 +19,18 @@ export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
   for (const p of candidates) {
     if (fs.existsSync(p)) {
       const j = JSON.parse(fs.readFileSync(p, 'utf-8')) as ModelJson;
-      loadModel(j);
-      // eslint-disable-next-line no-console
-      console.log(`[ai] loaded learned model: ${p}`);
+      if (Mlp.isBundle(j)) {
+        const bundle = Mlp.fromBundle(j);
+        let first = true;
+        for (const [power, mlp] of bundle) {
+          if (first) { loadModel(j.models[power]!); first = false; }
+          loadModelForPower(power as Power, j.models[power]!);
+        }
+        console.log(`[ai] loaded v5 per-power bundle: ${p} (${bundle.size} powers)`);
+      } else {
+        loadModel(j);
+        console.log(`[ai] loaded learned model: ${p}`);
+      }
       return true;
     }
   }

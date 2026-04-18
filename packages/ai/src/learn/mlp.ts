@@ -51,6 +51,17 @@ export interface MultiPolicyMlpJson {
   policyHeads: Record<string, LayerJson>;  // keyed by power name
 }
 
+// v5: per-power bundle — 4 independent v3 models in one file.
+// Each power has its own trunk + value + policy head.
+export interface PerPowerBundleJson {
+  version: 5;
+  type: 'per_power_bundle';
+  featureDim: number;
+  actionDim: number;
+  iter?: number;
+  models: Record<string, DualHeadMlpJson>;
+}
+
 // Legacy v1 format for backward compat
 export interface LinearJson {
   version: 1;
@@ -60,7 +71,7 @@ export interface LinearJson {
   b: number[];
 }
 
-export type ModelJson = MlpJson | DualHeadMlpJson | MultiPolicyMlpJson | LinearJson;
+export type ModelJson = MlpJson | DualHeadMlpJson | MultiPolicyMlpJson | PerPowerBundleJson | LinearJson;
 
 interface CompiledLayer {
   W: Float32Array;    // flat row-major, length inDim*outDim; row i starts at i*outDim
@@ -193,7 +204,27 @@ export class Mlp {
     return this.policyHead !== null || (this.perPowerPolicyHeads !== null && this.perPowerPolicyHeads.size > 0);
   }
 
+  /** Returns true if `j` is a v5 per-power bundle (needs special handling). */
+  static isBundle(j: ModelJson): j is PerPowerBundleJson {
+    return (j as PerPowerBundleJson).version === 5;
+  }
+
+  /** Load a v5 bundle: returns a Map of power → Mlp. */
+  static fromBundle(j: PerPowerBundleJson): Map<string, Mlp> {
+    const result = new Map<string, Mlp>();
+    for (const [power, sub] of Object.entries(j.models)) {
+      result.set(power, Mlp.fromJson(sub));
+    }
+    return result;
+  }
+
   static fromJson(j: ModelJson): Mlp {
+    if (Mlp.isBundle(j)) {
+      // For callers that expect a single Mlp, return the first power's model.
+      const first = Object.values(j.models)[0]!;
+      return Mlp.fromJson(first);
+    }
+
     if (j.featureDim !== FEATURE_DIM) {
       throw new Error(`Mlp: feature dim mismatch — model ${j.featureDim}, code ${FEATURE_DIM}`);
     }

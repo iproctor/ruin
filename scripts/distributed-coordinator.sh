@@ -150,16 +150,43 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train
+  # 3b. Train — one model per power, then bundle into v5 JSON.
   T2=$(date +%s)
-  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-      --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --iter "$ITER" --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target)" \
-      | tee -a "$LOG_FILE"; then
-    echo "  ! training failed" | tee -a "$LOG_FILE"
-    continue
-  fi
+  TRAIN_OK=1
+  for POWER in xarm gormen tenzen lasha; do
+    echo "  [train $POWER]" | tee -a "$LOG_FILE"
+    WARM_ARG=""
+    [ -f "$DATA_DIR/model_${POWER}.json" ] && WARM_ARG="--warm-start $DATA_DIR/model_${POWER}.json"
+    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+        --in "$RECENT_FILE" --out "$DATA_DIR/model_${POWER}.json" \
+        --power "$POWER" --iter "$ITER" $WARM_ARG \
+        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|--power|warm-)" \
+        | tee -a "$LOG_FILE"; then
+      echo "  ! training $POWER failed" | tee -a "$LOG_FILE"
+      TRAIN_OK=0
+      break
+    fi
+  done
+  if [ "$TRAIN_OK" -eq 0 ]; then continue; fi
+  # Bundle 4 v3 models into a single v5 JSON
+  python3 -c "
+import json, sys
+powers = ['xarm', 'gormen', 'tenzen', 'lasha']
+models = {}
+for p in powers:
+    with open('$DATA_DIR/model_' + p + '.json') as f:
+        models[p] = json.load(f)
+first = models[powers[0]]
+bundle = {
+    'version': 5, 'type': 'per_power_bundle',
+    'featureDim': first['featureDim'], 'actionDim': first['actionDim'],
+    'iter': $ITER, 'models': models,
+}
+with open('$DATA_DIR/model.json', 'w') as f:
+    json.dump(bundle, f)
+print('bundled v5 model.json')
+" 2>&1 | tee -a "$LOG_FILE"
   T3=$(date +%s)
   echo "[iter $ITER] trained in $((T3 - T2))s" | tee -a "$LOG_FILE"
 

@@ -63,11 +63,10 @@ def parse_args() -> argparse.Namespace:
                     help="Weight on policy loss (relative to value loss).")
     ap.add_argument("--iter", type=int, default=-1,
                     help="Iteration number to embed in the model JSON.")
-    ap.add_argument("--multi-policy", action="store_true",
-                    help="Use per-power policy heads (v4 model). Data must have 'p' field.")
+    ap.add_argument("--power", type=str, default="",
+                    help="Filter policy data to this power only (by 'p' field in JSONL).")
     ap.add_argument("--warm-start", type=str, default="",
-                    help="Path to a v3 model.json. Trunk + value head are warm-started; "
-                         "each per-power policy head is initialized from the shared head.")
+                    help="Path to a model.json to warm-start from.")
     return ap.parse_args()
 
 
@@ -389,6 +388,13 @@ def main() -> int:
             print(f"  {name} policy rows: {ct}")
     print(f"avg target distribution: {T_value.mean(axis=0).round(3).tolist()}")
 
+    if args.power:
+        pi = POWER_NAMES.index(args.power)
+        other = has_policy & (power_idx >= 0) & (power_idx != pi)
+        has_policy = has_policy & ~other
+        T_policy[other] = 0
+        print(f"--power {args.power}: kept {int(has_policy.sum())} policy rows, stripped {int(other.sum())}")
+
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)
     X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
@@ -421,31 +427,26 @@ def main() -> int:
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
+        # v5 bundle: extract sub-model for the target power
+        if old.get("version") == 5 and args.power and args.power in old.get("models", {}):
+            old = old["models"][args.power]
         if old.get("version") == 3:
             for li, lj in enumerate(old["layers"][:2]):
-                wname = f"W{li+1}"
-                bname = f"b{li+1}"
-                setattr(model, wname, np.array(lj["W"], dtype=np.float32))
-                setattr(model, bname, np.array(lj["b"], dtype=np.float32))
+                setattr(model, f"W{li+1}", np.array(lj["W"], dtype=np.float32))
+                setattr(model, f"b{li+1}", np.array(lj["b"], dtype=np.float32))
             vl = old["layers"][2]
             model.Wv = np.array(vl["W"], dtype=np.float32)
             model.bv = np.array(vl["b"], dtype=np.float32)
             ph = old["policyHead"]
-            if args.multi_policy:
-                for i in range(N_POWERS):
-                    setattr(model, f"Wp{i}", np.array(ph["W"], dtype=np.float32).copy())
-                    setattr(model, f"bp{i}", np.array(ph["b"], dtype=np.float32).copy())
-            else:
-                model.Wp = np.array(ph["W"], dtype=np.float32)
-                model.bp = np.array(ph["b"], dtype=np.float32)
-            # Reset Adam state for warm-started params
+            model.Wp = np.array(ph["W"], dtype=np.float32)
+            model.bp = np.array(ph["b"], dtype=np.float32)
             for name in model._adam:
                 arr = getattr(model, name)
                 model._adam[name] = (np.zeros_like(arr), np.zeros_like(arr))
             model._step = 0
-            print(f"warm-started from {args.warm_start} (v3 → {'v4 multi-policy' if args.multi_policy else 'v3'})")
+            print(f"warm-started from {args.warm_start}{' [' + args.power + ']' if args.power else ''}")
         else:
-            print(f"[WARN] warm-start model version {old.get('version')} — only v3 supported, skipping")
+            print(f"[WARN] warm-start model version {old.get('version')} — skipping")
     n_tr = len(Tv_tr)
     names = ["xarm", "gormen", "tenzen", "lasha"]
 
