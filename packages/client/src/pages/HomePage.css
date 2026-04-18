@@ -291,6 +291,7 @@
 .home-game-status-active   { color: var(--brass); }
 .home-game-winner {
   display: flex;
+  justify-content: flex-end;
   gap: 0.3rem;
   margin-top: 0.15rem;
 }
