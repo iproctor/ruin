@@ -161,7 +161,7 @@ export default function LandingPage() {
             </span>
           ))}
         </h1>
-        <p className="landing-tagline">Four powers. A tired world. Chaos will reign.</p>
+        <p className="landing-tagline">An online implementation of CitOW with AI and multiplayer</p>
       </section>
 
       <section className="landing-powers" aria-label="The four powers">
