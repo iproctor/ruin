@@ -34,6 +34,10 @@ set -uo pipefail
 WORKER_ID=${WORKER_ID:-0}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-16}
+# Focus power: if set, self-play uses model_<power>.json for that power and
+# snapshots from the league pool for others. Only the focus power's model is
+# trained each iteration; model.json stays frozen.
+FOCUS_POWER=${FOCUS_POWER:-}
 # Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
 # ≈ 600 games ≈ ~60k samples per train cycle.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
@@ -102,11 +106,13 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
+  FOCUS_ARG=""
+  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0.15 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →|\[league\]|\[focus\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue
@@ -154,21 +160,35 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train
+  # 3b. Train — focus mode trains only model_<power>.json, model.json frozen.
   T2=$(date +%s)
+  if [ -n "$FOCUS_POWER" ]; then
+    TRAIN_OUT="$DATA_DIR/model_${FOCUS_POWER}.json"
+    WARM_SRC="$DATA_DIR/model_${FOCUS_POWER}.json"
+    # Bootstrap: if focus model doesn't exist yet, warm-start from model.json
+    [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
+    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC"
+  else
+    TRAIN_OUT="$DATA_DIR/model.json"
+    TRAIN_ARGS=""
+  fi
   if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-      --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --iter "$ITER" --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target)" \
+      --in "$RECENT_FILE" --out "$TRAIN_OUT" \
+      --iter "$ITER" $TRAIN_ARGS --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|--power|warm-)" \
       | tee -a "$LOG_FILE"; then
     echo "  ! training failed" | tee -a "$LOG_FILE"
     continue
   fi
   T3=$(date +%s)
-  echo "[iter $ITER] trained in $((T3 - T2))s" | tee -a "$LOG_FILE"
+  echo "[iter $ITER] trained in $((T3 - T2))s → $(basename $TRAIN_OUT)" | tee -a "$LOG_FILE"
 
   # 3c. Snapshot
-  cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
+  if [ -n "$FOCUS_POWER" ]; then
+    cp "$TRAIN_OUT" "$DATA_DIR/model_${FOCUS_POWER}_iter_${ITER_TAG}.json"
+  else
+    cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
+  fi
 
   # 3d. Move processed inbox files to archive (so we don't double-train)
   mv "$INBOX"/*.jsonl "$ARCHIVE"/

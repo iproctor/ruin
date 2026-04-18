@@ -50,6 +50,11 @@ const epsilon = parseFloat(getArg('--epsilon', '0.1'));
 // Default 0 = disabled (pure self-play).
 const leagueSize = parseInt(getArg('--league-size', '0'), 10);
 const leagueMix = parseFloat(getArg('--league-mix', '0.5'));
+// Focus power: if set, that power ALWAYS uses its dedicated model (loaded at
+// startup via loadModelForPower from model_<power>.json), other powers draw
+// from the league pool. Only the focus power's visits are recorded. Used for
+// single-power training experiments.
+const focusPower = getArg('--focus-power', '');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
@@ -78,6 +83,19 @@ if (leagueSize > 0) {
   }
 }
 const leagueActive = snapshotPool.length > 0;
+
+// ── Focus power model (if --focus-power set) ──────────────────────────────────
+
+let focusPowerModel: ModelJson | null = null;
+if (focusPower) {
+  const focusPath = path.resolve(`packages/ai/data/model_${focusPower}.json`);
+  if (fs.existsSync(focusPath)) {
+    focusPowerModel = JSON.parse(fs.readFileSync(focusPath, 'utf-8')) as ModelJson;
+    console.log(`[focus] loaded model for ${focusPower} from ${focusPath}`);
+  } else {
+    console.log(`[focus] no ${focusPath} — ${focusPower} will use the shared model`);
+  }
+}
 
 // ── Ensure output directory exists ────────────────────────────────────────────
 
@@ -149,13 +167,26 @@ function runGame(seed: number): GameResult {
     process.env['TENZEN_EVAL_CUTOFF'] = String(1 + Math.floor(rand() * 4));
   }
 
-  // League assignment: 2 powers use the current model (their policy visits
-  // are valid training data), 2 may use a snapshot from the pool. Rotate
-  // which pair is "current" by seed so all powers get equal coverage.
+  // League assignment. Two modes:
+  //  - focus mode: only the focus power uses its dedicated model (current
+  //    training target). All others draw from the snapshot pool. Only the
+  //    focus power's visits are recorded as policy training data.
+  //  - normal mode: 2 powers on current, 2 may draw from pool.
   const currentModelPowers = new Set<Power>();
-  if (leagueActive) {
+  if (focusPower) {
+    // Focus mode: only focus power's visits are recorded.
     clearPerPowerModels();
-    // Pick 2 powers for current model, rotating by seed
+    if (focusPowerModel) loadModelForPower(focusPower as Power, focusPowerModel);
+    currentModelPowers.add(focusPower as Power);
+    for (const p of ALL_POWERS) {
+      if (p === focusPower) continue;
+      if (leagueActive) {
+        const snap = snapshotPool[Math.floor(rand() * snapshotPool.length)]!;
+        loadModelForPower(p, snap);
+      }
+    }
+  } else if (leagueActive) {
+    clearPerPowerModels();
     const offset = seed % ALL_POWERS.length;
     currentModelPowers.add(ALL_POWERS[offset]!);
     currentModelPowers.add(ALL_POWERS[(offset + 1) % ALL_POWERS.length]!);

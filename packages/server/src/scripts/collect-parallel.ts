@@ -25,6 +25,7 @@ const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().le
 const epsilon = getArg('--epsilon', '0.1');
 const leagueSize = getArg('--league-size', '0');
 const leagueMix = getArg('--league-mix', '0.5');
+const focusPower = getArg('--focus-power', '');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
 // Slice the seed space across workers.
@@ -63,6 +64,7 @@ const processes = slices.map((s, w) =>
       '--epsilon', epsilon,
       '--league-size', leagueSize,
       '--league-mix', leagueMix,
+      ...(focusPower ? ['--focus-power', focusPower] : []),
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
