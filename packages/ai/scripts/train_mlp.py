@@ -416,31 +416,46 @@ def main() -> int:
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
-        if old.get("version") == 3:
+        ver = old.get("version")
+        if ver in (3, 4):
+            # Trunk + value head (shared across v3 and v4)
             for li, lj in enumerate(old["layers"][:2]):
-                wname = f"W{li+1}"
-                bname = f"b{li+1}"
-                setattr(model, wname, np.array(lj["W"], dtype=np.float32))
-                setattr(model, bname, np.array(lj["b"], dtype=np.float32))
+                setattr(model, f"W{li+1}", np.array(lj["W"], dtype=np.float32))
+                setattr(model, f"b{li+1}", np.array(lj["b"], dtype=np.float32))
             vl = old["layers"][2]
             model.Wv = np.array(vl["W"], dtype=np.float32)
             model.bv = np.array(vl["b"], dtype=np.float32)
-            ph = old["policyHead"]
-            if args.multi_policy:
-                for i in range(N_POWERS):
-                    setattr(model, f"Wp{i}", np.array(ph["W"], dtype=np.float32).copy())
-                    setattr(model, f"bp{i}", np.array(ph["b"], dtype=np.float32).copy())
-            else:
-                model.Wp = np.array(ph["W"], dtype=np.float32)
-                model.bp = np.array(ph["b"], dtype=np.float32)
+            # Policy head(s)
+            if ver == 4 and "policyHeads" in old:
+                ph_map = old["policyHeads"]
+                if args.multi_policy:
+                    for i, name in enumerate(POWER_NAMES):
+                        if name in ph_map:
+                            setattr(model, f"Wp{i}", np.array(ph_map[name]["W"], dtype=np.float32))
+                            setattr(model, f"bp{i}", np.array(ph_map[name]["b"], dtype=np.float32))
+                else:
+                    first = ph_map[POWER_NAMES[0]]
+                    model.Wp = np.array(first["W"], dtype=np.float32)
+                    model.bp = np.array(first["b"], dtype=np.float32)
+            elif "policyHead" in old:
+                ph = old["policyHead"]
+                if args.multi_policy:
+                    for i in range(N_POWERS):
+                        setattr(model, f"Wp{i}", np.array(ph["W"], dtype=np.float32).copy())
+                        setattr(model, f"bp{i}", np.array(ph["b"], dtype=np.float32).copy())
+                else:
+                    model.Wp = np.array(ph["W"], dtype=np.float32)
+                    model.bp = np.array(ph["b"], dtype=np.float32)
             # Reset Adam state for warm-started params
             for name in model._adam:
                 arr = getattr(model, name)
                 model._adam[name] = (np.zeros_like(arr), np.zeros_like(arr))
             model._step = 0
-            print(f"warm-started from {args.warm_start} (v3 → {'v4 multi-policy' if args.multi_policy else 'v3'})")
+            src = f"v{ver}"
+            dst = "v4 multi-policy" if args.multi_policy else "v3"
+            print(f"warm-started from {args.warm_start} ({src} → {dst})")
         else:
-            print(f"[WARN] warm-start model version {old.get('version')} — only v3 supported, skipping")
+            print(f"[WARN] warm-start model version {ver} — only v3/v4 supported, skipping")
     n_tr = len(Tv_tr)
     names = ["xarm", "gormen", "tenzen", "lasha"]
 
