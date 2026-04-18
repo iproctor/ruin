@@ -21,6 +21,7 @@ WORKERS=${WORKERS:-7}
 # opponent pool.
 LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
+FOCUS_POWER=${FOCUS_POWER:-}
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"
@@ -54,8 +55,10 @@ check_and_update() {
 
 pull_model() {
   rsync -az -e "ssh ${SSH_OPTS}" \
-    "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/model.json" \
-    "${DATA_DIR}/model.json" 2>/dev/null
+    --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
+    --include='model_tenzen.json' --include='model_lasha.json' --exclude='*' \
+    "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/" \
+    "${DATA_DIR}/" 2>/dev/null
 }
 
 pull_snapshots() {
@@ -89,9 +92,11 @@ while true; do
   echo "[$(date +%H:%M:%S)] batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})"
   cd "$ROOT"
   rm -f "${DATA_DIR}/training.jsonl"
+  FOCUS_ARG=""
+  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0.15 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
     mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
     SAMPLES=$(wc -l < "$BATCH_FILE")

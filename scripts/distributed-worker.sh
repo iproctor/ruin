@@ -38,6 +38,9 @@ IDLE_SECONDS=${IDLE_SECONDS:-30}
 # coordinator before each batch.
 LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
+# Focus power: if set, all self-play games use model_<power>.json for that
+# power and snapshots for others. Only that power's visits are recorded.
+FOCUS_POWER=${FOCUS_POWER:-}
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"
@@ -59,11 +62,13 @@ echo "  WORKERS:         $WORKERS"
 echo "──────────────────────────────────────────────────"
 
 while true; do
-  # 1. Pull the canonical model from the coordinator.
+  # 1. Pull the canonical model + any per-power models from the coordinator.
   echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
   if ! rsync -az -e "${RSYNC_SSH}" \
-      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
-      "${DATA_DIR}/model.json" 2>/dev/null; then
+      --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
+      --include='model_tenzen.json' --include='model_lasha.json' --exclude='*' \
+      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
+      "${DATA_DIR}/" 2>/dev/null; then
     echo "  ! rsync failed, sleeping ${IDLE_SECONDS}s..."
     sleep "$IDLE_SECONDS"
     continue
@@ -108,9 +113,11 @@ while true; do
 
   echo "[$(date +%H:%M:%S)] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})..."
   T0=$(date +%s)
+  FOCUS_ARG=""
+  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0.15 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"
