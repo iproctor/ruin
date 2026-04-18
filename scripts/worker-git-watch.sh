@@ -54,10 +54,8 @@ check_and_update() {
 
 pull_model() {
   rsync -az -e "ssh ${SSH_OPTS}" \
-    --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
-    --include='model_tenzen.json' --include='model_lasha.json' --exclude='*' \
-    "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/" \
-    "${DATA_DIR}/" 2>/dev/null
+    "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/model.json" \
+    "${DATA_DIR}/model.json" 2>/dev/null
 }
 
 pull_snapshots() {

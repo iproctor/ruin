@@ -34,15 +34,14 @@ set -uo pipefail
 WORKER_ID=${WORKER_ID:-0}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-16}
-# Train when this many NEW files (inbox) arrive. With 50 games/batch × 36 batches
-# ≈ 1800 games ≈ ~300k samples per train cycle. 3x the old threshold to give
-# per-power policy heads enough data (~15k policy samples per head).
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-36}
+# Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
+# ≈ 600 games ≈ ~60k samples per train cycle.
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
 # Total batches to include in training (new + old). Old batches are pulled from
 # archive/ most-recent-first to fill the window. This keeps training data size
 # stable even when workers produce small batches.
-TRAIN_WINDOW=${TRAIN_WINDOW:-54}
-TRAIN_EPOCHS=${TRAIN_EPOCHS:-120}
+TRAIN_WINDOW=${TRAIN_WINDOW:-18}
+TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
@@ -90,39 +89,36 @@ export MKL_NUM_THREADS=$TRAIN_THREADS
 export NUMEXPR_NUM_THREADS=$TRAIN_THREADS
 
 while true; do
-  # ── 1. Check inbox first — skip collection if threshold already met ─────────
-  INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$INBOX_COUNT" -lt "$TRAIN_THRESHOLD" ]; then
-    # Not enough yet — collect a local batch
-    BATCH_COUNTER=$((BATCH_COUNTER + 1))
-    TS=$(date +%s)
-    SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
-    BATCH_FILE="${INBOX}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
-    rm -f "$DATA_DIR/training.jsonl"
+  # ── 1. Local collection batch ───────────────────────────────────────────────
+  BATCH_COUNTER=$((BATCH_COUNTER + 1))
+  TS=$(date +%s)
+  SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
+  BATCH_FILE="${INBOX}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
+  rm -f "$DATA_DIR/training.jsonl"
 
-    T0=$(date +%s)
-    echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-    if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-        --workers "$WORKERS" --epsilon 0.15 \
-        --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
-        --out "$DATA_DIR/training.jsonl" 2>&1 \
-        | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
-      echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
-      sleep 5
-      continue
-    fi
-    if [ ! -s "$DATA_DIR/training.jsonl" ]; then
-      echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
-      sleep 5
-      continue
-    fi
-    mv "$DATA_DIR/training.jsonl" "$BATCH_FILE"
-    SAMPLES=$(wc -l < "$BATCH_FILE")
-    T1=$(date +%s)
-    echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")" | tee -a "$LOG_FILE"
-
-    INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
+  T0=$(date +%s)
+  echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
+  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+      --workers "$WORKERS" --epsilon 0.15 \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+      --out "$DATA_DIR/training.jsonl" 2>&1 \
+      | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
+    echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
+    sleep 5
+    continue
   fi
+  if [ ! -s "$DATA_DIR/training.jsonl" ]; then
+    echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
+    sleep 5
+    continue
+  fi
+  mv "$DATA_DIR/training.jsonl" "$BATCH_FILE"
+  SAMPLES=$(wc -l < "$BATCH_FILE")
+  T1=$(date +%s)
+  echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")" | tee -a "$LOG_FILE"
+
+  # ── 2. Count inbox files (coordinator's own batch + anything workers uploaded) ─
+  INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
   echo "  · inbox: ${INBOX_COUNT}/${TRAIN_THRESHOLD} batches" | tee -a "$LOG_FILE"
 
   # ── 3. Train when threshold reached ─────────────────────────────────────────
@@ -154,37 +150,20 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train — one model per power, each with its own policy head trained
-  #     on that power's MCTS visits. All share the same value-head training
-  #     (full dataset) but only see their own power's policy targets.
+  # 3b. Train
   T2=$(date +%s)
-  TRAIN_OK=1
-  for POWER in xarm gormen tenzen lasha; do
-    echo "  [train $POWER]" | tee -a "$LOG_FILE"
-    WARM_ARG=""
-    [ -f "$DATA_DIR/model_${POWER}.json" ] && WARM_ARG="--warm-start $DATA_DIR/model_${POWER}.json"
-    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$RECENT_FILE" --out "$DATA_DIR/model_${POWER}.json" \
-        --power "$POWER" $WARM_ARG \
-        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|power-tagged|warm-|--power)" \
-        | tee -a "$LOG_FILE"; then
-      echo "  ! training $POWER failed" | tee -a "$LOG_FILE"
-      TRAIN_OK=0
-      break
-    fi
-  done
-  if [ "$TRAIN_OK" -eq 0 ]; then continue; fi
-  # Keep a combined model.json (copy xarm's as canonical for the value head —
-  # all 4 have the same value head since they train on the same value targets).
-  cp "$DATA_DIR/model_xarm.json" "$DATA_DIR/model.json"
+  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+      --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
+      --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target)" \
+      | tee -a "$LOG_FILE"; then
+    echo "  ! training failed" | tee -a "$LOG_FILE"
+    continue
+  fi
   T3=$(date +%s)
   echo "[iter $ITER] trained in $((T3 - T2))s" | tee -a "$LOG_FILE"
 
   # 3c. Snapshot
-  for POWER in xarm gormen tenzen lasha; do
-    cp "$DATA_DIR/model_${POWER}.json" "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json"
-  done
   cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
 
   # 3d. Move processed inbox files to archive (so we don't double-train)
