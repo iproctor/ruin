@@ -118,7 +118,7 @@ for i in $(seq $START_ITER $END_ITER); do
   # progress in real time instead of dumping at the end.
   if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
       --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
-      --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      --iter "$i" --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
       | grep --line-buffered -E "^(loaded|baseline|ep |saved)" \
       | tee -a "$LOG_FILE"; then
     iteration_failed "$i" "training failed"

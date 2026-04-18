@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--policy-alpha", type=float, default=1.0,
                     help="Weight on policy loss (relative to value loss).")
+    ap.add_argument("--iter", type=int, default=-1,
+                    help="Iteration number to embed in the model JSON.")
     ap.add_argument("--multi-policy", action="store_true",
                     help="Use per-power policy heads (v4 model). Data must have 'p' field.")
     ap.add_argument("--warm-start", type=str, default="",
@@ -288,7 +290,7 @@ class DualHeadMLP:
             p = getattr(self, name)
             p -= lr_t * m / (np.sqrt(v) + eps)
 
-    def to_json(self, d: int, h1: int, h2: int, c: int, p: int) -> dict:
+    def to_json(self, d: int, h1: int, h2: int, c: int, p: int, iter_num: int = -1) -> dict:
         layers = [
             {"W": self.W1.tolist(), "b": self.b1.tolist(), "activation": "relu"},
             {"W": self.W2.tolist(), "b": self.b2.tolist(), "activation": "relu"},
@@ -310,7 +312,7 @@ class DualHeadMLP:
                 "layers": layers,
                 "policyHeads": policy_heads,
             }
-        return {
+        out = {
             "version": 3,
             "type": "mlp_dual",
             "featureDim": d,
@@ -322,6 +324,9 @@ class DualHeadMLP:
                 "activation": "softmax",
             },
         }
+        if iter_num >= 0:
+            out["iter"] = iter_num
+        return out
 
 
 # ── Loss helpers ─────────────────────────────────────────────────────────────
@@ -513,7 +518,7 @@ def main() -> int:
 
     Path(args.out_path).parent.mkdir(parents=True, exist_ok=True)
     with open(args.out_path, "w") as f:
-        json.dump(model.to_json(d, args.hidden1, args.hidden2, 4, ACTION_DIM), f)
+        json.dump(model.to_json(d, args.hidden1, args.hidden2, 4, ACTION_DIM, iter_num=args.iter), f)
     print(f"\nsaved model to {args.out_path}\n")
     return 0
 
