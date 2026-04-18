@@ -183,7 +183,8 @@ class DualHeadMLP:
 
         # Policy head — shared or per-power
         if self.multi_policy:
-            p_probs = np.zeros((X.shape[0], getattr(self, "Wp0").shape[1]), dtype=np.float32)
+            action_dim = getattr(self, "Wp0").shape[1]
+            # Use head 0 as default for metrics; backward uses pp_probs per-power.
             cache_pp = {}
             for i in range(N_POWERS):
                 Wp_i = getattr(self, f"Wp{i}")
@@ -192,7 +193,8 @@ class DualHeadMLP:
                 zp_shift = zp_i - zp_i.max(axis=1, keepdims=True)
                 ezp_i = np.exp(zp_shift)
                 cache_pp[i] = ezp_i / ezp_i.sum(axis=1, keepdims=True)
-            # p_probs won't be used directly in multi — cache per-power probs
+            # For metrics: use head 0's predictions as a representative.
+            p_probs = cache_pp[0]
             cache = {
                 "X": X, "z1": z1, "a1": a1, "z2": z2, "a2": a2,
                 "v_probs": v_probs, "pp_probs": cache_pp,
