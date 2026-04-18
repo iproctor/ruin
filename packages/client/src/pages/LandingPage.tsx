@@ -14,7 +14,7 @@ interface PowerMeta {
 }
 
 const POWERS: PowerMeta[] = [
-  { numeral: 'I',   slug: 'xarm',   name: 'Xarm',   epithet: 'blood for the blood throne' },
+  { numeral: 'I',   slug: 'xarm',   name: 'Xarm',   epithet: 'war is a force that gives us meaning' },
   { numeral: 'II',  slug: 'gormen', name: 'Gormen', epithet: 'ripe with decay' },
   { numeral: 'III', slug: 'tenzen', name: 'Tenzen', epithet: 'just as planned' },
   { numeral: 'IV',  slug: 'lasha',  name: 'Lasha',  epithet: 'pain and pleasure, indivisible' },

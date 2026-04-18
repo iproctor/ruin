@@ -15,7 +15,7 @@ const POWER_NAMES: Record<Power, string> = {
 };
 
 const POWER_EPITHETS: Record<Power, string> = {
-  xarm:   'blood for the blood throne',
+  xarm:   'war is a force that gives us meaning',
   gormen: 'ripe with decay',
   tenzen: 'just as planned',
   lasha:  'you asked for this',
