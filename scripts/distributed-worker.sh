@@ -59,11 +59,13 @@ echo "  WORKERS:         $WORKERS"
 echo "──────────────────────────────────────────────────"
 
 while true; do
-  # 1. Pull the canonical model from the coordinator.
+  # 1. Pull the canonical model + per-power models from the coordinator.
   echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
   if ! rsync -az -e "${RSYNC_SSH}" \
-      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
-      "${DATA_DIR}/model.json" 2>/dev/null; then
+      --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
+      --include='model_tenzen.json' --include='model_lasha.json' --exclude='*' \
+      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
+      "${DATA_DIR}/" 2>/dev/null; then
     echo "  ! rsync failed, sleeping ${IDLE_SECONDS}s..."
     sleep "$IDLE_SECONDS"
     continue
