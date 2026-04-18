@@ -156,7 +156,7 @@ while true; do
   if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
       --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
       --multi-policy --warm-start "$DATA_DIR/model.json" \
-      --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      --epochs "$TRAIN_EPOCHS" --batch 512 --policy-alpha 4.0 2>&1 \
       | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|power-tagged|warm-)" \
       | tee -a "$LOG_FILE"; then
     echo "  ! training failed" | tee -a "$LOG_FILE"
