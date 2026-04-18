@@ -24,7 +24,7 @@ set -uo pipefail
 ITERATIONS=${ITERATIONS:-100}
 GAMES=${GAMES:-200}
 WORKERS=${WORKERS:-6}
-EPSILON=${EPSILON:-0.15}
+EPSILON=${EPSILON:-0.08}
 # League training (AlphaStar-lite): non-zero LEAGUE_SIZE enables it.
 # Per game, one power is the learner (on current model); each other power,
 # with probability LEAGUE_MIX, is assigned a random model from the last

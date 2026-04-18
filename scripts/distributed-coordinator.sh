@@ -109,7 +109,7 @@ while true; do
   FOCUS_ARG=""
   [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0.15 \
+      --workers "$WORKERS" --epsilon 0.08 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →|\[league\]|\[focus\])" | tee -a "$LOG_FILE"; then
