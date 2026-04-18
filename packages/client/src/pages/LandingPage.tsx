@@ -17,7 +17,7 @@ const POWERS: PowerMeta[] = [
   { numeral: 'I',   slug: 'xarm',   name: 'Xarm',   epithet: 'blood for the blood throne' },
   { numeral: 'II',  slug: 'gormen', name: 'Gormen', epithet: 'ripe with decay' },
   { numeral: 'III', slug: 'tenzen', name: 'Tenzen', epithet: 'just as planned' },
-  { numeral: 'IV',  slug: 'lasha',  name: 'Lasha',  epithet: 'demons to some. angels to others' },
+  { numeral: 'IV',  slug: 'lasha',  name: 'Lasha',  epithet: 'pain and pleasure, indivisible' },
 ];
 
 
