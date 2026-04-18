@@ -450,6 +450,8 @@ export interface GameListEntry {
   powers: Array<{ power: string; playerType: string; userId: string | null; username: string | null }>;
   name: string | null;
   status: string;
+  winners: string[] | null;
+  winCondition: string | null;
 }
 
 export async function listGamesForUser(userId: string): Promise<GameListEntry[]> {
@@ -481,6 +483,7 @@ export async function listGamesForUser(userId: string): Promise<GameListEntry[]>
       ? await db.select({ id: users.id, username: users.username }).from(users).where(inArray(users.id, humanIds))
       : [];
     const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
+    const stateObj = gameRow.state as { winners?: string[] | null; winCondition?: string | null } | null;
     result.push({
       id: gameRow.id,
       round: gameRow.round,
@@ -496,6 +499,8 @@ export async function listGamesForUser(userId: string): Promise<GameListEntry[]>
       })),
       name: gameRow.name ?? null,
       status: gameRow.status,
+      winners: stateObj?.winners ?? null,
+      winCondition: stateObj?.winCondition ?? null,
     });
   }
 

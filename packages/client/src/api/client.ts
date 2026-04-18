@@ -96,6 +96,8 @@ export interface GameSummary {
   powers: Array<{ power: string; playerType: string; userId: string | null; username: string | null }>;
   name: string | null;
   status: string;
+  winners: string[] | null;
+  winCondition: string | null;
 }
 
 export async function listGames(): Promise<GameSummary[]> {

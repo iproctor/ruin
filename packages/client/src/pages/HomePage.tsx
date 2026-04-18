@@ -81,7 +81,18 @@ function GameRow({ game, userId }: { game: GameSummary; userId: string | null })
         {isPending ? (
           <span className="home-game-status-label home-game-status-lobby">Lobby</span>
         ) : game.isComplete ? (
-          <span className="home-game-status-label home-game-status-complete">Ruined</span>
+          <>
+            <span className="home-game-status-label home-game-status-complete">Ruined</span>
+            {game.winners && game.winners.length > 0 && (
+              <div className="home-game-winner">
+                {game.winners.map(w => (
+                  <span key={w} className={`home-game-power home-game-power-${w}`}>
+                    {POWER_LABELS[w as keyof typeof POWER_LABELS] ?? w}
+                  </span>
+                ))}
+              </div>
+            )}
+          </>
         ) : (
           <span className="home-game-status-label home-game-status-active">
             {multiplayer ? 'Rivals' : 'Solo'}

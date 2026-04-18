@@ -289,6 +289,11 @@
 .home-game-status-lobby    { color: var(--brass-hot); }
 .home-game-status-complete { color: var(--paper-fade); }
 .home-game-status-active   { color: var(--brass); }
+.home-game-winner {
+  display: flex;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+}
 .home-game-status-time {
   font-family: 'IM Fell English', serif;
   font-size: 0.72rem;
