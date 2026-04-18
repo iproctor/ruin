@@ -380,7 +380,7 @@ def main() -> int:
     n, d = X.shape
     print(f"loaded {n} samples, feature dim {d}  ({time.time() - _t_load:.1f}s)")
     print(f"policy rows: {int(has_policy.sum())} / {n}  ({100 * has_policy.mean():.1f}%)")
-    if args.multi_policy:
+    if False:  # multi_policy disabled
         tagged = (power_idx >= 0).sum()
         print(f"power-tagged: {tagged} / {n}  ({100 * tagged / n:.1f}%)")
         for i, name in enumerate(POWER_NAMES):
@@ -423,7 +423,7 @@ def main() -> int:
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 
     model = DualHeadMLP(d, args.hidden1, args.hidden2, 4, ACTION_DIM,
-                        seed=args.seed, multi_policy=args.multi_policy)
+                        seed=args.seed)
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
@@ -473,7 +473,7 @@ def main() -> int:
             epoch_v_loss += soft_cross_entropy(v_probs, tvb)
             epoch_p_loss += policy_cross_entropy(p_probs, tpb, hpb)
             grads = model.backward(cache, tvb, tpb, hpb, args.l2, args.policy_alpha, wb,
-                                   power_idx=pib if args.multi_policy else None)
+                                   )
             model.adam_step(grads, args.lr)
             n_batches += 1
 
