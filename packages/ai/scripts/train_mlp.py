@@ -63,9 +63,6 @@ def parse_args() -> argparse.Namespace:
                     help="Weight on policy loss (relative to value loss).")
     ap.add_argument("--multi-policy", action="store_true",
                     help="Use per-power policy heads (v4 model). Data must have 'p' field.")
-    ap.add_argument("--power", type=str, default="",
-                    help="Filter training data to only this power's samples (by 'p' field). "
-                         "Trains a dedicated v3 model for one power.")
     ap.add_argument("--warm-start", type=str, default="",
                     help="Path to a v3 model.json. Trunk + value head are warm-started; "
                          "each per-power policy head is initialized from the shared head.")
@@ -186,8 +183,7 @@ class DualHeadMLP:
 
         # Policy head — shared or per-power
         if self.multi_policy:
-            action_dim = getattr(self, "Wp0").shape[1]
-            # Use head 0 as default for metrics; backward uses pp_probs per-power.
+            p_probs = np.zeros((X.shape[0], getattr(self, "Wp0").shape[1]), dtype=np.float32)
             cache_pp = {}
             for i in range(N_POWERS):
                 Wp_i = getattr(self, f"Wp{i}")
@@ -196,8 +192,7 @@ class DualHeadMLP:
                 zp_shift = zp_i - zp_i.max(axis=1, keepdims=True)
                 ezp_i = np.exp(zp_shift)
                 cache_pp[i] = ezp_i / ezp_i.sum(axis=1, keepdims=True)
-            # For metrics: use head 0's predictions as a representative.
-            p_probs = cache_pp[0]
+            # p_probs won't be used directly in multi — cache per-power probs
             cache = {
                 "X": X, "z1": z1, "a1": a1, "z2": z2, "a2": a2,
                 "v_probs": v_probs, "pp_probs": cache_pp,
@@ -389,17 +384,6 @@ def main() -> int:
             print(f"  {name} policy rows: {ct}")
     print(f"avg target distribution: {T_value.mean(axis=0).round(3).tolist()}")
 
-    # Per-power filtering: keep all value samples (every viewpoint is valid),
-    # but strip policy targets from other powers' samples so only this power's
-    # MCTS visits train the policy head.
-    if args.power:
-        pi = POWER_NAMES.index(args.power)
-        other_power_policy = has_policy & (power_idx >= 0) & (power_idx != pi)
-        has_policy = has_policy & ~other_power_policy
-        T_policy[other_power_policy] = 0
-        kept_policy = int(has_policy.sum())
-        print(f"--power {args.power}: kept {kept_policy} policy rows, stripped {int(other_power_policy.sum())} from other powers")
-
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)
     X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
@@ -432,52 +416,37 @@ def main() -> int:
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
-        ver = old.get("version")
-        if ver in (3, 4):
-            # Trunk + value head (shared across v3 and v4)
+        if old.get("version") == 3:
             for li, lj in enumerate(old["layers"][:2]):
-                setattr(model, f"W{li+1}", np.array(lj["W"], dtype=np.float32))
-                setattr(model, f"b{li+1}", np.array(lj["b"], dtype=np.float32))
+                wname = f"W{li+1}"
+                bname = f"b{li+1}"
+                setattr(model, wname, np.array(lj["W"], dtype=np.float32))
+                setattr(model, bname, np.array(lj["b"], dtype=np.float32))
             vl = old["layers"][2]
             model.Wv = np.array(vl["W"], dtype=np.float32)
             model.bv = np.array(vl["b"], dtype=np.float32)
-            # Policy head(s)
-            if ver == 4 and "policyHeads" in old:
-                ph_map = old["policyHeads"]
-                if args.multi_policy:
-                    for i, name in enumerate(POWER_NAMES):
-                        if name in ph_map:
-                            setattr(model, f"Wp{i}", np.array(ph_map[name]["W"], dtype=np.float32))
-                            setattr(model, f"bp{i}", np.array(ph_map[name]["b"], dtype=np.float32))
-                else:
-                    first = ph_map[POWER_NAMES[0]]
-                    model.Wp = np.array(first["W"], dtype=np.float32)
-                    model.bp = np.array(first["b"], dtype=np.float32)
-            elif "policyHead" in old:
-                ph = old["policyHead"]
-                if args.multi_policy:
-                    for i in range(N_POWERS):
-                        setattr(model, f"Wp{i}", np.array(ph["W"], dtype=np.float32).copy())
-                        setattr(model, f"bp{i}", np.array(ph["b"], dtype=np.float32).copy())
-                else:
-                    model.Wp = np.array(ph["W"], dtype=np.float32)
-                    model.bp = np.array(ph["b"], dtype=np.float32)
+            ph = old["policyHead"]
+            if args.multi_policy:
+                for i in range(N_POWERS):
+                    setattr(model, f"Wp{i}", np.array(ph["W"], dtype=np.float32).copy())
+                    setattr(model, f"bp{i}", np.array(ph["b"], dtype=np.float32).copy())
+            else:
+                model.Wp = np.array(ph["W"], dtype=np.float32)
+                model.bp = np.array(ph["b"], dtype=np.float32)
             # Reset Adam state for warm-started params
             for name in model._adam:
                 arr = getattr(model, name)
                 model._adam[name] = (np.zeros_like(arr), np.zeros_like(arr))
             model._step = 0
-            src = f"v{ver}"
-            dst = "v4 multi-policy" if args.multi_policy else "v3"
-            print(f"warm-started from {args.warm_start} ({src} → {dst})")
+            print(f"warm-started from {args.warm_start} (v3 → {'v4 multi-policy' if args.multi_policy else 'v3'})")
         else:
-            print(f"[WARN] warm-start model version {ver} — only v3/v4 supported, skipping")
+            print(f"[WARN] warm-start model version {old.get('version')} — only v3 supported, skipping")
     n_tr = len(Tv_tr)
     names = ["xarm", "gormen", "tenzen", "lasha"]
 
     best_val = float("inf")
     best_snap = None
-    patience = 20
+    patience = 8
     stale = 0
 
     for epoch in range(1, args.epochs + 1):
