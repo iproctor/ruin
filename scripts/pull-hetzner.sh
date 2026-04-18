@@ -23,10 +23,14 @@ KEEP_SNAPSHOTS=${KEEP_SNAPSHOTS:-10}
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SSH_OPTS="-i $SSH_KEY"
 
-echo "→ Pulling current model.json from ${REMOTE_USER}@${REMOTE_HOST}"
+echo "→ Pulling current model.json + per-power models from ${REMOTE_USER}@${REMOTE_HOST}"
 rsync -avz -e "ssh ${SSH_OPTS}" \
-  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/model.json" \
-  "${LOCAL_ROOT}/packages/ai/data/model.json"
+  --include='model.json' \
+  --include='model_xarm.json' --include='model_gormen.json' \
+  --include='model_tenzen.json' --include='model_lasha.json' \
+  --exclude='*' \
+  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
+  "${LOCAL_ROOT}/packages/ai/data/"
 
 echo "→ Pulling all model_iter_*.json snapshots (incremental, then prune old remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
