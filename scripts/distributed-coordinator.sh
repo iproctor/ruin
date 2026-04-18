@@ -34,13 +34,14 @@ set -uo pipefail
 WORKER_ID=${WORKER_ID:-0}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-16}
-# Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
-# ≈ 600 games ≈ ~60k samples per train cycle.
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
+# Train when this many NEW files (inbox) arrive. With 50 games/batch × 36 batches
+# ≈ 1800 games ≈ ~300k samples per train cycle. 3x the old threshold to give
+# per-power policy heads enough data (~15k policy samples per head).
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-36}
 # Total batches to include in training (new + old). Old batches are pulled from
 # archive/ most-recent-first to fill the window. This keeps training data size
 # stable even when workers produce small batches.
-TRAIN_WINDOW=${TRAIN_WINDOW:-18}
+TRAIN_WINDOW=${TRAIN_WINDOW:-54}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
