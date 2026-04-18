@@ -172,13 +172,12 @@
 }
 .newgame-power-desc {
   font-family: 'IM Fell English', serif;
-  font-style: italic;
   font-size: 0.9rem;
   line-height: 1.45;
   color: var(--paper);
   opacity: 0.78;
   margin-top: 0.25rem;
-  max-width: 22ch;
+  max-width: 32ch;
 }
 .newgame-power-setting {
   margin-top: auto;

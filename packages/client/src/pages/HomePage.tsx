@@ -133,7 +133,7 @@ export default function HomePage() {
         <header className="home-header">
           <div>
             <h1 className="home-wordmark">Ruin</h1>
-            <p className="home-tagline">a game of four powers</p>
+            <p className="home-tagline">disorder in the old continent</p>
           </div>
           <button className="home-signout" onClick={logout}>Sign out</button>
         </header>

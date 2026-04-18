@@ -22,7 +22,7 @@ const POWER_EPITHETS: Record<Power, string> = {
 };
 
 const POWER_DESCRIPTIONS: Record<Power, string> = {
-  xarm:   'Typically wins by dial. Advancement is earned by killing in battle. War Cry blocks all enemy corruption in a region, working against opponents\' efforts to ruin regions.',
+  xarm:   'Typically wins by dial. Advancement is earned by killing in battle. Uses followers and cards to delay ruinations and give time for a dial victory.',
   gormen: 'Cheap warriors lead to easy dominations and secure positions. Dominate valuable regions repeatedly to win by VP.',
   tenzen: 'Avoid direct confrontation with cards while piling in cultists to rapidly ruin regions. Win by chaining ruinations and shutting opponents out.',
   lasha:  'Steal valuable dominations while advancing the dial, and sneak into ruinations when the hard work is done. Stay flexible and take advantage of opportunities.',
