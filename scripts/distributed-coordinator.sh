@@ -91,7 +91,9 @@ export NUMEXPR_NUM_THREADS=$TRAIN_THREADS
 while true; do
   # ── 1. Check inbox first — skip collection if threshold already met ─────────
   INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
-  if [ "$INBOX_COUNT" -lt "$TRAIN_THRESHOLD" ]; then
+  if [ "$INBOX_COUNT" -ge "$TRAIN_THRESHOLD" ]; then
+    echo "  · inbox already has ${INBOX_COUNT}/${TRAIN_THRESHOLD} — skipping collection" | tee -a "$LOG_FILE"
+  else
     BATCH_COUNTER=$((BATCH_COUNTER + 1))
     TS=$(date +%s)
     SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
@@ -100,20 +102,20 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-    if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-        --workers "$WORKERS" --epsilon 0.15 \
-        --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
-        --out "$DATA_DIR/training.jsonl" 2>&1 \
-        | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
-      echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
-      sleep 5
-      continue
-    fi
-    if [ ! -s "$DATA_DIR/training.jsonl" ]; then
-      echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
-      sleep 5
-      continue
-    fi
+  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+      --workers "$WORKERS" --epsilon 0.15 \
+      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" \
+      --out "$DATA_DIR/training.jsonl" 2>&1 \
+      | grep -E "^(  worker|.*samples →|\[league\])" | tee -a "$LOG_FILE"; then
+    echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
+    sleep 5
+    continue
+  fi
+  if [ ! -s "$DATA_DIR/training.jsonl" ]; then
+    echo "  ! no samples produced, retrying" | tee -a "$LOG_FILE"
+    sleep 5
+    continue
+  fi
     mv "$DATA_DIR/training.jsonl" "$BATCH_FILE"
     SAMPLES=$(wc -l < "$BATCH_FILE")
     T1=$(date +%s)
@@ -125,6 +127,8 @@ while true; do
 
   # ── 2. Train when threshold reached ─────────────────────────────────────────
   if [ "$INBOX_COUNT" -lt "$TRAIN_THRESHOLD" ]; then
+    # Not enough yet — loop back and make another local batch.
+    # Workers may upload while we're collecting.
     continue
   fi
 
@@ -150,43 +154,16 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train — one model per power, then bundle into v5 JSON.
+  # 3b. Train
   T2=$(date +%s)
-  TRAIN_OK=1
-  for POWER in xarm gormen tenzen lasha; do
-    echo "  [train $POWER]" | tee -a "$LOG_FILE"
-    WARM_ARG=""
-    [ -f "$DATA_DIR/model_${POWER}.json" ] && WARM_ARG="--warm-start $DATA_DIR/model_${POWER}.json"
-    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$RECENT_FILE" --out "$DATA_DIR/model_${POWER}.json" \
-        --power "$POWER" --iter "$ITER" $WARM_ARG \
-        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|--power|warm-)" \
-        | tee -a "$LOG_FILE"; then
-      echo "  ! training $POWER failed" | tee -a "$LOG_FILE"
-      TRAIN_OK=0
-      break
-    fi
-  done
-  if [ "$TRAIN_OK" -eq 0 ]; then continue; fi
-  # Bundle 4 v3 models into a single v5 JSON
-  python3 -c "
-import json, sys
-powers = ['xarm', 'gormen', 'tenzen', 'lasha']
-models = {}
-for p in powers:
-    with open('$DATA_DIR/model_' + p + '.json') as f:
-        models[p] = json.load(f)
-first = models[powers[0]]
-bundle = {
-    'version': 5, 'type': 'per_power_bundle',
-    'featureDim': first['featureDim'], 'actionDim': first['actionDim'],
-    'iter': $ITER, 'models': models,
-}
-with open('$DATA_DIR/model.json', 'w') as f:
-    json.dump(bundle, f)
-print('bundled v5 model.json')
-" 2>&1 | tee -a "$LOG_FILE"
+  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+      --in "$RECENT_FILE" --out "$DATA_DIR/model.json" \
+      --iter "$ITER" --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target)" \
+      | tee -a "$LOG_FILE"; then
+    echo "  ! training failed" | tee -a "$LOG_FILE"
+    continue
+  fi
   T3=$(date +%s)
   echo "[iter $ITER] trained in $((T3 - T2))s" | tee -a "$LOG_FILE"
 
