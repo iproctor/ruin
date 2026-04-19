@@ -272,7 +272,7 @@ function runGame(seed: number): GameResult {
         const stats = runMctsWithStats(state, pending.waitingFor, {
           iterations: mctsIterations,
           timeMs: mctsTimeMs,
-          dirichletNoise: { alpha: 0.3, weight: 0.25 },
+          dirichletNoise: { alpha: 0.3, weight: 0.35 },
         });
         action = stats.action;
         // Collapse to canonical slot indices and accumulate visits per slot
@@ -301,7 +301,7 @@ function runGame(seed: number): GameResult {
           ? runMcts(state, pending.waitingFor, {
               iterations: mctsIterations,
               timeMs: mctsTimeMs,
-              dirichletNoise: { alpha: 0.3, weight: 0.25 },
+              dirichletNoise: { alpha: 0.3, weight: 0.35 },
             })
           : greedyAction(state, pending.waitingFor);
       }
