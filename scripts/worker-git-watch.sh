@@ -23,7 +23,7 @@ LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 FOCUS_POWER=${FOCUS_POWER:-}
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
-TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-0.9}
+TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
 export TENZEN_CUTOFF_SHIFT
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
