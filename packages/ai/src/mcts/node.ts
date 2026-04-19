@@ -119,7 +119,40 @@ export function ucb1(node: MctsNode, explorationC: number): number {
  *
  * Same paranoid flip as UCB1: opponent nodes use (1 - Q) for exploitation.
  */
-const FPU_REDUCTION = 0.1;
+export const FPU_REDUCTION = 0.1;
+
+/**
+ * PUCT score for an UNTRIED action at `parent`. Mirrors puct() but:
+ *   - child_visits = 0, so exploration term is `c * prior * sqrt(parentVisits)`
+ *   - Q is estimated via FPU from the parent's avg (paranoid-flipped if the
+ *     action would produce an opponent node)
+ *
+ * Lets select() compare "try untried action" against "descend into existing
+ * child" via a single PUCT ordering, instead of the traditional
+ * expand-all-before-descending approach that forces broad-before-deep trees.
+ */
+export function puctForUntriedAction(
+  parent: MctsNode,
+  action: Action,
+  prior: number,
+  explorationC: number,
+): number {
+  const parentVisits = Math.max(1, parent.visits);
+
+  let exploitation: number;
+  if (parent.visits > 0) {
+    const parentAvg = parent.totalScore / parent.visits;
+    const isOpponentChild = action.power !== parent.forPower;
+    const parentQFromMyView = isOpponentChild ? 1 - parentAvg : parentAvg;
+    exploitation = Math.max(0, parentQFromMyView - FPU_REDUCTION);
+  } else {
+    exploitation = 0.5;
+  }
+
+  // child_visits is 0 for an untried action: denominator is 1 + 0 = 1
+  const exploration = explorationC * prior * Math.sqrt(parentVisits);
+  return exploitation + exploration;
+}
 
 export function puct(node: MctsNode, explorationC: number): number {
   const parent = node.parent;

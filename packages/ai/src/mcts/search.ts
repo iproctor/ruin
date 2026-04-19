@@ -5,7 +5,7 @@ import {
 } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
 import { evaluateState } from '../evaluate.js';
-import { type MctsNode, createNode, ucb1, puct } from './node.js';
+import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
@@ -25,7 +25,10 @@ export interface MctsOptions {
   rolloutDepth?: number;
 }
 
-const DEFAULT_ITERATIONS = 2000;
+// Iteration cap is effectively only a safety net — time cap governs in
+// practice. Set high enough that fast searches (shallow trees, no rollout)
+// don't artificially bottleneck.
+const DEFAULT_ITERATIONS = 100000;
 const DEFAULT_TIME_MS = 300;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
 
@@ -297,22 +300,62 @@ export function runMctsWithStats(
  * Selection: descend the tree following UCB1 until we reach a node that has
  * untried actions (expandable) or is terminal.
  */
+/**
+ * AlphaZero-style selection: at each node, PUCT compares existing children
+ * and untried actions (the latter scored via FPU). The winner either gets
+ * descended into (child) or expanded (untried) — no more "expand everything
+ * before descending" rule. This lets promising branches deepen earlier
+ * rather than forcing the whole tree to broaden first.
+ *
+ * When an untried action wins, it gets swapped to the end of untriedActions
+ * so the subsequent expand() call pops the correct one via its O(1) pop.
+ * UCB1 path (no policy head) keeps the classic "unvisited first" behaviour
+ * via ucb1()'s Infinity-for-visits-0 branch.
+ */
 function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNode {
   let current = node;
-  while (current.untriedActions.length === 0 && current.children.length > 0) {
-    // Terminal node (no children and no untried actions): stop.
-    if (isTerminal(current.state)) break;
+  while (!isTerminal(current.state)) {
+    const hasChildren = current.children.length > 0;
+    const hasUntried = current.untriedActions.length > 0;
+    if (!hasChildren && !hasUntried) break;
 
-    // Pick the child with highest UCB1 / PUCT.
+    // Score existing children
+    let bestChildScore = -Infinity;
     let bestChild: MctsNode | null = null;
-    let bestScore = -Infinity;
     for (const child of current.children) {
-      const score = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
-      if (score > bestScore) {
-        bestScore = score;
-        bestChild = child;
+      const s = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
+      if (s > bestChildScore) { bestChildScore = s; bestChild = child; }
+    }
+
+    // Score untried actions. Under UCB1 any untried returns Infinity, matching
+    // the classic "untried first" behaviour. Under PUCT, we FPU-score them.
+    let bestUntriedScore = -Infinity;
+    let bestUntriedIdx = -1;
+    if (hasUntried) {
+      if (usePuct) {
+        for (let i = 0; i < current.untriedActions.length; i++) {
+          const action = current.untriedActions[i]!;
+          const prior = current.childPriors !== null ? current.childPriors(action) : 1.0;
+          const s = puctForUntriedAction(current, action, prior, explorationC);
+          if (s > bestUntriedScore) { bestUntriedScore = s; bestUntriedIdx = i; }
+        }
+      } else {
+        bestUntriedScore = Infinity;
+        bestUntriedIdx = current.untriedActions.length - 1;
       }
     }
+
+    // Expand beats descend on tie: untried hasn't had a chance yet.
+    if (bestUntriedIdx >= 0 && bestUntriedScore >= bestChildScore) {
+      const lastIdx = current.untriedActions.length - 1;
+      if (bestUntriedIdx !== lastIdx) {
+        const tmp = current.untriedActions[lastIdx]!;
+        current.untriedActions[lastIdx] = current.untriedActions[bestUntriedIdx]!;
+        current.untriedActions[bestUntriedIdx] = tmp;
+      }
+      return current; // expand() pops the last (now = chosen) untried action
+    }
+
     if (bestChild === null) break;
     current = bestChild;
   }
@@ -398,6 +441,12 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
 const HARD_ROLLOUT_CAP = 120;
 
 function rollout(state: GameState, forPower: Power, seed: number, minDepth: number): number {
+  // Pure value-head mode: no simulation, evaluate the leaf state directly.
+  // Matches the AlphaZero-style "value head is the rollout" convention.
+  if (minDepth <= 0) {
+    return evaluateState(state, forPower);
+  }
+
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;

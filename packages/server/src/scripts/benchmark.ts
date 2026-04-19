@@ -39,7 +39,17 @@ const outPath = getArg('--out', '');
 // Lets benches load any historical iter snapshot without touching model.json.
 const modelPath = getArg('--model', '');
 const rolloutDepthArg = getArg('--rollout-depth', '');
-const mctsOpts = rolloutDepthArg ? { rolloutDepth: parseInt(rolloutDepthArg, 10) } : undefined;
+const rolloutDepthPowerArg = getArg('--rollout-depth-power', '');
+const mctsOpts = rolloutDepthArg && !rolloutDepthPowerArg
+  ? { rolloutDepth: parseInt(rolloutDepthArg, 10) }
+  : undefined;
+// When --rollout-depth-power is set, the depth only applies to that power;
+// other powers use the default. Lets us isolate the effect of pure-value-head
+// mode on a single power.
+const perPowerRolloutDepth: Partial<Record<Power, number>> = {};
+if (rolloutDepthArg && rolloutDepthPowerArg) {
+  perPowerRolloutDepth[rolloutDepthPowerArg as Power] = parseInt(rolloutDepthArg, 10);
+}
 
 loadLearnedModelIfPresent(modelPath || undefined);
 
@@ -275,8 +285,12 @@ function runGame(seed: number): GameResult {
         pending.actionKind === 'hero_removal' ||
         pending.actionKind === 'corruption_harvest_choice' ||
         pending.actionKind === 'card_on_play_choice';
+      const perPowerOverride = perPowerRolloutDepth[pending.waitingFor as Power];
+      const effectiveOpts = perPowerOverride !== undefined
+        ? { rolloutDepth: perPowerOverride }
+        : mctsOpts;
       action = useMcts
-        ? runMcts(state, pending.waitingFor, mctsOpts)
+        ? runMcts(state, pending.waitingFor, effectiveOpts)
         : greedyAction(state, pending.waitingFor);
     } catch (err) {
       const e = captureErr(err);

@@ -21,6 +21,8 @@ const gameCount = parseInt(getArg('--games', '24'), 10);
 const baseSeed = parseInt(getArg('--seed', '100'), 10);
 const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().length - 1))), 10);
 const finalOut = getArg('--out', '');
+const rolloutDepthArg = getArg('--rollout-depth', '');
+const rolloutDepthPowerArg = getArg('--rollout-depth-power', '');
 
 const perWorker = Math.ceil(gameCount / workerCount);
 interface Slice { start: number; count: number; out: string }
@@ -65,13 +67,16 @@ interface WorkerMetrics {
 }
 
 const procs = slices.map((s, w) => new Promise<WorkerMetrics | null>((resolve) => {
-  const proc = spawn('npx', [
+  const childArgs = [
     'tsx',
     'packages/server/src/scripts/benchmark.ts',
     '--games', String(s.count),
     '--seed', String(s.start),
     '--out', s.out,
-  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ];
+  if (rolloutDepthArg) childArgs.push('--rollout-depth', rolloutDepthArg);
+  if (rolloutDepthPowerArg) childArgs.push('--rollout-depth-power', rolloutDepthPowerArg);
+  const proc = spawn('npx', childArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   let finished = 0;
   proc.stdout.on('data', (chunk: Buffer) => {
