@@ -36,6 +36,11 @@ echo "  WORKER_ID: $WORKER_ID  WORKERS: $WORKERS  GAMES: $GAMES_PER_BATCH"
 echo "  COORD: ${COORD_USER}@${COORD_HOST}"
 echo "──────────────────────────────────────────────────"
 
+# Track script mtime so we can re-exec when `git reset --hard` (or any
+# other path) rewrites the file. Without this the worker keeps running
+# the old logic until restarted by hand.
+SELF_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+
 check_and_update() {
   cd "$ROOT"
   git fetch origin master --quiet 2>/dev/null
@@ -78,6 +83,13 @@ pull_snapshots() {
 }
 
 while true; do
+  # Restart into the latest script if it's been updated on disk.
+  NOW_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+  if [ "$NOW_MTIME" != "$SELF_MTIME" ]; then
+    echo "[$(date +%H:%M:%S)] script updated on disk, re-execing..."
+    exec "$0" "$@"
+  fi
+
   # Check git + pull model (+ snapshots if league is on)
   check_and_update && echo "  → updated from git"
   pull_model

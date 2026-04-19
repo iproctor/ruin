@@ -61,7 +61,19 @@ echo "  GAMES_PER_BATCH: $GAMES_PER_BATCH"
 echo "  WORKERS:         $WORKERS"
 echo "──────────────────────────────────────────────────"
 
+# Track script mtime so we can re-exec when the file changes on disk
+# (e.g. after push-hetzner.sh updates this box). Workers would otherwise
+# keep running the old logic until manually restarted.
+SELF_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+
 while true; do
+  # Restart into the latest script if it's been updated on disk.
+  NOW_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+  if [ "$NOW_MTIME" != "$SELF_MTIME" ]; then
+    echo "[$(date +%H:%M:%S)] script updated on disk, re-execing..."
+    exec "$0" "$@"
+  fi
+
   # 1. Pull the canonical model + any per-power models from the coordinator.
   echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
   if ! rsync -az -e "${RSYNC_SSH}" \
