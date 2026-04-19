@@ -78,13 +78,92 @@ Tenzen
     learned. Brings non-collection call sites in line with the
     collection schedule's terminal state.
 
-  Apr 19 (now)   Stage 2 gate
-    Shift=1.0, bestSiphonPlay + forceZeroCostFlush still active.
-    Class freq oscillating 0.12–0.15; needs 3-iter avg > 0.15 to strip
-    bestSiphonPlay. Holding.
+  Apr 19         Stages 2 + 3 forced early
+    User: "growing impatient. let me try dropping the autoplay now to see
+    if autoplay itself is the ceiling." Disabled bestSiphonPlay (was
+    force-placing Tenzen's Siphon Power in "max opponents + highest
+    threat" slot) and forceZeroCostFlush (was forcing cheap-card flushes
+    at PP<3). Both became call-site no-ops; functions kept for reference.
+    Class freq promptly dropped from ~0.14 to ~0.09-0.11 — autoplay was
+    helping, not capping. Tenzen stabilised at the new floor rather than
+    recovering.
+
+  Apr 19         ε 0.08 → 0.05
+    Tenzen just lost handmade + autoplay scaffolds; ε=0.08 was adding
+    ~1 wasted random summon per game on top of an already noisy policy.
+    Dropping ε cleans the training signal.
+
+  Apr 19         "train weakest until dominant" cron
+    Hourly cron at :23 checks 5-iter-avg class freq. If current focus
+    power becomes the class-freq leader, bookmarks its model_<power>.json
+    as model_<power>_done.json, rewires FOCUS_POWER to the new weakest
+    power in all three scripts, and prompts user to manually restart the
+    coordinator (systemd inherits env, self-restart on mtime alone won't
+    flip FOCUS_POWER). Round-robin training strategy.
+
+  Apr 19         bench rolloutDepth=0 experiment
+    Tested pure-value-head leaves (no rollout). Fixed a bug first:
+    minDepth=0 wasn't actually disabling rollout — it kept simulating
+    until round change. Added short-circuit at the top of rollout().
+    50-game bench: all powers at rolloutDepth=0 → Tenzen 16% (unchanged
+    from baseline ~17%). Tenzen-only rolloutDepth=0 → Tenzen 8%, Xarm
+    surged to 48%. Tenzen's value head isn't well-calibrated enough for
+    pure AlphaZero-style leaf eval; rollouts advance past battles to
+    states where payoffs are visible. Rolled back; kept --rollout-depth
+    and --rollout-depth-power CLI flags on benchmark for future
+    isolation experiments.
+
+  Apr 19         tree-depth probe
+    Instrumented search.ts to walk the MCTS tree at end of run. Tree is
+    very shallow: ~500 iters, ~30 root children, max-depth 3 (rarely 4+),
+    avg leaf depth 2.3. Most search budget broadens at depth 1-2 rather
+    than deepening. Reason: select() only descended when a node had zero
+    untried actions — forced full breadth-first expansion before PUCT
+    could pick among children.
+
+  Apr 19         AZ-style select (then isolated to Tenzen)
+    Rewrote select() to jointly score children and untried actions (FPU
+    for untried) via PUCT. When an untried wins, it's swapped to the end
+    of untriedActions so expand() pops the chosen one. Let promising
+    lines deepen earlier. Also raised DEFAULT_ITERATIONS 2000 → 100000
+    so iteration cap is purely a safety net; 300ms time cap is the real
+    budget.
+
+    50-game benches:
+      - classic, all powers        → Tenzen 17% (baseline)
+      - AZ-style, all powers       → Tenzen 16%
+      - AZ-style, Tenzen only      → Tenzen 12%
+    AZ-style did not help Tenzen and may be hurting (within noise).
+    Hypothesis: Tenzen's policy priors aren't sharp enough; AZ focuses
+    on top-prior actions and misses alternatives that classic's
+    broaden-first would have tried. Left AZ-style gated on forPower ===
+    'tenzen' to observe its interaction with Tenzen's training dynamics
+    over time.
+
+  Apr 19         ε-greedy → Dirichlet root-prior noise
+    Swapped destructive ε=0.05 uniform-random summons for AlphaZero-style
+    Dirichlet(α=0.3) noise blended at weight 0.25 into root priors.
+    Training-only (collect-data.ts); bench and server use raw priors.
+
+    Why: ε was sabotaging games — a random cultist in a losing region
+    gets the state labeled "Tenzen lost" when the real cause was the
+    random summon. Dirichlet just perturbs WHICH actions PUCT considers
+    first; MCTS still picks the best action it finds. Sensible games,
+    diverse distributions.
+
+    Implementation: sampleGamma (Marsaglia-Tsang for α≥1, α<1 recursion)
+    drives a per-root simplex draw over unique canonical action slots.
+    Math.random() — not replay-seeded, since training noise isn't
+    meant to be reproducible per-game.
+
+    ε default 0 in collect-data.ts and all three deploy scripts; --epsilon
+    kept as a CLI override for back-compat.
 
   Meta
-    - distributed scripts re-exec themselves when their file mtime
-      changes (picks up push-hetzner rsync without manual restart).
+    - distributed scripts (coordinator + both workers) re-exec themselves
+      when their file mtime changes (picks up push-hetzner rsync without
+      manual restart).
     - class freq (130k rows/iter, ±0.2% CI) is the decision signal.
       Bench (48 games, ±13% CI) is context only.
+    - benchmark + benchmark-parallel now support --rollout-depth-power
+      for per-power rollout depth isolation.

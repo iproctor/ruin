@@ -45,6 +45,7 @@ RSYNC_EXCLUDES=(
   --exclude='packages/ai/data/bench_iter_*.json'
   --exclude='packages/ai/data/inbox'
   --exclude='packages/ai/data/inbox2'
+  --exclude='packages/ai/data/hof'
   --exclude='packages/ai/data/archive'
   --exclude='packages/ai/data/training_loop.log'
   --exclude='packages/ai/data/training_W*'

@@ -42,6 +42,11 @@ FOCUS_POWER=${FOCUS_POWER:-}
 # cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
 # openings, 1 forces all-learned. Ramp toward 1 over many iters.
 TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
+# Hall of Fame mix: fraction of games where the focus power uses a random
+# snapshot from packages/ai/data/hof/ instead of the live focus model.
+# Guards against training-data collapse by guaranteeing some games show the
+# focus power executing its proper strategy.
+HOF_MIX=${HOF_MIX:-0.1}
 export TENZEN_CUTOFF_SHIFT
 # Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
 # ≈ 600 games ≈ ~60k samples per train cycle.
@@ -128,8 +133,9 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
+      --hof-mix "$HOF_MIX" \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\]|\[focus\])" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →|\[league\]|\[focus\]|\[hof\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue
@@ -205,6 +211,29 @@ while true; do
     cp "$TRAIN_OUT" "$DATA_DIR/model_${FOCUS_POWER}_iter_${ITER_TAG}.json"
   else
     cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
+  fi
+
+  # 3c.1 HOF promotion: if this iter's focus-power class freq beats the
+  # worst HOF entry, promote it in and evict the worst. Under capacity,
+  # always add. Collect-data.ts reads hof/ at startup so the next batch
+  # picks up the change automatically.
+  if [ -n "$FOCUS_POWER" ]; then
+    # Promote the model that GENERATED the good data, not the trainee.
+    # Workers played this iter's training games using the previous model
+    # (model_tenzen.json as of the start of this iter), which corresponds to
+    # snapshot iter N-1. Class freq in the log reflects that prior model's
+    # play; training drift (new model plays worse than data said it should)
+    # must not cause us to HOF the worse trainee.
+    DATA_GEN_ITER=$((ITER - 1))
+    TZ_FREQ=$(grep "^class freq:" "$LOG_FILE" \
+      | tail -1 \
+      | grep -oE "${FOCUS_POWER}:[0-9.]+" \
+      | cut -d: -f2)
+    if [ -n "$TZ_FREQ" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
+      python3 "$ROOT/scripts/hof-promote.py" \
+        --iter "$DATA_GEN_ITER" --freq "$TZ_FREQ" --power "$FOCUS_POWER" \
+        --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
+    fi
   fi
 
   # 3d. Move processed inbox files to archive (so we don't double-train)

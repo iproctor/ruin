@@ -25,6 +25,8 @@ FOCUS_POWER=${FOCUS_POWER:-}
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
 TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
 export TENZEN_CUTOFF_SHIFT
+HOF_MIX=${HOF_MIX:-0.1}
+export HOF_MIX
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"
@@ -69,6 +71,13 @@ pull_model() {
     "${DATA_DIR}/" 2>/dev/null
 }
 
+pull_hof() {
+  mkdir -p "${DATA_DIR}/hof"
+  rsync -az --delete -e "ssh ${SSH_OPTS}" \
+    "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/hof/" \
+    "${DATA_DIR}/hof/" 2>/dev/null || true
+}
+
 pull_snapshots() {
   # Pull the most recent LEAGUE_SIZE snapshot filenames from coordinator and
   # replace local ones so the league pool stays fresh.
@@ -97,6 +106,7 @@ while true; do
   check_and_update && echo "  → updated from git"
   pull_model
   pull_snapshots
+  pull_hof
 
   # Collect a batch
   BATCH_COUNTER=$((BATCH_COUNTER + 1))
@@ -112,6 +122,7 @@ while true; do
   if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
+      --hof-mix "$HOF_MIX" \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
     mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
     SAMPLES=$(wc -l < "$BATCH_FILE")

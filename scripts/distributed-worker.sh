@@ -44,6 +44,8 @@ FOCUS_POWER=${FOCUS_POWER:-}
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
 TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
 export TENZEN_CUTOFF_SHIFT
+HOF_MIX=${HOF_MIX:-0.1}
+export HOF_MIX
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"
@@ -89,6 +91,13 @@ while true; do
     continue
   fi
 
+  # 1a. Mirror the hall-of-fame dir so HOF sampling in collect-data sees
+  # whatever the coordinator has promoted.
+  mkdir -p "${DATA_DIR}/hof"
+  rsync -az --delete -e "${RSYNC_SSH}" \
+    "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/hof/" \
+    "${DATA_DIR}/hof/" 2>/dev/null || true
+
   # 1b. If league training is on, pull the most recent LEAGUE_SIZE snapshots.
   # Ask the coordinator which filenames are the newest, wipe old local ones,
   # then rsync only those. Keeps worker disk usage bounded.
@@ -133,6 +142,7 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
+      --hof-mix "$HOF_MIX" \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"

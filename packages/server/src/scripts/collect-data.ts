@@ -98,6 +98,27 @@ if (focusPower) {
   }
 }
 
+// ── Hall of Fame: past strong snapshots of the focus power ────────────────────
+// With probability hofMix, a game plays the focus power with a random HOF model
+// instead of the live focusPowerModel. Prevents training-data collapse by
+// guaranteeing some games always contain a Tenzen (or whoever) that's playing
+// its proper strategy.
+const hofMix = parseFloat(getArg('--hof-mix', '0'));
+let hofModels: ModelJson[] = [];
+if (focusPower && hofMix > 0) {
+  const hofDir = path.resolve(`packages/ai/data/hof`);
+  if (fs.existsSync(hofDir)) {
+    const files = fs.readdirSync(hofDir)
+      .filter(f => f.startsWith(`model_${focusPower}_hof_`) && f.endsWith('.json'));
+    for (const f of files) {
+      hofModels.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson);
+    }
+    console.log(`[hof] loaded ${hofModels.length} hall-of-fame ${focusPower} models (mix=${hofMix})`);
+  } else {
+    console.log(`[hof] no ${hofDir} — skipping HOF mix`);
+  }
+}
+
 // ── Ensure output directory exists ────────────────────────────────────────────
 
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -193,7 +214,15 @@ function runGame(seed: number): GameResult {
   if (focusPower) {
     // Focus mode: only focus power's visits are recorded.
     clearPerPowerModels();
-    if (focusPowerModel) loadModelForPower(focusPower as Power, focusPowerModel);
+    // Optionally swap in a HOF snapshot for the focus power this game. The
+    // game's training data still labels states with the game's outcome, so
+    // the current model learns from both "current Tenzen plays well / badly"
+    // games and "HOF Tenzen plays well / badly" games.
+    const useHof = hofModels.length > 0 && rand() < hofMix;
+    const focusModelForGame = useHof
+      ? hofModels[Math.floor(rand() * hofModels.length)]!
+      : focusPowerModel;
+    if (focusModelForGame) loadModelForPower(focusPower as Power, focusModelForGame);
     currentModelPowers.add(focusPower as Power);
     for (const p of ALL_POWERS) {
       if (p === focusPower) continue;

@@ -26,6 +26,7 @@ const epsilon = getArg('--epsilon', '0.1');
 const leagueSize = getArg('--league-size', '0');
 const leagueMix = getArg('--league-mix', '0.5');
 const focusPower = getArg('--focus-power', '');
+const hofMix = getArg('--hof-mix', '0');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
 // Slice the seed space across workers.
@@ -65,6 +66,7 @@ const processes = slices.map((s, w) =>
       '--league-size', leagueSize,
       '--league-mix', leagueMix,
       ...(focusPower ? ['--focus-power', focusPower] : []),
+      '--hof-mix', hofMix,
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
