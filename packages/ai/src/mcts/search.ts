@@ -301,25 +301,42 @@ export function runMctsWithStats(
  * untried actions (expandable) or is terminal.
  */
 /**
- * AlphaZero-style selection: at each node, PUCT compares existing children
- * and untried actions (the latter scored via FPU). The winner either gets
- * descended into (child) or expanded (untried) — no more "expand everything
- * before descending" rule. This lets promising branches deepen earlier
- * rather than forcing the whole tree to broaden first.
+ * Selection: walk from root down until we hit a node to expand or rollout from.
  *
- * When an untried action wins, it gets swapped to the end of untriedActions
- * so the subsequent expand() call pops the correct one via its O(1) pop.
- * UCB1 path (no policy head) keeps the classic "unvisited first" behaviour
- * via ucb1()'s Infinity-for-visits-0 branch.
+ * Two modes, toggled by forPower:
+ *   - **AZ-style (forPower === 'tenzen')**: PUCT compares existing children and
+ *     untried actions (FPU-scored) jointly at each node. Lets promising lines
+ *     deepen earlier. When an untried wins, it's swapped to the end so expand()
+ *     pops the chosen action via its O(1) pop.
+ *   - **Classic (other powers)**: stop at any node with untried actions (let
+ *     expand() pop one); only descend when a node is fully expanded. Broadens
+ *     before deepening. Kept as the reference path while we isolate the AZ
+ *     effect on Tenzen's training dynamics.
  */
 function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNode {
+  const useAzStyle = node.forPower === 'tenzen';
   let current = node;
+
   while (!isTerminal(current.state)) {
     const hasChildren = current.children.length > 0;
     const hasUntried = current.untriedActions.length > 0;
     if (!hasChildren && !hasUntried) break;
 
-    // Score existing children
+    if (!useAzStyle) {
+      // Classic: expand every untried before descending.
+      if (hasUntried) break;
+      let bestChild: MctsNode | null = null;
+      let bestScore = -Infinity;
+      for (const child of current.children) {
+        const s = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
+        if (s > bestScore) { bestScore = s; bestChild = child; }
+      }
+      if (bestChild === null) break;
+      current = bestChild;
+      continue;
+    }
+
+    // AZ-style: score children + untried jointly.
     let bestChildScore = -Infinity;
     let bestChild: MctsNode | null = null;
     for (const child of current.children) {
@@ -327,8 +344,6 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
       if (s > bestChildScore) { bestChildScore = s; bestChild = child; }
     }
 
-    // Score untried actions. Under UCB1 any untried returns Infinity, matching
-    // the classic "untried first" behaviour. Under PUCT, we FPU-score them.
     let bestUntriedScore = -Infinity;
     let bestUntriedIdx = -1;
     if (hasUntried) {
@@ -345,7 +360,6 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
       }
     }
 
-    // Expand beats descend on tie: untried hasn't had a chance yet.
     if (bestUntriedIdx >= 0 && bestUntriedScore >= bestChildScore) {
       const lastIdx = current.untriedActions.length - 1;
       if (bestUntriedIdx !== lastIdx) {
@@ -353,7 +367,7 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
         current.untriedActions[lastIdx] = current.untriedActions[bestUntriedIdx]!;
         current.untriedActions[bestUntriedIdx] = tmp;
       }
-      return current; // expand() pops the last (now = chosen) untried action
+      return current;
     }
 
     if (bestChild === null) break;
