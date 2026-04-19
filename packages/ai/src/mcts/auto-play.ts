@@ -30,12 +30,10 @@ export function getAutoPlay(state: GameState, power: Power): Action | null {
     return bestTenzenUpgrade(state);
   }
 
-  if (state.pendingAction?.actionKind !== 'summoning_action') return null;
-
-  const hand = state.powers[power]?.hand;
-  if (!hand || !hand.includes('tenzen_siphon_power')) return null;
-
-  return bestSiphonPlay(state);
+  // bestSiphonPlay autoplay disabled — let MCTS decide the Siphon slot.
+  // Forced slotting may have been constraining the learned policy from
+  // discovering better Siphon usage (e.g. saving it for a later region).
+  return null;
 }
 
 // Priority order for Tenzen's three dial upgrades.
