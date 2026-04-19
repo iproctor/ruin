@@ -159,13 +159,29 @@ function runGame(seed: number): GameResult {
     return rngState / 0xffffffff;
   };
 
-  // Tenzen cutoff randomization: 20% of games, set TENZEN_EVAL_CUTOFF to a
-  // random value in [1,4]. Exposes the learned model to taking over at
-  // different rounds, helping it internalize Tenzen strategy faster.
+  // Per-game Tenzen cutoff sampled from a schedule controlled by
+  // TENZEN_CUTOFF_SHIFT ∈ [0, 1]:
+  //
+  //   - At shift=0, draw cutoff from {1,2,3,4} with weights (4,3,2,1)/10.
+  //     Handmade eval steers the setup phase; cutoff=0 never sampled.
+  //   - At shift=1, always cutoff=0. Learned head runs the whole game.
+  //   - At intermediate shift, linearly mix: P(0) = shift, and the rest
+  //     of the mass (1 − shift) follows the base (4,3,2,1) shape.
+  //
+  // Operationally: bump the shift toward 1 over many iters. Training data
+  // becomes a mixture of "handmade-assisted" and "learned-only" Tenzen
+  // games, so the learned policy is never trained against just one slice.
   const savedTenzenCutoff = process.env['TENZEN_EVAL_CUTOFF'];
-  if (rand() < 0.2) {
-    process.env['TENZEN_EVAL_CUTOFF'] = String(1 + Math.floor(rand() * 4));
+  const shift = Math.min(1, Math.max(0,
+    parseFloat(process.env['TENZEN_CUTOFF_SHIFT'] ?? '0')));
+  let sampledCutoff: number;
+  if (rand() < shift) {
+    sampledCutoff = 0;
+  } else {
+    const r = rand() * 10;
+    sampledCutoff = r < 4 ? 1 : r < 7 ? 2 : r < 9 ? 3 : 4;
   }
+  process.env['TENZEN_EVAL_CUTOFF'] = String(sampledCutoff);
 
   // League assignment. Two modes:
   //  - focus mode: only the focus power uses its dedicated model (current

@@ -41,6 +41,9 @@ LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 # Focus power: if set, all self-play games use model_<power>.json for that
 # power and snapshots for others. Only that power's visits are recorded.
 FOCUS_POWER=${FOCUS_POWER:-}
+# Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
+TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-0}
+export TENZEN_CUTOFF_SHIFT
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"

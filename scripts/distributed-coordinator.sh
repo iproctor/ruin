@@ -38,6 +38,11 @@ WORKERS=${WORKERS:-16}
 # snapshots from the league pool for others. Only the focus power's model is
 # trained each iteration; model.json stays frozen.
 FOCUS_POWER=${FOCUS_POWER:-}
+# Tenzen cutoff shift ∈ [0,1]. Controls the per-game sampled Tenzen eval
+# cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
+# openings, 1 forces all-learned. Ramp toward 1 over many iters.
+TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-0}
+export TENZEN_CUTOFF_SHIFT
 # Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
 # ≈ 600 games ≈ ~60k samples per train cycle.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
