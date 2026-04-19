@@ -23,6 +23,13 @@ export interface MctsOptions {
   explorationC?: number;
   /** Override rollout depth. 0 = pure value head at leaf (no rollout). */
   rolloutDepth?: number;
+  /**
+   * Dirichlet noise on root priors (AlphaZero-style training exploration).
+   * Blends (1-weight)·P(a) + weight·Dir(alpha) per root, so MCTS still picks
+   * sensible actions but is encouraged to explore non-top-prior lines.
+   * Omit at inference; enable only in collection.
+   */
+  dirichletNoise?: { alpha: number; weight: number };
 }
 
 // Iteration cap is effectively only a safety net — time cap governs in
@@ -55,6 +62,7 @@ function makeRootPriorsFromRaw(
   state: GameState,
   rootActions: Action[],
   forPower?: Power,
+  dirichlet?: { alpha: number; weight: number },
 ): ((action: Action) => number) | null {
   // Build slot → raw policy
   const slotPriors = new Map<number, number>();
@@ -69,6 +77,19 @@ function makeRootPriorsFromRaw(
   }
   // Normalize within the legal-action set
   if (totalForLegal <= 0) return null;
+
+  // Dirichlet noise over legal slots. Each slot gets a sample from
+  // Gamma(alpha); normalise to a probability simplex.
+  let slotNoise: Map<number, number> | null = null;
+  if (dirichlet && slotPriors.size > 0) {
+    const slots = [...slotPriors.keys()];
+    const gammas = slots.map(() => sampleGamma(dirichlet.alpha));
+    const total = gammas.reduce((a, b) => a + b, 0) || 1;
+    slotNoise = new Map();
+    for (let i = 0; i < slots.length; i++) {
+      slotNoise.set(slots[i]!, gammas[i]! / total);
+    }
+  }
 
   // Boost zero-cost card priors: the policy head systematically undervalues
   // free cards because their effects are indirect. Give them a minimum prior
@@ -100,10 +121,43 @@ function makeRootPriorsFromRaw(
     const idx = canonicalActionIndex(action, state);
     if (idx < 0) return 1 / rootActions.length;
     let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
+    if (slotNoise !== null) {
+      p = (1 - dirichlet!.weight) * p + dirichlet!.weight * (slotNoise.get(idx) ?? 0);
+    }
     if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
     if (urgentRetreatSlots.has(idx)) p = Math.max(p, URGENT_RETREAT_PRIOR_FLOOR);
     return p;
   };
+}
+
+// Standard normal via Box-Muller. Accepts Math.random() as a source.
+function sampleStandardNormal(): number {
+  const u1 = Math.max(1e-10, Math.random());
+  const u2 = Math.random();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// Gamma(alpha, 1). Marsaglia-Tsang for alpha >= 1; recursion for alpha < 1.
+// Used only at root priors in collection, so Math.random is fine — no need
+// for a seeded RNG (training noise, not replay-critical).
+function sampleGamma(alpha: number): number {
+  if (alpha < 1) {
+    return sampleGamma(alpha + 1) * Math.pow(Math.max(1e-10, Math.random()), 1 / alpha);
+  }
+  const d = alpha - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  while (true) {
+    let x: number;
+    let v: number;
+    do {
+      x = sampleStandardNormal();
+      v = 1 + c * x;
+    } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * x * x * x * x) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
 }
 
 /**
@@ -182,7 +236,7 @@ export function runMcts(
   // Policy head guides PUCT to focus search across the full legal-action space.
   const rawPolicy = policyForState(state, forPower);
   const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower) : null;
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -268,7 +322,7 @@ export function runMctsWithStats(
 
   const rawPolicy = policyForState(state, forPower);
   const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower) : null;
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 

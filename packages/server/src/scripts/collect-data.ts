@@ -37,9 +37,10 @@ const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const mctsIterations = parseInt(getArg('--iter', '400'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '300'), 10);
 // epsilon-greedy exploration during data collection: with this probability,
-// pick a random legal summoning action instead of MCTS's best. Breaks the AI
-// out of dominant strategies and produces more diverse training data.
-const epsilon = parseFloat(getArg('--epsilon', '0.1'));
+// pick a random legal summoning action instead of MCTS's best. Mostly superseded
+// by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
+// games) — default 0. Kept available via --epsilon for back-compat.
+const epsilon = parseFloat(getArg('--epsilon', '0'));
 // League training: with --league-size K, the K most recent snapshot models
 // are loaded into a pool. Per game, one power is the "learner" (rotated by
 // seed) and uses the current model; each other power, with probability
@@ -242,6 +243,7 @@ function runGame(seed: number): GameResult {
         const stats = runMctsWithStats(state, pending.waitingFor, {
           iterations: mctsIterations,
           timeMs: mctsTimeMs,
+          dirichletNoise: { alpha: 0.3, weight: 0.25 },
         });
         action = stats.action;
         // Collapse to canonical slot indices and accumulate visits per slot
@@ -267,7 +269,11 @@ function runGame(seed: number): GameResult {
           pending.actionKind === 'corruption_harvest_choice' ||
           pending.actionKind === 'card_on_play_choice';
         action = useMcts
-          ? runMcts(state, pending.waitingFor, { iterations: mctsIterations, timeMs: mctsTimeMs })
+          ? runMcts(state, pending.waitingFor, {
+              iterations: mctsIterations,
+              timeMs: mctsTimeMs,
+              dirichletNoise: { alpha: 0.3, weight: 0.25 },
+            })
           : greedyAction(state, pending.waitingFor);
       }
     } catch (err) {

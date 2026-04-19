@@ -131,7 +131,7 @@ while true; do
   FOCUS_ARG=""
   [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0.05 \
+      --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
