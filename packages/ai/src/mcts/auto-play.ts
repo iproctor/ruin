@@ -68,24 +68,12 @@ const ZERO_COST_CARD_IDS = new Set(
  *
  * Returns the filtered list, or the original list if the condition doesn't apply.
  */
-export function forceZeroCostFlush(state: GameState, power: Power, actions: Action[]): Action[] {
-  if (power !== 'tenzen') return actions;
-  if (state.pendingAction?.actionKind !== 'summoning_action') return actions;
-
-  const ps = state.powers[power];
-  if (!ps || ps.powerPoints >= 3) return actions;
-
-  // Does Tenzen have any 0-cost cards in hand?
-  const hasZeroCost = ps.hand.some(c => ZERO_COST_CARD_IDS.has(c));
-  if (!hasZeroCost) return actions;
-
-  // Filter to only 0-cost card plays
-  const zeroCostPlays = actions.filter(a =>
-    a.kind === 'summoning_play_card' && ZERO_COST_CARD_IDS.has(a.cardId),
-  );
-
-  // If no legal 0-cost plays (all preconditions fail), fall back to full list
-  return zeroCostPlays.length > 0 ? zeroCostPlays : actions;
+export function forceZeroCostFlush(_state: GameState, _power: Power, actions: Action[]): Action[] {
+  // Disabled: forcing Tenzen to flush 0-cost cards at low PP may have been
+  // a ceiling — MCTS might legitimately prefer saving a 0-cost card for
+  // setup or skipping to pass. Return actions unchanged and let the policy
+  // decide.
+  return actions;
 }
 
 function bestSiphonPlay(state: GameState): Action | null {
