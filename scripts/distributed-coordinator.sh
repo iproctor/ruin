@@ -97,7 +97,19 @@ export OPENBLAS_NUM_THREADS=$TRAIN_THREADS
 export MKL_NUM_THREADS=$TRAIN_THREADS
 export NUMEXPR_NUM_THREADS=$TRAIN_THREADS
 
+# Track script mtime so we re-exec when push-hetzner.sh rsyncs a new
+# version. Without this the coordinator keeps running the old logic
+# (schedule, cutoffs, etc.) until manually restarted.
+SELF_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+
 while true; do
+  # Restart into the latest script if it's been updated on disk.
+  NOW_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
+  if [ "$NOW_MTIME" != "$SELF_MTIME" ]; then
+    echo "[$(date +%H:%M:%S)] [coord] script updated on disk, re-execing..." | tee -a "$LOG_FILE"
+    exec "$0" "$@"
+  fi
+
   # ── 1. Check inbox first — skip collection if threshold already met ─────────
   INBOX_COUNT=$(ls "$INBOX"/*.jsonl 2>/dev/null | wc -l | tr -d ' ')
   if [ "$INBOX_COUNT" -ge "$TRAIN_THRESHOLD" ]; then
