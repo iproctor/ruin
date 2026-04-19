@@ -31,6 +31,22 @@ export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
         loadModel(j);
         console.log(`[ai] loaded learned model: ${p}`);
       }
+      // Per-power overrides: when a model_<power>.json sits next to the shared
+      // model, use it for that power. Lets focus-trained heads (e.g. tenzen)
+      // take over while others stay on the shared model. Skipped when an
+      // explicit path is requested — caller wants that exact model.
+      if (!explicitPath) {
+        const dir = path.dirname(p);
+        const powers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+        for (const power of powers) {
+          const ppath = path.join(dir, `model_${power}.json`);
+          if (fs.existsSync(ppath)) {
+            const pj = JSON.parse(fs.readFileSync(ppath, 'utf-8')) as ModelJson;
+            loadModelForPower(power, pj);
+            console.log(`[ai] per-power override for ${power}: ${ppath}`);
+          }
+        }
+      }
       return true;
     }
   }
