@@ -47,6 +47,11 @@ export function modelForPowerLoaded(power: Power): boolean {
   return perPowerModels.has(power);
 }
 
+export function hasPolicyHeadFor(power: Power): boolean {
+  const model = perPowerModels.get(power) ?? cachedModel;
+  return model !== null && model !== undefined && model.hasPolicyHead();
+}
+
 /**
  * Convenience: load 4 models at once (one per power) by name.
  * `models[i]` corresponds to POWERS[i].

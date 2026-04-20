@@ -16,5 +16,5 @@ export {
 export { Mlp, type ModelJson, type MlpJson, type LinearJson, type DualHeadMlpJson } from './learn/mlp.js';
 export {
   loadModel, loadModelForPower, loadModelsForPowers,
-  clearModel, clearPerPowerModels, hasModel, modelForPowerLoaded,
+  clearModel, clearPerPowerModels, hasModel, modelForPowerLoaded, hasPolicyHeadFor,
 } from './learn/evaluator.js';

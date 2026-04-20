@@ -240,7 +240,15 @@ export function runMcts(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = options?.rolloutDepth ?? rolloutDepthForRound(state.round);
+  // When PUCT is active (= policy head covers this action kind), skip rollouts
+  // for Tenzen and rely on value-head leaves. Rollout still runs for
+  // card_on_play_choice / battle_hits / etc. where there's no policy guidance
+  // and we need the grounded leaf evaluation past round-end.
+  const rolloutDepth = options?.rolloutDepth ?? (
+    usePuct && forPower === 'tenzen'
+      ? 0
+      : rolloutDepthForRound(state.round)
+  );
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
@@ -326,7 +334,10 @@ export function runMctsWithStats(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = rolloutDepthForRound(state.round);
+  // See runMcts: skip rollouts for Tenzen's policy-head-covered actions.
+  const rolloutDepth = usePuct && forPower === 'tenzen'
+    ? 0
+    : rolloutDepthForRound(state.round);
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
