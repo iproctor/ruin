@@ -46,16 +46,18 @@ echo "────────────────────────�
 # the old logic until restarted by hand.
 SELF_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
 
+BRANCH=${BRANCH:-training}
+
 check_and_update() {
   cd "$ROOT"
-  git fetch origin master --quiet 2>/dev/null
+  git fetch origin "$BRANCH" --quiet 2>/dev/null
   local LOCAL=$(git rev-parse HEAD)
-  local REMOTE=$(git rev-parse origin/master)
+  local REMOTE=$(git rev-parse "origin/$BRANCH")
   if [ "$LOCAL" = "$REMOTE" ]; then return 1; fi
 
-  echo "[$(date +%H:%M:%S)] new commit: $(git log --oneline origin/master -1)"
+  echo "[$(date +%H:%M:%S)] new commit: $(git log --oneline "origin/$BRANCH" -1)"
   local OLD_LOCK=$(md5sum pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)
-  git reset --hard origin/master
+  git reset --hard "origin/$BRANCH"
   local NEW_LOCK=$(md5sum pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)
   [ "$OLD_LOCK" != "$NEW_LOCK" ] && pnpm install --frozen-lockfile 2>&1 | tail -3
   pnpm --filter engine build && pnpm --filter ai build
