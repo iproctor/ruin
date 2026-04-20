@@ -85,35 +85,51 @@ if (leagueSize > 0) {
 }
 const leagueActive = snapshotPool.length > 0;
 
-// ── Focus power model (if --focus-power set) ──────────────────────────────────
+// ── Per-power live models ─────────────────────────────────────────────────────
+// Load every model_<power>.json that exists. The focus power uses its own as
+// the warm-start target; non-focus powers that have one use it as a stable
+// opponent policy (preserves gains from previous focus-training runs — e.g.
+// Tenzen's model_tenzen.json keeps playing well while we focus-train Gormen).
 
-let focusPowerModel: ModelJson | null = null;
-if (focusPower) {
-  const focusPath = path.resolve(`packages/ai/data/model_${focusPower}.json`);
-  if (fs.existsSync(focusPath)) {
-    focusPowerModel = JSON.parse(fs.readFileSync(focusPath, 'utf-8')) as ModelJson;
-    console.log(`[focus] loaded model for ${focusPower} from ${focusPath}`);
-  } else {
-    console.log(`[focus] no ${focusPath} — ${focusPower} will use the shared model`);
+const livePerPowerModels: Partial<Record<Power, ModelJson>> = {};
+for (const p of ALL_POWERS) {
+  const modelPath = path.resolve(`packages/ai/data/model_${p}.json`);
+  if (fs.existsSync(modelPath)) {
+    livePerPowerModels[p] = JSON.parse(fs.readFileSync(modelPath, 'utf-8')) as ModelJson;
+    console.log(`[per-power] loaded model_${p}.json`);
   }
 }
+if (focusPower && !livePerPowerModels[focusPower as Power]) {
+  console.log(`[focus] no model_${focusPower}.json — ${focusPower} will warm-start from shared model`);
+}
+const focusPowerModel = focusPower ? livePerPowerModels[focusPower as Power] ?? null : null;
 
-// ── Hall of Fame: past strong snapshots of the focus power ────────────────────
-// With probability hofMix, a game plays the focus power with a random HOF model
-// instead of the live focusPowerModel. Prevents training-data collapse by
-// guaranteeing some games always contain a Tenzen (or whoever) that's playing
-// its proper strategy.
+// ── Hall of Fame: past strong snapshots, per-power ────────────────────────────
+// With probability hofMix, a game plays ANY power (focus or opponent) with a
+// random HOF model for that power instead of the live per-power model. Two
+// benefits:
+//   - Focus power: prevents training-data collapse by guaranteeing some games
+//     show the focus power executing its proper strategy.
+//   - Opponent powers: stops the focus power from overfitting to one specific
+//     opponent policy. E.g. during Gormen focus, Tenzen is sometimes the
+//     iter-1285 Tenzen and sometimes the iter-1249 Tenzen — Gormen has to
+//     generalize.
 const hofMix = parseFloat(getArg('--hof-mix', '0'));
-let hofModels: ModelJson[] = [];
-if (focusPower && hofMix > 0) {
+const hofModelsByPower: Partial<Record<Power, ModelJson[]>> = {};
+if (hofMix > 0) {
   const hofDir = path.resolve(`packages/ai/data/hof`);
   if (fs.existsSync(hofDir)) {
-    const files = fs.readdirSync(hofDir)
-      .filter(f => f.startsWith(`model_${focusPower}_hof_`) && f.endsWith('.json'));
-    for (const f of files) {
-      hofModels.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson);
+    for (const p of ALL_POWERS) {
+      const files = fs.readdirSync(hofDir)
+        .filter(f => f.startsWith(`model_${p}_hof_`) && f.endsWith('.json'));
+      if (files.length === 0) continue;
+      const pool: ModelJson[] = [];
+      for (const f of files) {
+        pool.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson);
+      }
+      hofModelsByPower[p] = pool;
+      console.log(`[hof] ${p}: loaded ${pool.length} hall-of-fame models (mix=${hofMix})`);
     }
-    console.log(`[hof] loaded ${hofModels.length} hall-of-fame ${focusPower} models (mix=${hofMix})`);
   } else {
     console.log(`[hof] no ${hofDir} — skipping HOF mix`);
   }
@@ -214,19 +230,26 @@ function runGame(seed: number): GameResult {
   if (focusPower) {
     // Focus mode: only focus power's visits are recorded.
     clearPerPowerModels();
-    // Optionally swap in a HOF snapshot for the focus power this game. The
-    // game's training data still labels states with the game's outcome, so
-    // the current model learns from both "current Tenzen plays well / badly"
-    // games and "HOF Tenzen plays well / badly" games.
-    const useHof = hofModels.length > 0 && rand() < hofMix;
-    const focusModelForGame = useHof
-      ? hofModels[Math.floor(rand() * hofModels.length)]!
-      : focusPowerModel;
-    if (focusModelForGame) loadModelForPower(focusPower as Power, focusModelForGame);
     currentModelPowers.add(focusPower as Power);
+    // Assign a model to each power for this game. For every power with a
+    // per-power live model OR a HOF pool:
+    //   - with probability hofMix, pick a random HOF entry for that power
+    //   - else use the live per-power model if any
+    //   - else fall through to shared model.json (no loadModelForPower call)
+    // This gives the focus power its training signal AND gives non-focus
+    // powers variation (e.g. during Gormen focus, Tenzen sometimes uses a
+    // HOF snapshot instead of the stable model_tenzen.json).
     for (const p of ALL_POWERS) {
-      if (p === focusPower) continue;
-      if (leagueActive) {
+      const hofPool = hofModelsByPower[p];
+      const livePerPower = livePerPowerModels[p];
+      const useHof = hofPool && hofPool.length > 0 && rand() < hofMix;
+      const chosen = useHof
+        ? hofPool![Math.floor(rand() * hofPool!.length)]!
+        : livePerPower;
+      if (chosen) loadModelForPower(p, chosen);
+      // Otherwise falls through to shared model (league or base).
+      if (!useHof && !livePerPower && leagueActive && p !== focusPower) {
+        // No per-power model at all — let league snapshots cover it
         const snap = snapshotPool[Math.floor(rand() * snapshotPool.length)]!;
         loadModelForPower(p, snap);
       }

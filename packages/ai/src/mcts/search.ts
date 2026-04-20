@@ -9,7 +9,7 @@ import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './n
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
-import { policyForState } from '../learn/evaluator.js';
+import { policyForState, modelForPowerLoaded } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -240,12 +240,12 @@ export function runMcts(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  // Tenzen: drop the rollout min-depth floor. Rollouts still run but can
-  // exit at the first round change or terminal state — no guaranteed N plies.
-  // Preserves grounded end-of-round evaluation; lets rollouts abort sooner
-  // in short rounds, which means more MCTS iterations.
+  // Per-power-trained powers: drop the rollout min-depth floor. Rollouts
+  // still run but can exit at the first round change or terminal state — no
+  // guaranteed N plies. Preserves grounded end-of-round evaluation; lets
+  // rollouts abort sooner in short rounds → more MCTS iterations.
   const rolloutDepth = options?.rolloutDepth ?? (
-    forPower === 'tenzen' ? 0 : rolloutDepthForRound(state.round)
+    modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
   );
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
@@ -332,7 +332,7 @@ export function runMctsWithStats(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = forPower === 'tenzen' ? 0 : rolloutDepthForRound(state.round);
+  const rolloutDepth = modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round);
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
@@ -363,18 +363,18 @@ export function runMctsWithStats(
 /**
  * Selection: walk from root down until we hit a node to expand or rollout from.
  *
- * Two modes, toggled by forPower:
- *   - **AZ-style (forPower === 'tenzen')**: PUCT compares existing children and
- *     untried actions (FPU-scored) jointly at each node. Lets promising lines
- *     deepen earlier. When an untried wins, it's swapped to the end so expand()
- *     pops the chosen action via its O(1) pop.
- *   - **Classic (other powers)**: stop at any node with untried actions (let
- *     expand() pop one); only descend when a node is fully expanded. Broadens
- *     before deepening. Kept as the reference path while we isolate the AZ
- *     effect on Tenzen's training dynamics.
+ * Two modes, toggled by whether forPower has a dedicated per-power model
+ * loaded (= it's currently being focus-trained, or previously was):
+ *   - **AZ-style**: PUCT compares existing children and untried actions
+ *     (FPU-scored) jointly at each node. Lets promising lines deepen earlier.
+ *     When an untried wins, it's swapped to the end so expand() pops the
+ *     chosen action via its O(1) pop.
+ *   - **Classic**: stop at any node with untried actions (let expand() pop
+ *     one); only descend when a node is fully expanded. Broadens before
+ *     deepening. Used for powers without per-power models.
  */
 function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNode {
-  const useAzStyle = node.forPower === 'tenzen';
+  const useAzStyle = modelForPowerLoaded(node.forPower);
   let current = node;
 
   while (!isTerminal(current.state)) {
