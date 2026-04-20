@@ -354,6 +354,213 @@ export function runMctsWithStats(
   return { action: bestAction(root), visitCounts };
 }
 
+// ─── Diagnostic probe ────────────────────────────────────────────────────────
+
+export interface TreeProbeStats {
+  /** The action that would have been chosen (highest-visit root child). */
+  action: Action;
+  iterations: number;
+  timeMs: number;
+  hitTimeCap: boolean;
+  hitIterCap: boolean;
+  /** Deepest path from root (edges traversed). */
+  maxDepth: number;
+  /** Average depth at which a rollout was launched (= node expanded from). */
+  avgLeafDepth: number;
+  /** Legal actions considered at root (post-filter). */
+  rootLegalActions: number;
+  /** Root children that were expanded at least once. */
+  rootChildrenExpanded: number;
+  /** Root actions never expanded (ran out of budget). */
+  rootUntriedRemaining: number;
+  /** Whether PUCT was used (policy priors available). */
+  usedPuct: boolean;
+  /** True if AZ-style select was active (per-power model loaded). */
+  azStyle: boolean;
+  /** Per-root-action (visits, prior) entries. */
+  rootActions: Array<{ actionKind: string; visits: number; prior: number }>;
+  /** Top action by visits. */
+  topVisitKind: string;
+  /** Top action by prior (null if no policy head). */
+  topPriorKind: string | null;
+  priorVisitAgree: boolean;
+  /** Shannon entropy (bits) of normalized visit distribution. */
+  visitEntropy: number;
+  /** Shannon entropy (bits) of prior distribution. NaN if no priors. */
+  priorEntropy: number;
+  /** KL( visits || prior ) in bits — how much search moved away from policy. NaN if no priors. */
+  klVisitToPrior: number;
+}
+
+/**
+ * Run MCTS and return detailed tree statistics for diagnosis. Does the same
+ * setup as runMctsWithStats but inspects the resulting tree before discarding.
+ */
+export function probeMctsSearch(
+  state: GameState,
+  forPower: Power,
+  options?: MctsOptions,
+): TreeProbeStats {
+  const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
+  const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
+  const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
+
+  let legalRootRaw: Action[];
+  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
+    legalRootRaw = enumerateKillActions(state, forPower);
+  } else {
+    legalRootRaw = getLegalActions(state, forPower);
+  }
+  if (legalRootRaw.length === 0) throw new Error(`probeMctsSearch: no legal actions for ${forPower}`);
+
+  let legalRoot = filterPointlessActions(state, legalRootRaw);
+  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
+
+  // Short-circuit: if only one legal action, return it with minimal stats.
+  if (legalRoot.length === 1) {
+    return {
+      action: legalRoot[0]!,
+      iterations: 0,
+      timeMs: 0,
+      hitTimeCap: false,
+      hitIterCap: false,
+      maxDepth: 0,
+      avgLeafDepth: 0,
+      rootLegalActions: 1,
+      rootChildrenExpanded: 0,
+      rootUntriedRemaining: 1,
+      usedPuct: false,
+      azStyle: modelForPowerLoaded(forPower),
+      rootActions: [{ actionKind: legalRoot[0]!.kind, visits: 0, prior: NaN }],
+      topVisitKind: legalRoot[0]!.kind,
+      topPriorKind: null,
+      priorVisitAgree: false,
+      visitEntropy: 0,
+      priorEntropy: NaN,
+      klVisitToPrior: NaN,
+    };
+  }
+
+  const rawPolicy = policyForState(state, forPower);
+  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
+  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
+  root.childPriors = priors;
+  const usePuct = priors !== null;
+
+  const rolloutDepth = options?.rolloutDepth ?? (
+    modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
+  );
+  const t0 = Date.now();
+  const deadline = t0 + maxTimeMs;
+  let iteration = 0;
+  let sumLeafDepth = 0;
+  let leafCount = 0;
+  let maxDepth = 0;
+
+  while (iteration < maxIterations && Date.now() < deadline) {
+    const selected = select(root, explorationC, usePuct);
+    const expanded = expand(selected, forPower);
+    // Depth of the newly expanded node (edges from root).
+    let depth = 0;
+    let n: MctsNode | null = expanded;
+    while (n && n.parent !== null) { depth += 1; n = n.parent; }
+    sumLeafDepth += depth;
+    leafCount += 1;
+    if (depth > maxDepth) maxDepth = depth;
+
+    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
+    backpropagate(expanded, score);
+    iteration += 1;
+  }
+  const elapsed = Date.now() - t0;
+
+  const rootActions: Array<{ actionKind: string; visits: number; prior: number }> = [];
+  let totalVisits = 0;
+  for (const child of root.children) {
+    const kind = child.action?.kind ?? 'null';
+    const p = priors && child.action ? priors(child.action) : NaN;
+    rootActions.push({ actionKind: kind, visits: child.visits, prior: p });
+    totalVisits += child.visits;
+  }
+
+  const visitEntropy = (() => {
+    if (totalVisits === 0) return 0;
+    let h = 0;
+    for (const r of rootActions) {
+      if (r.visits === 0) continue;
+      const p = r.visits / totalVisits;
+      h -= p * Math.log2(p);
+    }
+    return h;
+  })();
+
+  const priorEntropy = (() => {
+    if (!priors) return NaN;
+    let h = 0;
+    for (const a of legalRoot) {
+      const p = priors(a);
+      if (p > 0) h -= p * Math.log2(p);
+    }
+    return h;
+  })();
+
+  const klVisitToPrior = (() => {
+    if (!priors || totalVisits === 0) return NaN;
+    let kl = 0;
+    for (const r of rootActions) {
+      if (r.visits === 0) continue;
+      const q = r.visits / totalVisits;
+      const p = r.prior;
+      if (!(p > 0)) continue;
+      kl += q * Math.log2(q / p);
+    }
+    return kl;
+  })();
+
+  let topVisitKind = 'null';
+  let topVisits = -1;
+  let topVisitChild: MctsNode | null = null;
+  for (const child of root.children) {
+    if (child.visits > topVisits) {
+      topVisits = child.visits;
+      topVisitKind = child.action?.kind ?? 'null';
+      topVisitChild = child;
+    }
+  }
+  const chosenAction = topVisitChild?.action ?? legalRoot[0]!;
+
+  let topPriorKind: string | null = null;
+  if (priors) {
+    let topPrior = -Infinity;
+    for (const a of legalRoot) {
+      const p = priors(a);
+      if (p > topPrior) { topPrior = p; topPriorKind = a.kind; }
+    }
+  }
+
+  return {
+    action: chosenAction,
+    iterations: iteration,
+    timeMs: elapsed,
+    hitTimeCap: iteration < maxIterations,
+    hitIterCap: iteration >= maxIterations,
+    maxDepth,
+    avgLeafDepth: leafCount > 0 ? sumLeafDepth / leafCount : 0,
+    rootLegalActions: legalRoot.length,
+    rootChildrenExpanded: root.children.length,
+    rootUntriedRemaining: root.untriedActions.length,
+    usedPuct: usePuct,
+    azStyle: modelForPowerLoaded(forPower),
+    rootActions,
+    topVisitKind,
+    topPriorKind,
+    priorVisitAgree: topPriorKind !== null && topPriorKind === topVisitKind,
+    visitEntropy,
+    priorEntropy,
+    klVisitToPrior,
+  };
+}
+
 // ─── MCTS phases ─────────────────────────────────────────────────────────────
 
 /**

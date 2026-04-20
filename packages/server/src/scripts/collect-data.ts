@@ -34,8 +34,24 @@ function getArg(flag: string, fallback: string): string {
 const gameCount = parseInt(getArg('--games', '50'), 10);
 const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
-const mctsIterations = parseInt(getArg('--iter', '400'), 10);
-const mctsTimeMs = parseInt(getArg('--time', '300'), 10);
+// Training collection is iter-governed, not time-governed. Consistent per-
+// decision quality matters more than throughput consistency — a short time
+// cap over-searches easy states and under-searches hard ones, giving uneven
+// policy-target quality.
+//
+// Threshold for meaningful policy/search disagreement, from probe-mcts-health:
+//   ~2k iters  → p50 KL ≈ 0.07 bits (search barely contradicts prior)
+//   ~12k iters → p50 KL ≈ 1.08 bits (real contradictions on half of calls)
+// 10000 sits past the phase change and is what we want for training. Only the
+// focus power needs this — its weak policy head is what we're trying to
+// sharpen via search/prior disagreement. Opponents run on the frozen shared
+// model whose policy head is (by assumption) already guiding well, so they
+// need far fewer iters to pick a reasonable action.
+const mctsIterations = parseInt(getArg('--iter', '10000'), 10);
+const mctsOpponentIterations = parseInt(getArg('--iter-opp', '1000'), 10);
+// Time cap is now a safety net only (long-running games shouldn't hang
+// indefinitely). Deliberately set well above what 10k iters normally takes.
+const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 // epsilon-greedy exploration during data collection: with this probability,
 // pick a random legal summoning action instead of MCTS's best. Mostly superseded
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
@@ -292,8 +308,17 @@ function runGame(seed: number): GameResult {
       } else if (pending.actionKind === 'summoning_action') {
         // Use the stats variant so we can record the visit distribution for
         // policy head training.
+        // Iter budget: focus power gets the full budget (its policy head is
+        // what we're training, so it needs deep search to produce targets
+        // that disagree with its current prior). Opponents use the frozen
+        // shared model whose policy head is assumed adequate, so fewer iters
+        // suffice to pick a reasonable move. If no focus is set, everyone
+        // gets the full budget.
+        const iterBudget = !focusPower || pending.waitingFor === focusPower
+          ? mctsIterations
+          : mctsOpponentIterations;
         const stats = runMctsWithStats(state, pending.waitingFor, {
-          iterations: mctsIterations,
+          iterations: iterBudget,
           timeMs: mctsTimeMs,
           dirichletNoise: { alpha: 0.3, weight: 0.35 },
         });
@@ -320,9 +345,12 @@ function runGame(seed: number): GameResult {
           pending.actionKind === 'hero_removal' ||
           pending.actionKind === 'corruption_harvest_choice' ||
           pending.actionKind === 'card_on_play_choice';
+        const subIterBudget = !focusPower || pending.waitingFor === focusPower
+          ? mctsIterations
+          : mctsOpponentIterations;
         action = useMcts
           ? runMcts(state, pending.waitingFor, {
-              iterations: mctsIterations,
+              iterations: subIterBudget,
               timeMs: mctsTimeMs,
               dirichletNoise: { alpha: 0.3, weight: 0.35 },
             })
