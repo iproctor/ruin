@@ -36,10 +36,17 @@ const router: ReturnType<typeof Router> = Router();
 // ---------------------------------------------------------------------------
 const zPowerEnum = z.enum(['xarm', 'gormen', 'tenzen', 'lasha']);
 
+const companionOptionsSchema = z.object({
+  humanChoosesCard: z.boolean().optional(),
+  humanPlaysFree:   z.boolean().optional(),
+  humanRollsDice:   z.boolean().optional(),
+}).optional();
+
 const singleplayerSchema = z.object({
   mode: z.literal('singleplayer'),
   powers: z.array(zPowerEnum).min(2).max(4),
   playerTypes: z.record(zPowerEnum, z.enum(['human', 'ai'])),
+  companionOptions: companionOptionsSchema,
 });
 
 const multiplayerSchema = z.object({
@@ -53,6 +60,7 @@ const legacySchema = z.object({
   powers: z.array(zPowerEnum).min(2).max(4),
   playerTypes: z.record(zPowerEnum, z.enum(['human', 'ai', 'guest'])),
   playerUserIds: z.record(zPowerEnum, z.string().uuid()).optional(),
+  companionOptions: companionOptionsSchema,
 });
 
 const createGameSchema = z.union([singleplayerSchema, multiplayerSchema, legacySchema]);
@@ -80,6 +88,13 @@ router.post('/', requireAuth, async (req, res) => {
   // Singleplayer (or legacy)
   const { powers, playerTypes } = data as z.infer<typeof legacySchema>;
   const playerUserIds = ('playerUserIds' in data ? data.playerUserIds : {}) ?? {};
+  const rawCompanion = ('companionOptions' in data ? data.companionOptions : undefined);
+  const hasCompanion = !!rawCompanion && (rawCompanion.humanChoosesCard || rawCompanion.humanPlaysFree || rawCompanion.humanRollsDice);
+  const companionOptions = hasCompanion ? {
+    humanChoosesCard: !!rawCompanion!.humanChoosesCard,
+    humanPlaysFree:   !!rawCompanion!.humanPlaysFree,
+    humanRollsDice:   !!rawCompanion!.humanRollsDice,
+  } : undefined;
 
   const resolvedUserIds: Partial<Record<Power, string>> = { ...playerUserIds };
   for (const p of powers) {
@@ -93,6 +108,7 @@ router.post('/', requireAuth, async (req, res) => {
     powers,
     playerTypes as Record<Power, PlayerType>,
     resolvedUserIds,
+    companionOptions,
   );
 
   res.status(201).json({ gameId });
@@ -170,6 +186,8 @@ const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('dial_remove_corruption'),    power: zPowerEnum, regionId: zRegionId, targetPower: zPowerEnum}),
   z.object({ kind: z.literal('dial_remove_world_token'),   power: zPowerEnum, regionId: zRegionId, tokenType: zTokenType }),
   z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPowerEnum, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
+  z.object({ kind: z.literal('companion_world_pick'),      power: zPowerEnum, cardId: z.string() }),
+  z.object({ kind: z.literal('companion_dice_roll'),       power: zPowerEnum, hits: z.number().int().min(0).max(100) }),
 ]);
 
 // Accepts either a single action (`action`) or a batch (`actions`). Batches

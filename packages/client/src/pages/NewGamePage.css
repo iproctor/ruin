@@ -266,6 +266,75 @@
 }
 .newgame-hint em { color: var(--brass); font-style: italic; }
 
+/* ── Companion options (solo physical board) ────────────────────────────── */
+.newgame-companion {
+  max-width: 760px;
+  margin: 0 auto clamp(1rem, 2vh, 1.5rem);
+  padding: 0.9rem 1.1rem 1.05rem;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: linear-gradient(180deg, rgba(28, 21, 16, 0.55), rgba(10, 6, 4, 0.65));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+.newgame-companion[disabled] {
+  opacity: 0.35;
+  filter: grayscale(0.6);
+}
+.newgame-companion-legend {
+  padding: 0 0.55rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--brass-hot);
+}
+.newgame-companion-hint {
+  margin: 0 0 0.75rem;
+  text-align: center;
+  font-family: 'IM Fell English', serif;
+  font-style: italic;
+  font-size: 0.82rem;
+  color: var(--paper-fade);
+}
+.newgame-companion-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.65rem;
+  row-gap: 0.1rem;
+  align-items: baseline;
+  padding: 0.45rem 0.2rem;
+  border-top: 1px solid rgba(58, 42, 30, 0.6);
+  cursor: pointer;
+  transition: background 0.25s ease;
+}
+.newgame-companion-row:hover { background: rgba(169, 113, 64, 0.06); }
+.newgame-companion-row.is-on .newgame-companion-title { color: var(--brass-hot); }
+.newgame-companion-check {
+  grid-row: 1 / span 2;
+  align-self: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--brass-hot);
+  cursor: pointer;
+}
+.newgame-companion-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  color: var(--paper);
+  transition: color 0.25s ease;
+}
+.newgame-companion-blurb {
+  font-family: 'IM Fell English', serif;
+  font-size: 0.82rem;
+  color: var(--paper-dim);
+  grid-column: 2;
+  line-height: 1.35;
+}
+
 /* ── Footer (submit + error) ────────────────────────────────────────────── */
 .newgame-footer {
   display: flex;

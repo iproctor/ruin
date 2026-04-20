@@ -83,6 +83,7 @@ export function renderText(event: GameEvent): string | null {
     // ── Draw ──────────────────────────────────────────────────────────────
     case 'tenzen_discard': {
       if (event.cardId === null) return 'Tenzen keeps hand.';
+      if (event.cardId === '?') return 'Tenzen discards a card.';
       const discardDef = CARD_BY_ID[event.cardId];
       return `Tenzen discards ${discardDef?.name ?? event.cardId}.`;
     }

@@ -1,6 +1,7 @@
 import type {
   GameState, Power, RegionId, FollowerInstance,
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
+  CompanionDiceRollAction,
 } from '../types.js';
 import {
   CARD_BY_ID, REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, WORLD_CARD_BY_ID,
@@ -11,6 +12,83 @@ import {
 import { rollWithExplosions, countHits, makeRng, shuffle } from '../dice.js';
 import { GameLog } from '../gameLog.js';
 import type { ApplyResult } from '../reducers.js';
+
+// ─── Companion-mode dice helper ──────────────────────────────────────────────
+
+/** If humanRollsDice is on and the given power is a human who has not yet
+ *  reported hits for this roll, pause the phase. Otherwise return either the
+ *  pre-reported hits (and consume them) or null to indicate a normal roll. */
+function consumeCompanionHits(
+  state: GameState,
+  power: Power,
+  kind: 'normal' | 'war_frenzy' | 'undying_fury',
+): { state: GameState; hits: number } | null {
+  const cd = state.battleState?.companionDice;
+  if (cd && cd.power === power && cd.kind === kind) {
+    const s: GameState = {
+      ...state,
+      battleState: state.battleState ? { ...state.battleState, companionDice: null } : null,
+    };
+    return { state: s, hits: cd.hits };
+  }
+  return null;
+}
+
+function shouldPauseForCompanionRoll(state: GameState, power: Power): boolean {
+  if (!state.companionOptions?.humanRollsDice) return false;
+  return state.powers[power]?.playerType === 'human';
+}
+
+function pauseForCompanionRoll(
+  state: GameState,
+  regionId: RegionId,
+  power: Power,
+  diceCount: number,
+  kind: 'normal' | 'war_frenzy' | 'undying_fury',
+  resumeStep: BattleNextStep,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  const s: GameState = {
+    ...state,
+    battleState: {
+      ...state.battleState!,
+      nextStep: resumeStep,
+      companionDice: null,
+    },
+    pendingAction: {
+      waitingFor: power,
+      actionKind: 'companion_dice_roll',
+      context: { regionId, diceCount, kind },
+    },
+  };
+  log.emit({
+    type: 'awaiting_action',
+    power,
+    actionKind: 'companion_dice_roll',
+    context: { regionId, diceCount, kind },
+    description: `${regionId}: ${power} rolls ${diceCount} die${diceCount === 1 ? '' : 'ce'} on the physical board — report hits.`,
+  });
+  return { state: s, log };
+}
+
+/** Resume battle after a companion dice-roll action. Stores the reported hits
+ *  in battleState so the subsequent roll step uses them instead of rolling. */
+export function applyCompanionDiceRoll(
+  state: GameState,
+  action: CompanionDiceRollAction,
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  const ctx = state.pendingAction?.context ?? {};
+  const kind = (ctx['kind'] as 'normal' | 'war_frenzy' | 'undying_fury') ?? 'normal';
+  const s: GameState = {
+    ...state,
+    pendingAction: null,
+    battleState: state.battleState
+      ? { ...state.battleState, companionDice: { power: action.power, kind, hits: Math.max(0, action.hits | 0) } }
+      : null,
+  };
+  return { state: s, log };
+}
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
@@ -84,6 +162,22 @@ function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
     case 'post_undying':
       inner = runPostUndying(s, regionId, log);
       break;
+    case 'war_frenzy_step': {
+      inner = runWarFrenzy(s, regionId, log);
+      // After War Frenzy resolves (no pendingAction), continue the region's
+      // normal sequence: normal battle (unless Euphoric Haze skips it).
+      if (inner.state.pendingAction === null) {
+        const region = inner.state.regions[regionId]!;
+        const changerOfFateActive2 = regionCardActive(inner.state, regionId, 'tenzen_changer_of_fate');
+        const euphoricHaze = !changerOfFateActive2 && regionCardActive(inner.state, regionId, 'lasha_ecstasy');
+        if (!euphoricHaze) {
+          inner = runNormalBattle(inner.state, regionId, 0, inner.log);
+        } else {
+          inner = runPostNormal(inner.state, regionId, inner.log);
+        }
+      }
+      break;
+    }
   }
 
   // If the step paused for another choice, return
@@ -287,30 +381,11 @@ function resolveRegion(
   }
 
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
-  // War Frenzy fires even when xarm has no figures present — the card itself
-  // rolls dice targeting enemies/peasants in the region.
   if (!changerOfFateActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
-    const rng = makeBattleRng(s);
-    const rolls = rollWithExplosions(2, rng);
-    const hits = countHits(rolls);
-    s = { ...s, actionCount: s.actionCount + 1 };
-    log.emit({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
-    if (hits > 0) {
-      const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
-      const enemiesWF = getEnemyFigures(s, regionId, 'xarm', changerOfFateActive);
-      // Only pause if at least one kill is actually possible OR a peasant can
-      // be claimed. Otherwise the hits would be wasted and there's nothing
-      // for the human to decide.
-      const canKillWF = enemiesWF.some((e) => e.defense <= hits);
-      if (peasantsAvailableWF > 0 || canKillWF) {
-        return pauseForHitChoice(
-          s, regionId, 'xarm', hits, changerOfFateActive,
-          { type: 'normal_battle', powerIndex: 0, clearTipped: true },
-          log,
-          { isWarFrenzy: true },
-        );
-      }
-    }
+    const wfResult = runWarFrenzy(s, regionId, log);
+    s = wfResult.state;
+    log = wfResult.log;
+    if (s.pendingAction !== null) return { state: s, log };
   }
 
   // ── Euphoric Haze: no dice rolled ────────────────────────────────────────
@@ -330,6 +405,51 @@ function resolveRegion(
     if (s.pendingAction !== null) return { state: s, log };
   }
 
+  return { state: s, log };
+}
+
+function runWarFrenzy(
+  state: GameState,
+  regionId: RegionId,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  let s = state;
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+
+  let hits: number;
+  let rolls: number[];
+  const consumed = consumeCompanionHits(s, 'xarm', 'war_frenzy');
+  if (consumed) {
+    s = consumed.state;
+    hits = consumed.hits;
+    rolls = [];
+  } else if (shouldPauseForCompanionRoll(s, 'xarm')) {
+    return pauseForCompanionRoll(
+      s, regionId, 'xarm', 2, 'war_frenzy',
+      { type: 'war_frenzy_step' },
+      log,
+    );
+  } else {
+    const rng = makeBattleRng(s);
+    rolls = rollWithExplosions(2, rng);
+    hits = countHits(rolls);
+  }
+  s = { ...s, actionCount: s.actionCount + 1 };
+  log.emit({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
+
+  if (hits > 0) {
+    const peasantsAvailableWF = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
+    const enemiesWF = getEnemyFigures(s, regionId, 'xarm', changerOfFateActive);
+    const canKillWF = enemiesWF.some((e) => e.defense <= hits);
+    if (peasantsAvailableWF > 0 || canKillWF) {
+      return pauseForHitChoice(
+        s, regionId, 'xarm', hits, changerOfFateActive,
+        { type: 'normal_battle', powerIndex: 0, clearTipped: true },
+        log,
+        { isWarFrenzy: true },
+      );
+    }
+  }
   return { state: s, log };
 }
 
@@ -363,9 +483,24 @@ function runNormalBattle(
     if (totalAttack === 0) continue;
 
     const diceCap = chokepoint ? 1 : totalAttack;
-    const rng = makeBattleRng(s);
-    const rolls = rollWithExplosions(diceCap, rng);
-    const hits = countHits(rolls);
+    let hits: number;
+    let rolls: number[];
+    const consumed = consumeCompanionHits(s, power, 'normal');
+    if (consumed) {
+      s = consumed.state;
+      hits = consumed.hits;
+      rolls = [];
+    } else if (shouldPauseForCompanionRoll(s, power)) {
+      return pauseForCompanionRoll(
+        s, regionId, power, diceCap, 'normal',
+        { type: 'normal_battle', powerIndex: i },
+        log,
+      );
+    } else {
+      const rng = makeBattleRng(s);
+      rolls = rollWithExplosions(diceCap, rng);
+      hits = countHits(rolls);
+    }
     s = { ...s, actionCount: s.actionCount + 1 };
     log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'normal' });
 
@@ -445,9 +580,24 @@ function runUndyingFury(
     if (totalAttack === 0) continue;
 
     const diceCap = chokepoint ? 1 : totalAttack;
-    const rng = makeBattleRng(s);
-    const rolls = rollWithExplosions(diceCap, rng);
-    const hits = countHits(rolls);
+    let hits: number;
+    let rolls: number[];
+    const consumed = consumeCompanionHits(s, power, 'undying_fury');
+    if (consumed) {
+      s = consumed.state;
+      hits = consumed.hits;
+      rolls = [];
+    } else if (shouldPauseForCompanionRoll(s, power)) {
+      return pauseForCompanionRoll(
+        s, regionId, power, diceCap, 'undying_fury',
+        { type: 'undying_fury', powerIndex: i },
+        log,
+      );
+    } else {
+      const rng = makeBattleRng(s);
+      rolls = rollWithExplosions(diceCap, rng);
+      hits = countHits(rolls);
+    }
     s = { ...s, actionCount: s.actionCount + 1 };
     log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'undying_fury' });
 

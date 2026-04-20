@@ -1,4 +1,4 @@
-import type { GameState, RegionId, TokenType, WorldChoiceAction } from '../types.js';
+import type { GameState, RegionId, TokenType, WorldChoiceAction, CompanionWorldPickAction, Power } from '../types.js';
 import { WORLD_CARD_BY_ID, ADJACENCY, REGION_ORDER, REGIONS } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
@@ -59,6 +59,22 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
     return { state: { ...s, phase: 'draw' }, log };
   }
 
+  // Solo companion mode: let the human reveal the card from their physical deck.
+  // Pause until they submit a `companion_world_pick` action with the card id.
+  const picker = pickCompanionChooser(s);
+  if (picker !== null) {
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: picker,
+        actionKind: 'companion_world_pick',
+        context: {},
+      },
+    };
+    log.emit({ type: 'awaiting_action', power: picker, actionKind: 'companion_world_pick', context: {}, description: `${picker} must reveal the next World card from the physical deck.` });
+    return { state: s, log };
+  }
+
   const [cardId, ...remaining] = s.worldDeck;
   s = { ...s, worldDeck: remaining };
   log.emit({ type: 'world_card_drawn', cardId: cardId!, cardName: WORLD_CARD_BY_ID[cardId!]?.name ?? cardId! });
@@ -113,6 +129,77 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
 
   // Place card on track (or discard)
   s = placeOnTrackOrDiscard(s, cardId!, log);
+  s = advanceToDrawPhase(s);
+  return { state: s, log };
+}
+
+/** Pick the human power who reveals the next world card, or null if the
+ *  companion option is off / no human is active. Uses the first human in
+ *  turn order so the choice is deterministic across resumes. */
+function pickCompanionChooser(state: GameState): Power | null {
+  if (!state.companionOptions?.humanChoosesCard) return null;
+  for (const p of state.activePowers) {
+    if (state.powers[p]?.playerType === 'human') return p;
+  }
+  return null;
+}
+
+/** Apply a companion-mode world card pick: the human read a card from their
+ *  physical deck and reported its id. Continue as if the engine drew it. */
+export function applyCompanionWorldPick(
+  state: GameState,
+  action: CompanionWorldPickAction,
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  const cardDef = WORLD_CARD_BY_ID[action.cardId];
+  if (!cardDef) throw new Error(`Unknown world card: ${action.cardId}`);
+
+  // Advance the digital deck by one so game-length tracking still ticks down.
+  const remaining = state.worldDeck.slice(1);
+  let s: GameState = { ...state, pendingAction: null, worldDeck: remaining };
+  const cardId = action.cardId;
+  log.emit({ type: 'world_card_drawn', cardId, cardName: cardDef.name });
+
+  // Remove comet-icon cards from track first
+  if (cardDef.hasCometIcon) {
+    const { slot1, slot2 } = s.worldTrack;
+    const removed: string[] = [];
+    if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
+      removed.push(slot1);
+      s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
+    }
+    if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
+      removed.push(slot2);
+      s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
+    }
+    if (removed.length) log.emit({ type: 'comet_removed', cardIds: removed });
+  }
+
+  const result = applyWorldCardImmediate(s, cardId, log);
+  s = result.state;
+
+  if (result.needsChoice) {
+    const choiceRegions = getWorldChoiceRegions(s, cardId);
+    const isPairCard = cardId === 'northern_heir' || cardId === 'ratmens_price';
+    if (!isPairCard && choiceRegions.length === 0) {
+      s = placeOnTrackOrDiscard(s, cardId, log);
+      s = advanceToDrawPhase(s);
+      return { state: s, log };
+    }
+    const choicePower = lowestThreatPower(s);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: choicePower,
+        actionKind: 'world_choice',
+        context: { cardId },
+      },
+    };
+    log.emit({ type: 'awaiting_action', power: choicePower, actionKind: 'world_choice', context: { cardId }, description: `${choicePower} must make a world card choice.` });
+    return { state: s, log };
+  }
+
+  s = placeOnTrackOrDiscard(s, cardId, log);
   s = advanceToDrawPhase(s);
   return { state: s, log };
 }

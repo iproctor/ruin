@@ -1,8 +1,8 @@
 import type { GameState, Action, Power, DialPendingReward } from './types.js';
-import { resolveWorldPhase, applyWorldChoice } from './phases/world.js';
+import { resolveWorldPhase, applyWorldChoice, applyCompanionWorldPick } from './phases/world.js';
 import { beginDrawPhase, applyTenzenDiscard, getBasePP } from './phases/draw.js';
 import { applySummonFigure, applyPlayCard, applySummoningPass, applyTenzenApprenticeChoice, advanceSummoningTurn, applyCardOnPlayChoice } from './phases/summoning.js';
-import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from './phases/battle.js';
+import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment, applyCompanionDiceRoll } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
 import { resolveEndPhase } from './phases/end.js';
 import { checkVictory } from './victory.js';
@@ -39,6 +39,14 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
   switch (action.kind) {
     case 'world_choice':
       result = applyWorldChoice(s, action);
+      break;
+
+    case 'companion_world_pick':
+      result = applyCompanionWorldPick(s, action);
+      break;
+
+    case 'companion_dice_roll':
+      result = applyCompanionDiceRoll(s, action);
       break;
 
     case 'tenzen_discard':

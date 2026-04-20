@@ -105,12 +105,23 @@ export type ActionKind =
   | 'tenzen_apprentice_choice' // Tenzen Apprentices upgrade: carry a chaos stone or leave it
   | 'dial_place_token'         // dial reward: place a noble or chaos stone on any region
   | 'dial_remove_corruption'   // dial reward: remove a corruption token (any power's) from a region
-  | 'dial_remove_world_token'; // dial reward: remove a world token from a region
+  | 'dial_remove_world_token'  // dial reward: remove a world token from a region
+  | 'companion_world_pick'     // solo-companion: human chooses the next World card from their physical deck
+  | 'companion_dice_roll';     // solo-companion: human rolls physical dice and reports hits
 
 export interface PendingAction {
   waitingFor: Power;
   actionKind: ActionKind;
   context: Record<string, unknown>;
+}
+
+// ─── Solo-mode companion options ──────────────────────────────────────────────
+// Flags for playing the digital engine alongside a physical board. Each flag
+// is independent and applies only to powers whose playerType is 'human'.
+export interface CompanionOptions {
+  humanChoosesCard: boolean; // human picks the next World card from their own physical deck
+  humanPlaysFree: boolean;   // human's hand is masked in-engine; they freely pick any card to play
+  humanRollsDice: boolean;   // engine does not roll dice for human; human reports the hit count
 }
 
 // ─── Battle state (transient, during battle phase) ────────────────────────────
@@ -127,13 +138,17 @@ export type BattleNextStep =
   | { type: 'normal_battle'; powerIndex: number; clearTipped?: boolean }
   | { type: 'undying_fury';  powerIndex: number }
   | { type: 'post_normal' }
-  | { type: 'post_undying' };
+  | { type: 'post_undying' }
+  | { type: 'war_frenzy_step' };
 
 export interface BattleState {
   regionOrder: RegionId[];          // remaining regions to resolve
   currentRegionIndex: number;
   log: string[];
   nextStep: BattleNextStep | null;  // null = not paused for hit choice
+  /** Companion mode: hits reported by a human rolling physical dice. When set,
+   *  the upcoming roll for this power uses this count instead of rolling. */
+  companionDice?: { power: Power; kind: 'normal' | 'war_frenzy' | 'undying_fury'; hits: number } | null;
 }
 
 // ─── Dial pending rewards (queued interactive end-phase rewards) ──────────────
@@ -193,6 +208,9 @@ export interface GameState {
   // Result
   winners: Power[] | null;
   winCondition: WinCondition | null;
+
+  // Solo-mode companion options (null for non-companion games)
+  companionOptions?: CompanionOptions;
 }
 
 export type GameEvent =
@@ -420,6 +438,18 @@ export interface DialRemoveWorldTokenAction {
   tokenType: TokenType;
 }
 
+export interface CompanionWorldPickAction {
+  kind: 'companion_world_pick';
+  power: Power;
+  cardId: string; // any world card id the human drew from their physical deck
+}
+
+export interface CompanionDiceRollAction {
+  kind: 'companion_dice_roll';
+  power: Power;
+  hits: number;
+}
+
 export interface TenzenApprenticeChoiceAction {
   kind: 'tenzen_apprentice_choice';
   power: Power;          // always tenzen
@@ -445,4 +475,6 @@ export type Action =
   | DialPlaceTokenAction
   | DialRemoveCorruptionAction
   | DialRemoveWorldTokenAction
-  | BattleHitAssignmentAction;
+  | BattleHitAssignmentAction
+  | CompanionWorldPickAction
+  | CompanionDiceRollAction;

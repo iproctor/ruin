@@ -8,7 +8,7 @@ import type {
   RegionId,
   FollowerInstance,
 } from '@ruin/engine';
-import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions, followersInRegion, effectiveDefense } from '@ruin/engine';
+import { CARD_BY_ID, FOLLOWERS, UPGRADES, WORLD_CARDS, WORLD_CARD_BY_ID, UPGRADE_BY_ID, getWorldChoiceRegions, followersInRegion, effectiveDefense } from '@ruin/engine';
 
 const REGION_LABELS: Record<RegionId, string> = {
   norrsund:    'Norrsund',
@@ -72,6 +72,7 @@ export default function ActionPanel({
       {pending.actionKind === 'tenzen_discard' && (
         <TenzenDiscardPanel
           hand={myState?.hand ?? []}
+          freePlay={!!state.companionOptions?.humanPlaysFree && myState?.playerType === 'human'}
           onAction={onAction}
         />
       )}
@@ -140,6 +141,7 @@ export default function ActionPanel({
         <ForcedDiscardPanel
           hand={myState?.hand ?? []}
           count={(pending.context['count'] as number | undefined) ?? 1}
+          freePlay={!!state.companionOptions?.humanPlaysFree && myState?.playerType === 'human'}
           onAction={onAction}
           myPower={myPower}
         />
@@ -171,6 +173,21 @@ export default function ActionPanel({
           context={pending.context}
           onAction={onAction}
           onActions={onActions}
+        />
+      )}
+
+      {pending.actionKind === 'companion_world_pick' && (
+        <CompanionWorldPickPanel
+          myPower={myPower}
+          onAction={onAction}
+        />
+      )}
+
+      {pending.actionKind === 'companion_dice_roll' && (
+        <CompanionDiceRollPanel
+          myPower={myPower}
+          context={pending.context}
+          onAction={onAction}
         />
       )}
 
@@ -357,9 +374,11 @@ function RegionPicker({
 
 function TenzenDiscardPanel({
   hand,
+  freePlay,
   onAction,
 }: {
   hand: string[];
+  freePlay: boolean;
   onAction: (action: Action) => void;
 }) {
   const visibleCards = hand.filter((c) => c !== '?');
@@ -367,7 +386,9 @@ function TenzenDiscardPanel({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
-        Choose a card to discard, or keep all:
+        {freePlay
+          ? 'Discard one card from your physical hand, or keep all:'
+          : 'Choose a card to discard, or keep all:'}
       </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
         {unique.map((cardId) => {
@@ -385,6 +406,17 @@ function TenzenDiscardPanel({
             </button>
           );
         })}
+        {freePlay && unique.length === 0 && (
+          <button
+            className="primary"
+            onClick={() =>
+              onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId: '?' })
+            }
+            style={{ fontSize: '0.8rem' }}
+          >
+            Discard one
+          </button>
+        )}
         <button
           className="secondary"
           onClick={() => onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId: null })}
@@ -1096,14 +1128,35 @@ function EnthrallmentPanel({
 function ForcedDiscardPanel({
   hand,
   count,
+  freePlay,
   onAction,
   myPower,
 }: {
   hand: string[];
   count: number;
+  freePlay: boolean;
   onAction: (action: Action) => void;
   myPower: Power;
 }) {
+  if (freePlay) {
+    // Hand is masked — the physical player picks the cards themselves.
+    // Submit the right count of '?' slots; the engine falls back to removing
+    // '?' entries and storing them in the discard pile.
+    const cardIds = Array(Math.min(count, hand.length)).fill('?');
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.8rem', color: ERROR }}>
+          Meddling of Rats — discard {cardIds.length} card{cardIds.length !== 1 ? 's' : ''} from your physical hand.
+        </div>
+        <button
+          className="danger"
+          onClick={() => onAction({ kind: 'forced_discard', power: myPower, cardIds })}
+        >
+          Discard {cardIds.length}
+        </button>
+      </div>
+    );
+  }
   // Track by index to handle duplicate card IDs correctly
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   // Show in the same order as the hand tableau: cost asc, then name asc.
@@ -1661,6 +1714,146 @@ function DialRemoveWorldTokenPanel({
           Confirm ({selected.length}/{remaining})
         </button>
       )}
+    </div>
+  );
+}
+
+// ── Companion: pick the next World card from the physical deck ────────────────
+
+function CompanionWorldPickPanel({
+  myPower,
+  onAction,
+}: {
+  myPower: Power;
+  onAction: (action: Action) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const options = WORLD_CARDS
+    .map((c) => ({ id: c.id, name: c.name }))
+    .filter((c) => !filter || c.name.toLowerCase().includes(filter.toLowerCase()))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
+        Reveal the next World card from your physical deck:
+      </div>
+      <input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder="Filter by name…"
+        style={{
+          padding: '0.35rem 0.5rem',
+          background: CARD_FACE,
+          border: `1px solid ${CARD_EDGE}`,
+          borderRadius: 3,
+          color: PAPER,
+          fontFamily: 'inherit',
+          fontSize: '0.8rem',
+        }}
+      />
+      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', maxHeight: 260, overflowY: 'auto' }}>
+        {options.map((opt) => (
+          <button
+            key={opt.id}
+            className={selected === opt.id ? 'primary' : 'secondary'}
+            onClick={() => setSelected(opt.id)}
+            style={{ fontSize: '0.78rem', padding: '0.3rem 0.55rem' }}
+          >
+            {opt.name}
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <button
+          className="primary"
+          onClick={() => {
+            onAction({ kind: 'companion_world_pick', power: myPower, cardId: selected });
+            setSelected(null);
+            setFilter('');
+          }}
+        >
+          Reveal: {WORLD_CARD_BY_ID[selected]?.name ?? selected}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Companion: human rolls physical dice and reports hits ────────────────────
+
+function CompanionDiceRollPanel({
+  myPower,
+  context,
+  onAction,
+}: {
+  myPower: Power;
+  context: Record<string, unknown>;
+  onAction: (action: Action) => void;
+}) {
+  const diceCount = (context['diceCount'] as number | undefined) ?? 0;
+  const regionId = (context['regionId'] as RegionId | undefined);
+  const kind = (context['kind'] as string | undefined) ?? 'normal';
+  const maxHits = Math.max(diceCount, 12); // allow room for explosions
+  const [hits, setHits] = useState<number>(0);
+
+  const label =
+    kind === 'war_frenzy' ? 'War Frenzy' :
+    kind === 'undying_fury' ? 'Undying Fury' :
+    'Attack';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
+        {regionId ? `${REGION_LABELS[regionId]} — ` : ''}{label}: roll <strong style={{ color: HIGHLIGHT }}>{diceCount}</strong>{' '}
+        die{diceCount === 1 ? '' : 'ce'} on the physical board (6s explode).
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ fontSize: '0.8rem', color: BRASS_HOT }}>Hits:</span>
+        <button
+          className="secondary"
+          style={{ fontSize: '0.9rem', padding: '0.25rem 0.6rem' }}
+          disabled={hits === 0}
+          onClick={() => setHits((h) => Math.max(0, h - 1))}
+        >−</button>
+        <input
+          type="number"
+          value={hits}
+          min={0}
+          max={maxHits}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            setHits(Number.isFinite(v) && v >= 0 ? v : 0);
+          }}
+          style={{
+            width: 64,
+            textAlign: 'center',
+            padding: '0.3rem',
+            background: CARD_FACE,
+            border: `1px solid ${CARD_EDGE}`,
+            borderRadius: 3,
+            color: PAPER,
+            fontFamily: 'inherit',
+            fontSize: '0.9rem',
+          }}
+        />
+        <button
+          className="secondary"
+          style={{ fontSize: '0.9rem', padding: '0.25rem 0.6rem' }}
+          onClick={() => setHits((h) => h + 1)}
+        >+</button>
+      </div>
+      <button
+        className="primary"
+        onClick={() => {
+          onAction({ kind: 'companion_dice_roll', power: myPower, hits });
+          setHits(0);
+        }}
+      >
+        Report {hits} hit{hits === 1 ? '' : 's'}
+      </button>
     </div>
   );
 }
