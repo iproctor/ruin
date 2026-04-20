@@ -240,7 +240,13 @@ export function runMcts(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = options?.rolloutDepth ?? rolloutDepthForRound(state.round);
+  // Tenzen: drop the rollout min-depth floor. Rollouts still run but can
+  // exit at the first round change or terminal state — no guaranteed N plies.
+  // Preserves grounded end-of-round evaluation; lets rollouts abort sooner
+  // in short rounds, which means more MCTS iterations.
+  const rolloutDepth = options?.rolloutDepth ?? (
+    forPower === 'tenzen' ? 0 : rolloutDepthForRound(state.round)
+  );
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
@@ -326,7 +332,7 @@ export function runMctsWithStats(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  const rolloutDepth = rolloutDepthForRound(state.round);
+  const rolloutDepth = forPower === 'tenzen' ? 0 : rolloutDepthForRound(state.round);
   const deadline = Date.now() + maxTimeMs;
   let iteration = 0;
 
@@ -509,12 +515,6 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
 const HARD_ROLLOUT_CAP = 120;
 
 function rollout(state: GameState, forPower: Power, seed: number, minDepth: number): number {
-  // Pure value-head mode: no simulation, evaluate the leaf state directly.
-  // Matches the AlphaZero-style "value head is the rollout" convention.
-  if (minDepth <= 0) {
-    return evaluateState(state, forPower);
-  }
-
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;
