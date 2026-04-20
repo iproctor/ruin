@@ -1,0 +1,35 @@
+{
+  "capacity": 5,
+  "members": [
+    {
+      "iter": 1285,
+      "freq": 0.161,
+      "file": "model_tenzen_hof_1285.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1249,
+      "freq": 0.16,
+      "file": "model_tenzen_hof_1249.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1242,
+      "freq": 0.158,
+      "file": "model_tenzen_hof_1242.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1279,
+      "freq": 0.155,
+      "file": "model_tenzen_hof_1279.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1248,
+      "freq": 0.155,
+      "file": "model_tenzen_hof_1248.json",
+      "power": "tenzen"
+    }
+  ]
+}
