@@ -119,17 +119,18 @@ export function applyPlayCard(
   const cardDef = CARD_BY_ID[cardId];
   if (!cardDef) throw new Error(`Unknown card ${cardId}`);
 
-  if (!p.hand.includes(cardId)) throw new Error(`Card ${cardId} not in hand`);
+  // Free-play humans have a masked hand ('?' entries). They pick any card;
+  // the '?' slot is consumed when the play_card event is applied.
+  const freePlay = s.companionOptions?.humanPlaysFree && p.playerType === 'human';
+  if (!p.hand.includes(cardId) && !(freePlay && p.hand.includes('?'))) {
+    throw new Error(`Card ${cardId} not in hand`);
+  }
   if (cardSlotsAvailable(s, toRegion) === 0) throw new Error(`No card slots in ${toRegion}`);
   if (s.regions[toRegion]!.chaosCards[slotIndex] !== null) throw new Error(`Slot ${slotIndex} occupied`);
   if (isRuined(s.regions[toRegion]!)) throw new Error(`Cannot play cards to ruined region`);
 
   const cost = getCardCost(s, power, cardId, toRegion);
   if (p.powerPoints < cost) throw new Error(`Not enough power points`);
-
-  // Remove one copy from hand (validation only — actual mutation via play_card event)
-  const handIdx = p.hand.indexOf(cardId);
-  if (handIdx === -1) throw new Error(`Card ${cardId} not in ${power}'s hand`);
 
   // Apply play_card event (removes from hand, places on board, deducts PP)
   s = log.apply(s, { type: 'play_card', power, cardId, cardName: cardDef.name, toRegion, slotIndex, cost });
@@ -484,7 +485,11 @@ export function applyCardOnPlayChoice(
       const required = Math.min(2, targetPs.hand.length);
       log.emit({ type: 'card_effect', subtype: 'meddling_of_rats', targetPower });
 
-      if (required > 0 && targetPs.hand.length > required) {
+      // Free-play humans have a masked hand — the physical player picks which
+      // cards to discard off-board. Auto-drop the right count of '?' slots.
+      const targetFreePlay = !!s.companionOptions?.humanPlaysFree && targetPs.playerType === 'human';
+
+      if (!targetFreePlay && required > 0 && targetPs.hand.length > required) {
         // Target must choose which cards to discard
         s = {
           ...s,
@@ -497,7 +502,7 @@ export function applyCardOnPlayChoice(
         log.emit({ type: 'awaiting_action', power: targetPower, actionKind: 'forced_discard', context: { count: required, returnTo: power }, description: `${targetPower} must discard ${required} card(s).` });
         return { state: s, log };
       } else if (required > 0) {
-        // Auto-discard (hand <= required)
+        // Auto-discard: first N entries from the masked or real hand.
         const toDiscard = targetPs.hand.slice(0, required);
         s = log.apply(s, { type: 'forced_discard', power: targetPower, count: toDiscard.length, cardIds: toDiscard });
       }

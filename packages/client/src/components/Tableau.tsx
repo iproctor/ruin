@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import type { GameState, Power, Action, FollowerClass } from '@ruin/engine';
-import { CARD_BY_ID, REGIONS, FOLLOWERS } from '@ruin/engine';
+import { CARD_BY_ID, CHAOS_CARDS, REGIONS, FOLLOWERS } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, shortCardName } from '../lib/display.js';
 import { INK, SOOT, PARCHMENT, PARCHMENT_HI, BORDER, BORDER_HI, PAPER, PAPER_DIM, BRASS, BRASS_HOT, CARD_FACE, CARD_FACE_HI, CARD_EDGE, CARD_INK, MAGIC, PENDING, ERROR, POWER_DIM } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
@@ -348,7 +348,14 @@ export default function Tableau({
   const colorDim = POWER_DIM[myPower];
   // Use displayState for live preview (PP spend, hand changes)
   const displayPs = displayState?.powers[myPower] ?? ps;
-  const hand = [...displayPs.hand.filter((c) => c !== '?')].sort((a, b) => {
+  // Free-play humans have a masked hand in the engine. Show the power's
+  // full roster in the tableau so they can drag/click any of their card
+  // types; the physical hand lives off-screen.
+  const freePlay = !!state.companionOptions?.humanPlaysFree && displayPs.playerType === 'human';
+  const rawHand = freePlay
+    ? CHAOS_CARDS.filter((c) => c.power === myPower).map((c) => c.id)
+    : displayPs.hand.filter((c) => c !== '?');
+  const hand = [...rawHand].sort((a, b) => {
     const ca = CARD_BY_ID[a];
     const cb = CARD_BY_ID[b];
     const costA = ca?.cost ?? 0;
@@ -422,7 +429,7 @@ export default function Tableau({
         <div className="flex flex-col gap-0.5 text-[11px]">
           <span className="text-slate-300">
             <span className="text-slate-500">Hand </span>
-            <span className="font-bold" style={{ color }}>{hand.length}</span>
+            <span className="font-bold" style={{ color }}>{displayPs.hand.length}</span>
           </span>
           <span className="text-slate-300">
             <span className="text-slate-500">Deck </span>
@@ -440,7 +447,8 @@ export default function Tableau({
       {/* Hand */}
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="text-[10px] text-slate-500 uppercase tracking-wide">
-          Hand {hand.length === 0 && <span className="normal-case text-slate-600">— empty</span>}
+          {freePlay ? 'Your Cards' : 'Hand'}
+          {!freePlay && hand.length === 0 && <span className="normal-case text-slate-600"> — empty</span>}
           {isSummoningTurn && hand.length > 0 && (
             <span className="normal-case text-slate-600 ml-1">— drag to play</span>
           )}

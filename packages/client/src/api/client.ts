@@ -74,9 +74,16 @@ export async function login(
 
 // ── Games ───────────────────────────────────────────────────────────────────
 
+export interface CompanionOptionsBody {
+  humanChoosesCard?: boolean;
+  humanPlaysFree?: boolean;
+  humanRollsDice?: boolean;
+}
+
 export interface CreateGameBody {
   powers: string[];
   playerTypes: Record<string, string>;
+  companionOptions?: CompanionOptionsBody;
 }
 
 export async function createGame(body: CreateGameBody): Promise<{ gameId: string }> {

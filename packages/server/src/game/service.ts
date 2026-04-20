@@ -2,7 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { eq, and, asc, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { createInitialState, applyAction, applyActionForPreview, autoAdvance, getLegalActions, enumerateBattleHitStrategies, GameLog, maskEvents } from '@ruin/engine';
-import type { GameState, Power, Action, PlayerType, GameEvent } from '@ruin/engine';
+import type { GameState, Power, Action, PlayerType, GameEvent, CompanionOptions } from '@ruin/engine';
 import { greedyAction } from '@ruin/ai';
 import { db } from '../db/client.js';
 import { games, gamePlayers, chatMessages, gameEvents, lobbyPlayers, invitations, users } from '../db/schema.js';
@@ -260,11 +260,12 @@ export async function createGame(
   powers: Power[],
   playerTypes: Record<Power, PlayerType>,
   playerUserIds: Partial<Record<Power, string>>,
+  companionOptions?: CompanionOptions,
 ): Promise<string> {
   const gameId = uuidv4();
   const seed = Math.floor(Math.random() * 2 ** 31);
 
-  const initialState = createInitialState({ gameId, activePowers: powers, playerTypes, seed });
+  const initialState = createInitialState({ gameId, activePowers: powers, playerTypes, seed, ...(companionOptions ? { companionOptions } : {}) });
   const { state, log } = autoAdvance({ state: initialState, log: new GameLog() });
 
   await db.insert(games).values({

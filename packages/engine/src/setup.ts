@@ -1,4 +1,4 @@
-import type { GameState, Power, RegionId, RegionState, PowerState, TokenType, FollowerInstance } from './types.js';
+import type { GameState, Power, RegionId, RegionState, PowerState, TokenType, FollowerInstance, CompanionOptions } from './types.js';
 import {
   REGIONS, REGION_ORDER, POWER_ORDER, FOLLOWERS, BASE_POWER_POINTS,
   CHAOS_CARDS, UPGRADES, THREAT_DIALS, INITIAL_TOKEN_SUPPLY, STARTING_TOKEN_POOL,
@@ -11,10 +11,11 @@ export interface GameConfig {
   activePowers: Power[];
   playerTypes: Record<Power, 'human' | 'ai' | 'guest'>;
   seed: number;
+  companionOptions?: CompanionOptions;
 }
 
 export function createInitialState(config: GameConfig): GameState {
-  const { gameId, activePowers, playerTypes, seed } = config;
+  const { gameId, activePowers, playerTypes, seed, companionOptions } = config;
   const rng = makeRng(seed);
 
   // ── World deck ─────────────────────────────────────────────────────────────
@@ -72,7 +73,14 @@ export function createInitialState(config: GameConfig): GameState {
       for (let i = 0; i < card.count; i++) deckIds.push(card.id);
     }
     shuffle(deckIds, rng);
-    const hand = deckIds.splice(0, STARTING_HAND_SIZE);
+    let hand = deckIds.splice(0, STARTING_HAND_SIZE);
+
+    // Free-play humans have their hand and remaining deck masked in the engine
+    // — the human reads the real cards from their physical stack.
+    if (companionOptions?.humanPlaysFree && playerTypes[power] === 'human') {
+      hand = hand.map(() => '?');
+      for (let i = 0; i < deckIds.length; i++) deckIds[i] = '?';
+    }
 
     const availableUpgradeIds = UPGRADES.filter(u => u.power === power).map(u => u.id);
     const basePP = BASE_POWER_POINTS[power]!;
@@ -122,5 +130,6 @@ export function createInitialState(config: GameConfig): GameState {
     events: [],
     winners: null,
     winCondition: null,
+    ...(companionOptions ? { companionOptions } : {}),
   };
 }

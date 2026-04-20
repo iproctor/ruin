@@ -11,6 +11,7 @@ export type {
   BattleHitAssignmentAction,
   DialPendingReward,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
+  CompanionOptions, CompanionWorldPickAction, CompanionDiceRollAction,
   GameEvent,
 } from './types.js';
 

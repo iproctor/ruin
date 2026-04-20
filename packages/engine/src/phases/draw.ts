@@ -39,10 +39,19 @@ export function applyTenzenDiscard(state: GameState, action: TenzenDiscardAction
 
   if (action.cardId !== null) {
     const tenzen = s.powers['tenzen']!;
-    const idx = tenzen.hand.indexOf(action.cardId);
-    if (idx === -1) throw new Error(`Card ${action.cardId} not in Tenzen's hand`);
+    const freePlay = s.companionOptions?.humanPlaysFree && tenzen.playerType === 'human';
+    const inHand = tenzen.hand.indexOf(action.cardId) !== -1;
+    const hasMask = tenzen.hand.indexOf('?') !== -1;
+    if (!inHand && !(freePlay && hasMask)) {
+      throw new Error(`Card ${action.cardId} not in Tenzen's hand`);
+    }
   }
-  s = log.apply(s, { type: 'tenzen_discard', cardId: action.cardId });
+  // Free-play Tenzen: strip the cardId from the log so it doesn't reveal
+  // which physical card was discarded.
+  const tenzen = s.powers['tenzen']!;
+  const maskDiscard = !!s.companionOptions?.humanPlaysFree && tenzen.playerType === 'human' && action.cardId !== null;
+  const loggedCardId = maskDiscard ? '?' : action.cardId;
+  s = log.apply(s, { type: 'tenzen_discard', cardId: loggedCardId });
 
   return resolveAllDraws(s, log);
 }
@@ -119,26 +128,26 @@ function drawForPower(state: GameState, power: Power): { state: GameState; event
     drawAmount += getExtraDraw(s, power);
   }
 
+  const freePlay = !!s.companionOptions?.humanPlaysFree && p.playerType === 'human';
   let { hand, deckIds, discardIds } = p;
   const drawn: string[] = [];
 
   for (let i = 0; i < drawAmount; i++) {
     if (deckIds.length === 0) {
-      // Reshuffle discard
-      deckIds = shuffle([...discardIds], makeLocalRng(state));
+      // Reshuffle discard. For free-play humans, mask the reshuffled ids so
+      // the engine never holds their "known next cards" — the physical deck
+      // and hand stay private.
+      const reshuffled = shuffle([...discardIds], makeLocalRng(state));
+      deckIds = freePlay ? reshuffled.map(() => '?') : reshuffled;
       discardIds = [];
     }
     if (deckIds.length === 0) break;
-    // Use slice (non-mutating) instead of shift() so shallow-copied state
-    // objects (used during MCTS/greedyAction look-ahead) don't lose cards.
-    drawn.push(deckIds[0]!);
+    drawn.push(freePlay ? '?' : deckIds[0]!);
     deckIds = deckIds.slice(1);
   }
 
   hand = [...hand, ...drawn];
   s = updatePower(s, power, { hand, deckIds, discardIds });
-  // PP fields are placeholders — filled in by resolveAllDraws after the PP reset
-  // PP and deck/discard are placeholders — filled in by resolveAllDraws after the PP reset
   return { state: s, event: { type: 'power_draw' as const, power, drawn: drawn.length, handSize: hand.length, powerPoints: 0, basePowerPoints: 0, drawnCardIds: drawn, deckIds: [], discardIds: [] } };
 }
 

@@ -37,13 +37,47 @@ function defaultConfig(): Record<Power, PowerSetting> {
   return { xarm: 'human', gormen: 'ai', tenzen: 'ai', lasha: 'ai' };
 }
 
+interface CompanionState {
+  humanChoosesCard: boolean;
+  humanPlaysFree:   boolean;
+  humanRollsDice:   boolean;
+}
+
+const COMPANION_OPTIONS: Array<{
+  key: keyof CompanionState;
+  title: string;
+  blurb: string;
+}> = [
+  {
+    key: 'humanChoosesCard',
+    title: 'Draw the Old World yourself',
+    blurb: 'The engine waits while you reveal each World card from your physical deck.',
+  },
+  {
+    key: 'humanPlaysFree',
+    title: 'Play cards from your own hand',
+    blurb: 'Your hand is hidden from the engine. You pick any card to play; the log never shows what you drew or discarded.',
+  },
+  {
+    key: 'humanRollsDice',
+    title: 'Roll your own dice',
+    blurb: 'The engine asks how many hits you rolled instead of rolling for you.',
+  },
+];
+
 export default function NewGamePage() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState<Record<Power, PowerSetting>>(defaultConfig);
+  const [companion, setCompanion] = useState<CompanionState>({
+    humanChoosesCard: false,
+    humanPlaysFree: false,
+    humanRollsDice: false,
+  });
 
   const activePowers = ALL_POWERS.filter((p) => config[p] !== 'none');
+  const hasHuman = activePowers.some((p) => config[p] === 'human');
 
   function cycleSetting(power: Power) {
     setConfig((prev) => {
@@ -51,6 +85,10 @@ export default function NewGamePage() {
       const next = SETTING_ORDER[(SETTING_ORDER.indexOf(cur) + 1) % SETTING_ORDER.length]!;
       return { ...prev, [power]: next };
     });
+  }
+
+  function toggleCompanion(key: keyof CompanionState) {
+    setCompanion((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -62,12 +100,16 @@ export default function NewGamePage() {
     }
     const playerTypes: Record<string, string> = {};
     for (const p of activePowers) playerTypes[p] = config[p];
+    const companionOptions = hasHuman && (companion.humanChoosesCard || companion.humanPlaysFree || companion.humanRollsDice)
+      ? companion
+      : undefined;
     setLoading(true);
     try {
       const res = await createGame({
         mode: 'singleplayer',
         powers: activePowers,
         playerTypes,
+        ...(companionOptions ? { companionOptions } : {}),
       } as Parameters<typeof createGame>[0]);
       navigate(`/games/${res.gameId}`);
     } catch (err) {
@@ -116,6 +158,28 @@ export default function NewGamePage() {
         <p className="newgame-hint">
           Click a power to cycle <em>Human → AI → Off</em>. At least two must answer.
         </p>
+
+        <fieldset className="newgame-companion" disabled={!hasHuman}>
+          <legend className="newgame-companion-legend">Physical Board Companion</legend>
+          <p className="newgame-companion-hint">
+            For solo play alongside a physical copy. Each option is independent.
+          </p>
+          {COMPANION_OPTIONS.map(({ key, title, blurb }) => {
+            const on = companion[key];
+            return (
+              <label key={key} className={`newgame-companion-row ${on ? 'is-on' : ''}`}>
+                <input
+                  type="checkbox"
+                  className="newgame-companion-check"
+                  checked={on}
+                  onChange={() => toggleCompanion(key)}
+                />
+                <span className="newgame-companion-title">{title}</span>
+                <span className="newgame-companion-blurb">{blurb}</span>
+              </label>
+            );
+          })}
+        </fieldset>
 
         <div className="newgame-footer">
           {error && <p className="newgame-error">{error}</p>}

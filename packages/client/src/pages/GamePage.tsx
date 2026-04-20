@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import type { Power, Action, RegionId, FollowerClass, GameState, GameEvent } from '@ruin/engine';
 import type { DragItem } from '../types/drag.js';
-import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID, REGIONS } from '@ruin/engine';
+import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID, CHAOS_CARDS, REGIONS } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
@@ -233,7 +233,25 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
     if (!activeDrag || !displayState || !myPowerEarly) return null;
 
     if (activeDrag.kind === 'hand_card') {
-      const legal = getLegalActions(displayState, myPowerEarly);
+      // Free-play humans have a masked hand ('?' entries). Substitute the
+      // power's full roster so getLegalActions can enumerate plays for the
+      // dragged cardId; the server accepts '?' as a fallback when applying.
+      const me = displayState.powers[myPowerEarly];
+      const freePlay = !!displayState.companionOptions?.humanPlaysFree
+        && me?.playerType === 'human';
+      const enumerationState = freePlay && me
+        ? {
+            ...displayState,
+            powers: {
+              ...displayState.powers,
+              [myPowerEarly]: {
+                ...me,
+                hand: CHAOS_CARDS.filter((c) => c.power === myPowerEarly).map((c) => c.id),
+              },
+            },
+          }
+        : displayState;
+      const legal = getLegalActions(enumerationState, myPowerEarly);
       return new Set(
         legal
           .filter(a => a.kind === 'summoning_play_card' && a.cardId === activeDrag.cardId)
@@ -287,7 +305,29 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
   const legalPlayCardActions = useMemo(() => {
     if (!displayState || !myPowerEarly) return [];
     if (displayState.pendingAction?.actionKind !== 'summoning_action') return [];
-    return getLegalActions(displayState, myPowerEarly)
+
+    // Free-play humans have a masked hand ('?' entries) in the engine but
+    // physically hold a real hand. Pretend the engine sees one of every
+    // card in their power's deck so slot-click offers the full roster; the
+    // server's play validation accepts the '?' fallback when the chosen
+    // card isn't literally in the masked hand.
+    const me = displayState.powers[myPowerEarly];
+    const freePlay = !!displayState.companionOptions?.humanPlaysFree
+      && me?.playerType === 'human';
+    const enumerationState = freePlay && me
+      ? {
+          ...displayState,
+          powers: {
+            ...displayState.powers,
+            [myPowerEarly]: {
+              ...me,
+              hand: CHAOS_CARDS.filter((c) => c.power === myPowerEarly).map((c) => c.id),
+            },
+          },
+        }
+      : displayState;
+
+    return getLegalActions(enumerationState, myPowerEarly)
       .filter((a) => a.kind === 'summoning_play_card') as Array<
         Extract<Action, { kind: 'summoning_play_card' }>
       >;
