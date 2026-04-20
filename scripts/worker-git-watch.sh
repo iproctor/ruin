@@ -23,7 +23,7 @@ LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
-TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
+TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
 HOF_MIX=0
 export HOF_MIX
