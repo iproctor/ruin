@@ -165,7 +165,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
       </span>
       <div className="gsb-pow-stats">
         <span>{ps.powerPoints}<em>pp</em></span>
-        <span>{ps.hand.filter(c => c !== '?').length}<em>cards</em></span>
+        <span>{ps.hand.length}<em>cards</em></span>
       </div>
       <span className="gsb-pow-meta">{ps.threatValue} · {ticksLeft} ticks</span>
 

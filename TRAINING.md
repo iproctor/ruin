@@ -167,3 +167,63 @@ Tenzen
       Bench (48 games, ±13% CI) is context only.
     - benchmark + benchmark-parallel now support --rollout-depth-power
       for per-power rollout depth isolation.
+
+  Apr 19         Hall of Fame league for focus power
+    Added packages/ai/data/hof/ — up to 5 top-class-freq snapshots of
+    the focus power, plus manifest.json tracking (iter, freq, file,
+    power). Per self-play game in collection, with probability HOF_MIX
+    (default 0.10) the focus power's model is swapped for a random HOF
+    snapshot. Training data always contains some games where Tenzen is
+    demonstrably executing its strategy — prevents policy-collapse
+    spirals we saw when shift ramped to 1.0.
+
+    Coordinator auto-promotes after each iter: reads the most recent
+    class freq from the log, compares to worst HOF member, and if the
+    iter beats it, copies the snapshot into hof/ and evicts the worst.
+    Critical detail: promotion uses snapshot ITER-1 (the DATA
+    GENERATOR), not the trainee — class freq reflects what model
+    played, not what just trained.
+
+    Worker scripts rsync hof/ from coordinator each batch. push-hetzner
+    excludes hof/ so laptop pushes never clobber coordinator's HOF.
+
+    Seeded initial HOF with the top 5 data-generator iters from the
+    training log: 1285, 1303, 1279, 1284, 1278 (all ≥ 0.152).
+
+  Apr 19         Dirichlet noise weight 0.25 → 0.35
+    Tenzen plateaued at ~0.12 post-rollback. Bumped Dirichlet blend
+    weight. More exploration of non-top-prior actions at root, still
+    filtered by MCTS Q downstream. No other changes.
+
+  Apr 19         BIG rollback: model_tenzen.json → iter 1242
+    After trying several fixes that didn't move the ~0.12 floor (AZ,
+    HOF, Dirichlet 0.35), user called a full rollback to iter 1242 —
+    well before shift-ramp, pre-autoplay-removal. Copied iter_1242
+    weights over both model_tenzen.json (warm-start source) and
+    model_tenzen_best.json on local + coordinator. All training since
+    1242 is discarded.
+
+  Apr 19         Training branch split
+    Moved training-tweak commits off master. New workflow:
+      - master: infrastructure (scripts, engine, client, core AI code)
+      - training: training-parameter tweaks, rollout/select experiments
+    worker-git-watch.sh now reads BRANCH env var (default "training"),
+    so workers track origin/training. Final master commit was the
+    worker-git-watch branch-configurability change itself. After that
+    landed + workers re-exec'd, created origin/training from master
+    HEAD and moved the Tenzen rollout=0 change there.
+
+  Apr 19         Tenzen rollout=0 when policy-head-covered
+    In search.ts runMcts/runMctsWithStats, rolloutDepth now defaults to
+    0 when (a) viewpoint is Tenzen AND (b) the root uses PUCT (= policy
+    head covers this action kind, i.e. summoning actions). Non-policy
+    sub-actions (card_on_play_choice, battle_hit_assignment, dial_*,
+    hero_removal, etc.) keep rollouts — their value-head leaves need
+    round-end grounding the policy head can't provide.
+
+    Theory: for summoning decisions, PUCT + policy priors guide search
+    well enough that biased-random rollouts add noise without adding
+    signal. ~4x more MCTS iterations per move. For card_on_play_choice
+    the search is UCB1 with no priors, so the rollout still matters.
+
+    Lives on the training branch.
