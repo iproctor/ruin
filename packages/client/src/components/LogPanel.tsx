@@ -252,7 +252,7 @@ function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): R
     case 'call_to_war':
       return <><Card cardId="xarm_call_to_war" power={event.power} /><T>:</T> <Fig power={event.power} cls="warrior" /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>;
     case 'teleport':
-      return <><Card cardId="tenzen_teleport" power={event.power} /><T>:</T> <Fig power={event.power} cls={event.followerClass} /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>;
+      return <><Card cardId="tenzen_teleport" power="tenzen" /><T>:</T> <Fig power={event.targetPower} cls={event.followerClass} /> <Rg id={event.fromRegion} /> <T>→</T> <Rg id={event.toRegion} /></>;
     case 'meddling_of_rats':
       return <><Card cardId="tenzen_the_meddling_of_rats" power="tenzen" /><T>:</T> <Pw power={event.targetPower} /> <T>must discard 2 cards</T></>;
     case 'fate_shield': {

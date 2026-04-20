@@ -242,7 +242,7 @@ export type GameEvent =
   | { type: 'card_effect'; subtype: 'plaguefather_corruption'; power: Power; regionId: RegionId; tokens: number }
   | { type: 'card_effect'; subtype: 'fractals_summon'; regionId: RegionId; followerName: string; followerId: string }
   | { type: 'card_effect'; subtype: 'call_to_war'; power: Power; followerId: string; fromRegion: RegionId; toRegion: RegionId }
-  | { type: 'card_effect'; subtype: 'teleport'; power: Power; followerId: string; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
+  | { type: 'card_effect'; subtype: 'teleport'; power: Power; targetPower: Power; followerId: string; followerClass: FollowerClass; fromRegion: RegionId; toRegion: RegionId }
   | { type: 'card_effect'; subtype: 'meddling_of_rats'; targetPower: Power }
   | { type: 'card_effect'; subtype: 'fate_shield'; followerId: string }
   | { type: 'card_effect'; subtype: 'hidden_influence'; tokenType: TokenType; fromRegion: RegionId; toRegion: RegionId }

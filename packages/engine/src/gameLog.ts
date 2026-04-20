@@ -217,7 +217,7 @@ function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): s
     case 'call_to_war':
       return `${CARD_BY_ID['xarm_call_to_war']!.name}: ${P(event.power)} moves a figure from ${R(event.fromRegion)} to ${R(event.toRegion)}.`;
     case 'teleport':
-      return `${CARD_BY_ID['tenzen_teleport']!.name}: ${P(event.power)} ${F(event.power, event.followerClass)} moved from ${R(event.fromRegion)} to ${R(event.toRegion)}.`;
+      return `${CARD_BY_ID['tenzen_teleport']!.name}: ${P(event.targetPower)} ${F(event.targetPower, event.followerClass)} moved from ${R(event.fromRegion)} to ${R(event.toRegion)}.`;
     case 'meddling_of_rats':
       return `${CARD_BY_ID['tenzen_the_meddling_of_rats']!.name}: ${P(event.targetPower)} must discard 2 cards.`;
     case 'fate_shield':

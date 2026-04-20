@@ -462,7 +462,7 @@ export function applyCardOnPlayChoice(
       const carry = choices['carry'] as boolean | undefined;
       const figure = followersInRegion(s, regionId).find(f => f.id === followerId);
       if (figure && (figure.class === 'cultist' || figure.class === 'warrior') && toRegion !== regionId) {
-        s = log.apply(s, { type: 'card_effect', subtype: 'teleport', power, followerId, followerClass: figure.class, fromRegion: regionId, toRegion });
+        s = log.apply(s, { type: 'card_effect', subtype: 'teleport', power, targetPower: figure.power, followerId, followerClass: figure.class, fromRegion: regionId, toRegion });
 
         // Tenzen Apprentice upgrade: carry chaos stone when teleporting a cultist
         if (carry !== undefined && figure.power === 'tenzen' && figure.class === 'cultist' &&
