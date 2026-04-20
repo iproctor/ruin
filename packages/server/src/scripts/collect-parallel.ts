@@ -28,6 +28,9 @@ const leagueMix = getArg('--league-mix', '0.5');
 const focusPower = getArg('--focus-power', '');
 const hofMix = getArg('--hof-mix', '0');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
+const iter = getArg('--iter', '');
+const iterOpp = getArg('--iter-opp', '');
+const dirichletWeight = getArg('--dirichlet-weight', '');
 
 // Slice the seed space across workers.
 const perWorker = Math.ceil(gameCount / workerCount);
@@ -67,6 +70,9 @@ const processes = slices.map((s, w) =>
       '--league-mix', leagueMix,
       ...(focusPower ? ['--focus-power', focusPower] : []),
       '--hof-mix', hofMix,
+      ...(iter ? ['--iter', iter] : []),
+      ...(iterOpp ? ['--iter-opp', iterOpp] : []),
+      ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 

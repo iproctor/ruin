@@ -46,7 +46,7 @@ TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
 # snapshot from packages/ai/data/hof/ instead of the live focus model.
 # Guards against training-data collapse by guaranteeing some games show the
 # focus power executing its proper strategy.
-HOF_MIX=${HOF_MIX:-0.1}
+HOF_MIX=0
 export TENZEN_CUTOFF_SHIFT
 # Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
 # ≈ 600 games ≈ ~60k samples per train cycle.

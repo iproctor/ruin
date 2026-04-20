@@ -52,6 +52,14 @@ const mctsOpponentIterations = parseInt(getArg('--iter-opp', '1000'), 10);
 // Time cap is now a safety net only (long-running games shouldn't hang
 // indefinitely). Deliberately set well above what 10k iters normally takes.
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
+// Dirichlet noise on root priors. Weight 0 disables (useful for canary runs
+// to isolate whether noise is blocking the iter-budget gain from showing up
+// in play quality).
+const dirichletWeight = parseFloat(getArg('--dirichlet-weight', '0.35'));
+const dirichletAlpha = parseFloat(getArg('--dirichlet-alpha', '0.3'));
+const dirichletNoise = dirichletWeight > 0
+  ? { alpha: dirichletAlpha, weight: dirichletWeight }
+  : undefined;
 // epsilon-greedy exploration during data collection: with this probability,
 // pick a random legal summoning action instead of MCTS's best. Mostly superseded
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
@@ -320,7 +328,7 @@ function runGame(seed: number): GameResult {
         const stats = runMctsWithStats(state, pending.waitingFor, {
           iterations: iterBudget,
           timeMs: mctsTimeMs,
-          dirichletNoise: { alpha: 0.3, weight: 0.35 },
+          ...(dirichletNoise ? { dirichletNoise } : {}),
         });
         action = stats.action;
         // Collapse to canonical slot indices and accumulate visits per slot
@@ -352,7 +360,7 @@ function runGame(seed: number): GameResult {
           ? runMcts(state, pending.waitingFor, {
               iterations: subIterBudget,
               timeMs: mctsTimeMs,
-              dirichletNoise: { alpha: 0.3, weight: 0.35 },
+              ...(dirichletNoise ? { dirichletNoise } : {}),
             })
           : greedyAction(state, pending.waitingFor);
       }

@@ -44,7 +44,7 @@ FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
 TENZEN_CUTOFF_SHIFT=${TENZEN_CUTOFF_SHIFT:-1.0}
 export TENZEN_CUTOFF_SHIFT
-HOF_MIX=${HOF_MIX:-0.1}
+HOF_MIX=0
 export HOF_MIX
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
