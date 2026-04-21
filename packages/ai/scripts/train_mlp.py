@@ -477,6 +477,18 @@ def main() -> int:
     # picks the action that leads there, loses, and the next iter's rare-class
     # samples are the weighted noise of those losing games.
     inv_freq = np.minimum(inv_freq, args.reweight_cap)
+
+    # Focus-power mode: we ONLY care about improving the focus power's play.
+    # Amplifying gormen-win or lasha-win samples (when they happen to be rare
+    # for unrelated reasons) skews the value head away from calibration against
+    # the dominant xarm, without helping tenzen's leaf evals. Keep the focus
+    # power's reweight; reset the rest to 1.0 (neutral).
+    if args.power:
+        pi_focus = POWER_NAMES.index(args.power)
+        for i in range(4):
+            if i != pi_focus:
+                inv_freq[i] = 1.0
+
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)
     sw_val = sample_weights[:n_val]
