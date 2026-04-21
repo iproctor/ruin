@@ -32,7 +32,14 @@ def main() -> int:
     ap.add_argument('--power', required=True)
     ap.add_argument('--capacity', type=int, default=5)
     ap.add_argument('--data-dir', default='packages/ai/data')
+    ap.add_argument('--min-freq', type=float, default=0.1,
+                    help='Skip promotion entirely if the new iter freq is below this '
+                         'floor. Prevents weak iters from polluting HOF during regressions.')
     args = ap.parse_args()
+
+    if args.freq < args.min_freq:
+        print(f'[hof] iter {args.iter} freq {args.freq:.3f} < floor {args.min_freq:.3f} — skipping')
+        return 0
 
     hof_dir = os.path.join(args.data_dir, 'hof')
     os.makedirs(hof_dir, exist_ok=True)
