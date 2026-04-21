@@ -58,9 +58,16 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--val", type=float, default=0.1)
     ap.add_argument("--hidden1", type=int, default=512)
     ap.add_argument("--hidden2", type=int, default=128)
+    ap.add_argument("--policy-hidden", type=int, default=0,
+                    help="Width of optional ReLU hidden layer between trunk and final policy projection. 0 = single linear projection (legacy).")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--policy-alpha", type=float, default=1.0,
                     help="Weight on policy loss (relative to value loss).")
+    ap.add_argument("--reweight-cap", type=float, default=1.5,
+                    help="Cap on inverse-frequency sample weights. 1.0 disables reweighting (uniform). "
+                         "Large values recover full inverse-freq. Caps prevent tenzen-style rare classes "
+                         "from being upweighted so aggressively that value-head overestimates their odds "
+                         "and MCTS misguides on optimistic leaf evals.")
     ap.add_argument("--iter", type=int, default=-1,
                     help="Iteration number to embed in the model JSON.")
     ap.add_argument("--power", type=str, default="",
@@ -132,9 +139,11 @@ class DualHeadMLP:
     """
 
     def __init__(self, d: int, h1: int, h2: int, c: int, p: int,
-                 seed: int = 1, multi_policy: bool = False) -> None:
+                 seed: int = 1, multi_policy: bool = False,
+                 policy_hidden: int = 0) -> None:
         rng = np.random.default_rng(seed)
         self.multi_policy = multi_policy
+        self.policy_hidden = policy_hidden
         self.W1 = rng.normal(0, math.sqrt(2 / d),  (d,  h1)).astype(np.float32)
         self.b1 = np.zeros(h1, dtype=np.float32)
         self.W2 = rng.normal(0, math.sqrt(2 / h1), (h1, h2)).astype(np.float32)
@@ -142,19 +151,31 @@ class DualHeadMLP:
         # Value head
         self.Wv = rng.normal(0, math.sqrt(2 / h2), (h2, c)).astype(np.float32)
         self.bv = np.zeros(c, dtype=np.float32)
-        # Policy head(s)
+        # Optional policy hidden layer: a2 -> Wph -> ReLU -> Wp.
+        # Width 0 means no hidden layer (legacy: a2 -> Wp directly).
+        if policy_hidden > 0:
+            self.Wph = rng.normal(0, math.sqrt(2 / h2), (h2, policy_hidden)).astype(np.float32)
+            self.bph = np.zeros(policy_hidden, dtype=np.float32)
+            policy_in = policy_hidden
+        else:
+            self.Wph = None
+            self.bph = None
+            policy_in = h2
+        # Policy head(s) — projects policy_in -> p slots
         if multi_policy:
             for i in range(N_POWERS):
-                setattr(self, f"Wp{i}", rng.normal(0, math.sqrt(2 / h2), (h2, p)).astype(np.float32))
+                setattr(self, f"Wp{i}", rng.normal(0, math.sqrt(2 / policy_in), (policy_in, p)).astype(np.float32))
                 setattr(self, f"bp{i}", np.zeros(p, dtype=np.float32))
             self.Wp = None
             self.bp = None
         else:
-            self.Wp = rng.normal(0, math.sqrt(2 / h2), (h2, p)).astype(np.float32)
+            self.Wp = rng.normal(0, math.sqrt(2 / policy_in), (policy_in, p)).astype(np.float32)
             self.bp = np.zeros(p, dtype=np.float32)
 
         self._adam = {}
         param_names = ["W1", "b1", "W2", "b2", "Wv", "bv"]
+        if policy_hidden > 0:
+            param_names += ["Wph", "bph"]
         if multi_policy:
             for i in range(N_POWERS):
                 param_names += [f"Wp{i}", f"bp{i}"]
@@ -182,6 +203,16 @@ class DualHeadMLP:
         ezv = np.exp(zv_shift)
         v_probs = ezv / ezv.sum(axis=1, keepdims=True)
 
+        # Optional policy hidden layer: a2 -> Wph -> ReLU -> aph
+        if self.policy_hidden > 0:
+            zph = a2 @ self.Wph + self.bph
+            aph = np.maximum(zph, 0)
+            policy_in_act = aph
+        else:
+            zph = None
+            aph = None
+            policy_in_act = a2
+
         # Policy head — shared or per-power
         if self.multi_policy:
             p_probs = np.zeros((X.shape[0], getattr(self, "Wp0").shape[1]), dtype=np.float32)
@@ -189,24 +220,26 @@ class DualHeadMLP:
             for i in range(N_POWERS):
                 Wp_i = getattr(self, f"Wp{i}")
                 bp_i = getattr(self, f"bp{i}")
-                zp_i = a2 @ Wp_i + bp_i
+                zp_i = policy_in_act @ Wp_i + bp_i
                 zp_shift = zp_i - zp_i.max(axis=1, keepdims=True)
                 ezp_i = np.exp(zp_shift)
                 cache_pp[i] = ezp_i / ezp_i.sum(axis=1, keepdims=True)
             # p_probs won't be used directly in multi — cache per-power probs
             cache = {
                 "X": X, "z1": z1, "a1": a1, "z2": z2, "a2": a2,
+                "zph": zph, "aph": aph,
                 "v_probs": v_probs, "pp_probs": cache_pp,
             }
             return v_probs, p_probs, cache
         else:
-            zp = a2 @ self.Wp + self.bp
+            zp = policy_in_act @ self.Wp + self.bp
             zp_shift = zp - zp.max(axis=1, keepdims=True)
             ezp = np.exp(zp_shift)
             p_probs = ezp / ezp.sum(axis=1, keepdims=True)
 
             cache = {
                 "X": X, "z1": z1, "a1": a1, "z2": z2, "a2": a2,
+                "zph": zph, "aph": aph,
                 "v_probs": v_probs, "p_probs": p_probs,
             }
             return v_probs, p_probs, cache
@@ -230,8 +263,13 @@ class DualHeadMLP:
         if sample_weights is not None:
             grad_zv = grad_zv * sample_weights[:, None]
 
-        # Policy head(s)
-        grad_a2_policy = np.zeros_like(cache["a2"])
+        # Policy head(s). When policy_hidden > 0 the chain is:
+        #   a2 -> Wph -> aph (relu) -> Wp -> p_probs
+        # Otherwise: a2 -> Wp -> p_probs.
+        # We accumulate the gradient w.r.t. a2 (grad_a2_policy) so it can flow
+        # back into the shared trunk alongside the value-head gradient.
+        policy_in_act = cache["aph"] if self.policy_hidden > 0 else cache["a2"]
+        grad_policy_in = np.zeros_like(policy_in_act)
         grads: dict = {}
 
         if self.multi_policy and power_idx is not None:
@@ -246,18 +284,28 @@ class DualHeadMLP:
                 grad_zp_i = (pp_probs[i] - T_policy)
                 grad_zp_i[~mask_i] = 0
                 grad_zp_i = grad_zp_i * (policy_alpha / n_i)
-                grads[f"Wp{i}"] = cache["a2"].T @ grad_zp_i + l2 * Wp_i
+                grads[f"Wp{i}"] = policy_in_act.T @ grad_zp_i + l2 * Wp_i
                 grads[f"bp{i}"] = grad_zp_i.sum(axis=0)
-                grad_a2_policy += grad_zp_i @ Wp_i.T
+                grad_policy_in += grad_zp_i @ Wp_i.T
         else:
             p_probs = cache["p_probs"]
             grad_zp = (p_probs - T_policy)
             grad_zp[~policy_mask] = 0
             n_policy = max(1, int(policy_mask.sum()))
             grad_zp = grad_zp * (policy_alpha / n_policy)
-            grads["Wp"] = cache["a2"].T @ grad_zp + l2 * self.Wp
+            grads["Wp"] = policy_in_act.T @ grad_zp + l2 * self.Wp
             grads["bp"] = grad_zp.sum(axis=0)
-            grad_a2_policy = grad_zp @ self.Wp.T
+            grad_policy_in = grad_zp @ self.Wp.T
+
+        # Backprop through optional policy hidden layer.
+        if self.policy_hidden > 0:
+            # grad_policy_in is grad_aph; relu mask via zph > 0.
+            grad_zph = grad_policy_in * (cache["zph"] > 0)
+            grads["Wph"] = cache["a2"].T @ grad_zph + l2 * self.Wph
+            grads["bph"] = grad_zph.sum(axis=0)
+            grad_a2_policy = grad_zph @ self.Wph.T
+        else:
+            grad_a2_policy = grad_policy_in
 
         # Heads -> a2 gradients
         grads["Wv"] = cache["a2"].T @ grad_zv + l2 * self.Wv
@@ -311,17 +359,27 @@ class DualHeadMLP:
                 "layers": layers,
                 "policyHeads": policy_heads,
             }
+        # When there's a policy hidden layer, emit `policyLayers` (list applied
+        # in order: hidden ReLU then softmax projection). Otherwise emit the
+        # legacy single `policyHead`. TS loader supports both.
+        if self.policy_hidden > 0:
+            policy_field = ("policyLayers", [
+                {"W": self.Wph.tolist(), "b": self.bph.tolist(), "activation": "relu"},
+                {"W": self.Wp.tolist(),  "b": self.bp.tolist(),  "activation": "softmax"},
+            ])
+        else:
+            policy_field = ("policyHead", {
+                "W": self.Wp.tolist(),
+                "b": self.bp.tolist(),
+                "activation": "softmax",
+            })
         out = {
             "version": 3,
             "type": "mlp_dual",
             "featureDim": d,
             "actionDim": p,
             "layers": layers,
-            "policyHead": {
-                "W": self.Wp.tolist(),
-                "b": self.bp.tolist(),
-                "activation": "softmax",
-            },
+            policy_field[0]: policy_field[1],
         }
         if iter_num >= 0:
             out["iter"] = iter_num
@@ -412,6 +470,13 @@ def main() -> int:
     class_freq = class_counts / class_counts.sum()
     # Weight = 1 / (4 * freq) → uniform classes get weight 1.0, rare classes get > 1
     inv_freq = 1.0 / (4.0 * class_freq)
+    # Cap reweight to prevent rare-class overfit. With a class at 8% freq,
+    # raw inv-freq is ~3.1× — applied to value-head gradient, this inflates the
+    # predicted "this class wins" probability on any state the head sees as
+    # ambiguously-good. MCTS then treats those states' leaves as optimistic,
+    # picks the action that leads there, loses, and the next iter's rare-class
+    # samples are the weighted noise of those losing games.
+    inv_freq = np.minimum(inv_freq, args.reweight_cap)
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)
     sw_val = sample_weights[:n_val]
@@ -423,7 +488,7 @@ def main() -> int:
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 
     model = DualHeadMLP(d, args.hidden1, args.hidden2, 4, ACTION_DIM,
-                        seed=args.seed)
+                        seed=args.seed, policy_hidden=args.policy_hidden)
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
@@ -437,9 +502,25 @@ def main() -> int:
             vl = old["layers"][2]
             model.Wv = np.array(vl["W"], dtype=np.float32)
             model.bv = np.array(vl["b"], dtype=np.float32)
-            ph = old["policyHead"]
-            model.Wp = np.array(ph["W"], dtype=np.float32)
-            model.bp = np.array(ph["b"], dtype=np.float32)
+            # Policy head: warm-start only if architectures match. If the old
+            # model had no hidden layer and we now do (or vice versa), the
+            # final-projection shapes differ — keep the freshly initialized
+            # policy head and rely on training to catch up.
+            if "policyLayers" in old and args.policy_hidden > 0:
+                pl = old["policyLayers"]
+                if len(pl) >= 2 and len(pl[0]["W"][0]) == args.policy_hidden:
+                    model.Wph = np.array(pl[0]["W"], dtype=np.float32)
+                    model.bph = np.array(pl[0]["b"], dtype=np.float32)
+                    model.Wp  = np.array(pl[1]["W"], dtype=np.float32)
+                    model.bp  = np.array(pl[1]["b"], dtype=np.float32)
+                else:
+                    print(f"[warm-start] policy hidden width mismatch — fresh policy head")
+            elif "policyHead" in old and args.policy_hidden == 0:
+                ph = old["policyHead"]
+                model.Wp = np.array(ph["W"], dtype=np.float32)
+                model.bp = np.array(ph["b"], dtype=np.float32)
+            else:
+                print(f"[warm-start] policy architecture changed — fresh policy head, trunk + value reused")
             for name in model._adam:
                 arr = getattr(model, name)
                 model._adam[name] = (np.zeros_like(arr), np.zeros_like(arr))
