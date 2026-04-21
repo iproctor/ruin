@@ -180,9 +180,14 @@ function rolloutDepthForRound(round: number): number {
 }
 
 // Probability of picking a non-pass action when one is available in rollouts.
-// This biases simulations toward aggressive play and avoids pass-heavy rollouts
-// that produce unrealistically low scores, causing the AI to play too cautiously.
-const ROLLOUT_AGGRESSION = 0.92;
+// 1.0 = never voluntarily pass. Previously 0.92 (~8% random pass per turn).
+// Random passing cut card-play rollouts short: Siphon +1 PP would never get
+// spent because rollouts passed before converting PP → figures. This made
+// the value head score card plays artificially low — probe-card-value.ts
+// showed Siphon: post-card rollout had 1.82 avg figures vs 2.40 for summon,
+// because random-pass kept ending the Siphon trajectory before its PP was
+// used. Skilled play never passes with resources available.
+const ROLLOUT_AGGRESSION = 1.0;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
