@@ -76,9 +76,14 @@ LOG_FILE="$DATA_DIR/training_loop.log"
 
 mkdir -p "$INBOX" "$ARCHIVE"
 
-# Find the latest existing model_iter snapshot to continue numbering.
-START_ITER=$(ls "$DATA_DIR"/model_iter_*.json 2>/dev/null \
-  | sed -E 's/.*model_iter_0*([0-9]+)\.json/\1/' \
+# Find the latest existing iter snapshot to continue numbering. Includes both
+# the shared-model snapshots (model_iter_*.json) and per-power focus snapshots
+# (model_<power>_iter_*.json). Otherwise in focus-training mode the shared
+# model snapshots stop advancing, START_ITER pins to the last shared iter,
+# and every coordinator restart resets the log counter to that + 1 — very
+# confusing when trying to read the log across restarts.
+START_ITER=$(ls "$DATA_DIR"/model_iter_*.json "$DATA_DIR"/model_*_iter_*.json 2>/dev/null \
+  | sed -E 's/.*iter_0*([0-9]+)\.json/\1/' \
   | sort -n | tail -1)
 START_ITER=${START_ITER:-0}
 ITER=$((START_ITER + 1))
