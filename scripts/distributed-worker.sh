@@ -80,10 +80,13 @@ while true; do
   fi
 
   # 1. Pull the canonical model + any per-power models from the coordinator.
+  # Also pulls hof_mix.txt — coordinator writes an adaptive HOF mix after
+  # each training iter based on current class freq.
   echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
   if ! rsync -az -e "${RSYNC_SSH}" \
       --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
-      --include='model_tenzen.json' --include='model_lasha.json' --exclude='*' \
+      --include='model_tenzen.json' --include='model_lasha.json' \
+      --include='hof_mix.txt' --exclude='*' \
       "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
       "${DATA_DIR}/" 2>/dev/null; then
     echo "  ! rsync failed, sleeping ${IDLE_SECONDS}s..."
@@ -139,10 +142,13 @@ while true; do
   T0=$(date +%s)
   FOCUS_ARG=""
   [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
+  # Use adaptive HOF mix from coordinator if present, else env fallback.
+  EFFECTIVE_HOF_MIX="$HOF_MIX"
+  [ -f "$DATA_DIR/hof_mix.txt" ] && EFFECTIVE_HOF_MIX=$(cat "$DATA_DIR/hof_mix.txt")
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
-      --hof-mix "$HOF_MIX" \
+      --hof-mix "$EFFECTIVE_HOF_MIX" \
       --out "${DATA_DIR}/training.jsonl" 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"

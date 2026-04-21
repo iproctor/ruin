@@ -135,10 +135,14 @@ while true; do
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
   FOCUS_ARG=""
   [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
+  # Adaptive mix: if the post-training hook wrote hof_mix.txt, use that
+  # value; otherwise fall back to HOF_MIX env default.
+  EFFECTIVE_HOF_MIX="$HOF_MIX"
+  [ -f "$DATA_DIR/hof_mix.txt" ] && EFFECTIVE_HOF_MIX=$(cat "$DATA_DIR/hof_mix.txt")
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
-      --hof-mix "$HOF_MIX" \
+      --hof-mix "$EFFECTIVE_HOF_MIX" \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →|\[league\]|\[focus\]|\[hof\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
@@ -238,6 +242,25 @@ while true; do
       python3 "$ROOT/scripts/hof-promote.py" \
         --iter "$DATA_GEN_ITER" --freq "$TZ_FREQ" --power "$FOCUS_POWER" \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
+    fi
+
+    # Adaptive HOF mix: when focus power's class freq drops, boost HOF_MIX
+    # so more collection games use a strong snapshot, pulling training data
+    # back toward strong behavior. Linear ramp:
+    #   freq ≥ 0.10 → HOF_MIX = 0.10 (baseline)
+    #   freq  = 0.05 → HOF_MIX = 0.30
+    #   freq ≤ 0.05 → HOF_MIX = 0.30 (clamped)
+    # Written to hof_mix.txt; workers rsync this file and read it before
+    # each collect call.
+    if [ -n "$TZ_FREQ" ]; then
+      ADAPTIVE_MIX=$(awk -v f="$TZ_FREQ" 'BEGIN {
+        if (f >= 0.10) { mix = 0.10 }
+        else if (f <= 0.05) { mix = 0.30 }
+        else { mix = 0.10 + (0.10 - f) * 4 }
+        printf "%.2f", mix
+      }')
+      echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
+      echo "[hof_mix] freq=${TZ_FREQ} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
     fi
   fi
 
