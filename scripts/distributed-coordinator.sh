@@ -41,7 +41,7 @@ FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1]. Controls the per-game sampled Tenzen eval
 # cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
 # openings, 1 forces all-learned. Ramp toward 1 over many iters.
-TENZEN_CUTOFF_SHIFT=1.0
+TENZEN_CUTOFF_SHIFT=0
 # Hall of Fame mix: fraction of games where the focus power uses a random
 # snapshot from packages/ai/data/hof/ instead of the live focus model.
 # Guards against training-data collapse by guaranteeing some games show the
