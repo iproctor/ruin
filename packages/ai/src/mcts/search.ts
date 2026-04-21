@@ -377,8 +377,11 @@ export interface TreeProbeStats {
   usedPuct: boolean;
   /** True if AZ-style select was active (per-power model loaded). */
   azStyle: boolean;
-  /** Per-root-action (visits, prior) entries. */
-  rootActions: Array<{ actionKind: string; visits: number; prior: number }>;
+  /** Per-root-action (visits, prior) entries. `slotIdx` is the canonical
+   *  action slot (used to align distributions across independent MCTS runs on
+   *  the same state where child-list order can differ). -1 if the action
+   *  doesn't map to a canonical slot. */
+  rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number }>;
   /** Top action by visits. */
   topVisitKind: string;
   /** Top action by prior (null if no policy head). */
@@ -431,7 +434,7 @@ export function probeMctsSearch(
       rootUntriedRemaining: 1,
       usedPuct: false,
       azStyle: modelForPowerLoaded(forPower),
-      rootActions: [{ actionKind: legalRoot[0]!.kind, visits: 0, prior: NaN }],
+      rootActions: [{ actionKind: legalRoot[0]!.kind, slotIdx: canonicalActionIndex(legalRoot[0]!, state), visits: 0, prior: NaN }],
       topVisitKind: legalRoot[0]!.kind,
       topPriorKind: null,
       priorVisitAgree: false,
@@ -474,12 +477,13 @@ export function probeMctsSearch(
   }
   const elapsed = Date.now() - t0;
 
-  const rootActions: Array<{ actionKind: string; visits: number; prior: number }> = [];
+  const rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number }> = [];
   let totalVisits = 0;
   for (const child of root.children) {
     const kind = child.action?.kind ?? 'null';
     const p = priors && child.action ? priors(child.action) : NaN;
-    rootActions.push({ actionKind: kind, visits: child.visits, prior: p });
+    const slotIdx = child.action ? canonicalActionIndex(child.action, state) : -1;
+    rootActions.push({ actionKind: kind, slotIdx, visits: child.visits, prior: p });
     totalVisits += child.visits;
   }
 
@@ -722,6 +726,11 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
 const HARD_ROLLOUT_CAP = 120;
 
 function rollout(state: GameState, forPower: Power, seed: number, minDepth: number): number {
+  // NOTE: a minDepth===0 short-circuit was retried on Apr 20 at 10k iters
+  // (the hypothesis: more leaves backprop'd to root would wash out mid-round
+  // value-head noise). It didn't — tenzen freq halved 0.205 → 0.109 at the
+  // same seeds, and xarm shot to 0.842. Rollout-to-round-change is load-
+  // bearing for correctness even at high iter budgets.
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;

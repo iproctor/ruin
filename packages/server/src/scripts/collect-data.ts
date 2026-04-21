@@ -39,15 +39,20 @@ const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 // cap over-searches easy states and under-searches hard ones, giving uneven
 // policy-target quality.
 //
-// Threshold for meaningful policy/search disagreement, from probe-mcts-health:
-//   ~2k iters  → p50 KL ≈ 0.07 bits (search barely contradicts prior)
-//   ~12k iters → p50 KL ≈ 1.08 bits (real contradictions on half of calls)
-// 10000 sits past the phase change and is what we want for training. Only the
-// focus power needs this — its weak policy head is what we're trying to
-// sharpen via search/prior disagreement. Opponents run on the frozen shared
-// model whose policy head is (by assumption) already guiding well, so they
-// need far fewer iters to pick a reasonable action.
-const mctsIterations = parseInt(getArg('--iter', '10000'), 10);
+// Iter count was briefly 10000 based on the probe showing meaningful KL
+// between visits and raw priors at that budget. But probe-iter-agreement
+// then showed MCTS picks the SAME chosen action at 3k and 10k in 100% of
+// states (20/20). 2k picks the same action 90% of the time — 10% still
+// wrong vs deep search. 3k is the convergence point: identical decisions
+// to 10k, 3.33x faster.
+//
+// The residual CE noise at 3k+ is from non-top-slot visit-count variance
+// under Dirichlet, not from action instability. Reducing that noise is a
+// separate concern (target sharpening, lower Dirichlet weight).
+//
+// Opponents use the frozen shared model; they don't generate policy
+// targets, so their iter budget only needs to produce reasonable play.
+const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
 const mctsOpponentIterations = parseInt(getArg('--iter-opp', '1000'), 10);
 // Time cap is now a safety net only (long-running games shouldn't hang
 // indefinitely). Deliberately set well above what 10k iters normally takes.
