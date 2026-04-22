@@ -229,15 +229,14 @@ function runGame(seed: number): GameResult {
   // Per-game Tenzen cutoff sampled from a schedule controlled by
   // TENZEN_CUTOFF_SHIFT ∈ [0, 1]:
   //
-  //   - At shift=0, draw cutoff from {1,2,3,4} with weights (4,3,2,1)/10.
-  //     Handmade eval steers the setup phase; cutoff=0 never sampled.
+  //   - At shift=0, draw cutoff from {1,2,3,4} with weights (1,2,3,4)/10 —
+  //     distribution weighted toward HIGH cutoffs (handmade for more rounds).
+  //     Canary (2026-04-21) showed pure-learned (shift=1) → tenzen 0% wins,
+  //     handmade-active → tenzen 16.5%. So bias collection toward handmade-
+  //     heavier games. cutoff=0 never sampled at shift=0.
   //   - At shift=1, always cutoff=0. Learned head runs the whole game.
   //   - At intermediate shift, linearly mix: P(0) = shift, and the rest
-  //     of the mass (1 − shift) follows the base (4,3,2,1) shape.
-  //
-  // Operationally: bump the shift toward 1 over many iters. Training data
-  // becomes a mixture of "handmade-assisted" and "learned-only" Tenzen
-  // games, so the learned policy is never trained against just one slice.
+  //     of the mass (1 − shift) follows the (1,2,3,4) shape.
   const savedTenzenCutoff = process.env['TENZEN_EVAL_CUTOFF'];
   const shift = Math.min(1, Math.max(0,
     parseFloat(process.env['TENZEN_CUTOFF_SHIFT'] ?? '0')));
@@ -246,7 +245,7 @@ function runGame(seed: number): GameResult {
     sampledCutoff = 0;
   } else {
     const r = rand() * 10;
-    sampledCutoff = r < 4 ? 1 : r < 7 ? 2 : r < 9 ? 3 : 4;
+    sampledCutoff = r < 1 ? 1 : r < 3 ? 2 : r < 6 ? 3 : 4;
   }
   process.env['TENZEN_EVAL_CUTOFF'] = String(sampledCutoff);
 
