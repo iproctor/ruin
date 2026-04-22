@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerClass, TokenType } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, followersInRegion } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, followersInRegion, getRegionDomination } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -155,6 +155,14 @@ const POTENTIAL_CORRUPTION_DIMS = POWERS.length * REGION_ORDER.length;
 // Per-region binary: would this region ruin if corruption is placed now?
 const EXPECTED_RUIN_DIMS = REGION_ORDER.length;
 
+// Per-region domination leader one-hot (4 powers + 1 "tied / no leader").
+// Captures the output of getRegionDomination's leader field. The handmade
+// evaluator uses this directly to decide who earns domination VP per region;
+// the model can't easily derive it from features alone because calcDomination
+// depends on chaos-card cost sums (not encoded) plus persistent effects
+// (only partially encoded). Exposing the answer closes the gap.
+const DOMINATION_LEADER_DIMS = (POWERS.length + 1) * REGION_ORDER.length;
+
 export const FEATURE_DIM =
   GLOBAL_DIMS +
   POWERS.length * PER_POWER +
@@ -164,7 +172,8 @@ export const FEATURE_DIM =
   PROTECTED_PER_CLASS_DIMS +
   PROTECTED_LASHA_DIMS +
   POTENTIAL_CORRUPTION_DIMS +
-  EXPECTED_RUIN_DIMS;
+  EXPECTED_RUIN_DIMS +
+  DOMINATION_LEADER_DIMS;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -495,6 +504,29 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
       followersInRegion(state, r).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
     out[i++] = (corrTokens + chaosStones + fatespinnerBonus + potentialPerRegion[ri]!) >= 12 ? 1 : 0;
+  }
+
+  // ── Per-region domination leader (one-hot: 4 powers + 1 "tied/none") ────
+  // Appended at the end to preserve the append-only features invariant.
+  for (const r of REGION_ORDER) {
+    const region = state.regions[r];
+    // One-hot slot: [xarm, gormen, tenzen, lasha, none]
+    // Ruined regions or no-leader states emit the "none" slot.
+    const start = i;
+    for (let k = 0; k < POWERS.length + 1; k++) out[start + k] = 0;
+    if (region && region.ruinationCardIndex === null) {
+      const { leader } = getRegionDomination(state, r);
+      if (leader !== null) {
+        const idx = POWERS.indexOf(leader);
+        if (idx >= 0) out[start + idx] = 1;
+        else out[start + POWERS.length] = 1;
+      } else {
+        out[start + POWERS.length] = 1;
+      }
+    } else {
+      out[start + POWERS.length] = 1;
+    }
+    i += POWERS.length + 1;
   }
 
   return out;

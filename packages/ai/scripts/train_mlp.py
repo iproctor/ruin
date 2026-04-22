@@ -508,9 +508,17 @@ def main() -> int:
         if old.get("version") == 5 and args.power and args.power in old.get("models", {}):
             old = old["models"][args.power]
         if old.get("version") == 3:
+            old_feature_dim = int(old.get("featureDim", 0))
             for li, lj in enumerate(old["layers"][:2]):
-                setattr(model, f"W{li+1}", np.array(lj["W"], dtype=np.float32))
-                setattr(model, f"b{li+1}", np.array(lj["b"], dtype=np.float32))
+                W = np.array(lj["W"], dtype=np.float32)
+                b = np.array(lj["b"], dtype=np.float32)
+                # If this is W1 and old feature dim is smaller, zero-pad rows.
+                if li == 0 and old_feature_dim > 0 and W.shape[0] < d:
+                    pad = np.zeros((d - W.shape[0], W.shape[1]), dtype=np.float32)
+                    W = np.vstack([W, pad])
+                    print(f"[warm-start] padded W1 from {old_feature_dim} → {d} input rows (zeros)")
+                setattr(model, f"W{li+1}", W)
+                setattr(model, f"b{li+1}", b)
             vl = old["layers"][2]
             model.Wv = np.array(vl["W"], dtype=np.float32)
             model.bv = np.array(vl["b"], dtype=np.float32)
