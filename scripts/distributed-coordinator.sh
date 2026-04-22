@@ -199,7 +199,9 @@ while true; do
     WARM_SRC="$DATA_DIR/model_${FOCUS_POWER}.json"
     # Bootstrap: if focus model doesn't exist yet, warm-start from model.json
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
-    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC"
+    # Scalar-value head: focuses trunk capacity on P(focus_power wins).
+    # BCE gradients are sharper than softmax-CE so use smaller LR.
+    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC --scalar-value --lr 1e-3"
   else
     TRAIN_OUT="$DATA_DIR/model.json"
     TRAIN_ARGS=""
