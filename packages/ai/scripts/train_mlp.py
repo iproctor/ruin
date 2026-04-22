@@ -68,6 +68,10 @@ def parse_args() -> argparse.Namespace:
                          "Large values recover full inverse-freq. Caps prevent tenzen-style rare classes "
                          "from being upweighted so aggressively that value-head overestimates their odds "
                          "and MCTS misguides on optimistic leaf evals.")
+    ap.add_argument("--scalar-value", action="store_true",
+                    help="Train value head as a single scalar P(focus_power wins) with sigmoid + BCE "
+                         "instead of 4-way softmax over all powers. Focuses trunk capacity on the only "
+                         "output MCTS actually reads during focus-power training. Requires --power.")
     ap.add_argument("--iter", type=int, default=-1,
                     help="Iteration number to embed in the model JSON.")
     ap.add_argument("--power", type=str, default="",
@@ -140,17 +144,19 @@ class DualHeadMLP:
 
     def __init__(self, d: int, h1: int, h2: int, c: int, p: int,
                  seed: int = 1, multi_policy: bool = False,
-                 policy_hidden: int = 0) -> None:
+                 policy_hidden: int = 0, scalar_value: bool = False) -> None:
         rng = np.random.default_rng(seed)
         self.multi_policy = multi_policy
         self.policy_hidden = policy_hidden
+        self.scalar_value = scalar_value
         self.W1 = rng.normal(0, math.sqrt(2 / d),  (d,  h1)).astype(np.float32)
         self.b1 = np.zeros(h1, dtype=np.float32)
         self.W2 = rng.normal(0, math.sqrt(2 / h1), (h1, h2)).astype(np.float32)
         self.b2 = np.zeros(h2, dtype=np.float32)
-        # Value head
-        self.Wv = rng.normal(0, math.sqrt(2 / h2), (h2, c)).astype(np.float32)
-        self.bv = np.zeros(c, dtype=np.float32)
+        # Value head: either 4-way softmax (legacy) or scalar sigmoid (focus mode)
+        value_out = 1 if scalar_value else c
+        self.Wv = rng.normal(0, math.sqrt(2 / h2), (h2, value_out)).astype(np.float32)
+        self.bv = np.zeros(value_out, dtype=np.float32)
         # Optional policy hidden layer: a2 -> Wph -> ReLU -> Wp.
         # Width 0 means no hidden layer (legacy: a2 -> Wp directly).
         if policy_hidden > 0:
@@ -197,11 +203,15 @@ class DualHeadMLP:
         z2 = a1 @ self.W2 + self.b2
         a2 = np.maximum(z2, 0)
 
-        # Value head
+        # Value head: sigmoid (scalar mode) or softmax (multi-power mode)
         zv = a2 @ self.Wv + self.bv
-        zv_shift = zv - zv.max(axis=1, keepdims=True)
-        ezv = np.exp(zv_shift)
-        v_probs = ezv / ezv.sum(axis=1, keepdims=True)
+        if self.scalar_value:
+            # Clip for numerical stability; sigmoid is smooth
+            v_probs = 1.0 / (1.0 + np.exp(-np.clip(zv, -30.0, 30.0)))
+        else:
+            zv_shift = zv - zv.max(axis=1, keepdims=True)
+            ezv = np.exp(zv_shift)
+            v_probs = ezv / ezv.sum(axis=1, keepdims=True)
 
         # Optional policy hidden layer: a2 -> Wph -> ReLU -> aph
         if self.policy_hidden > 0:
@@ -338,10 +348,11 @@ class DualHeadMLP:
             p -= lr_t * m / (np.sqrt(v) + eps)
 
     def to_json(self, d: int, h1: int, h2: int, c: int, p: int, iter_num: int = -1) -> dict:
+        value_activation = "sigmoid" if self.scalar_value else "softmax"
         layers = [
             {"W": self.W1.tolist(), "b": self.b1.tolist(), "activation": "relu"},
             {"W": self.W2.tolist(), "b": self.b2.tolist(), "activation": "relu"},
-            {"W": self.Wv.tolist(), "b": self.bv.tolist(), "activation": "softmax"},
+            {"W": self.Wv.tolist(), "b": self.bv.tolist(), "activation": value_activation},
         ]
         if self.multi_policy:
             policy_heads = {}
@@ -389,7 +400,15 @@ class DualHeadMLP:
 # ── Loss helpers ─────────────────────────────────────────────────────────────
 
 def soft_cross_entropy(probs: np.ndarray, T: np.ndarray) -> float:
-    eps = 1e-12
+    # If probs is (n, 1), it's scalar sigmoid output → binary cross-entropy.
+    # Else multi-class softmax CE. Use float32-safe epsilon (1e-7); 1e-12
+    # rounds to 0 in float32 and makes log(1-p) underflow to -inf for
+    # saturated sigmoid outputs.
+    eps = 1e-7
+    if probs.shape[1] == 1:
+        p = np.clip(probs, eps, 1.0 - eps)
+        t = T.reshape(p.shape)
+        return float(-(t * np.log(p) + (1.0 - t) * np.log(1.0 - p)).mean())
     return float(-(T * np.log(np.clip(probs, eps, 1.0))).sum(axis=1).mean())
 
 
@@ -402,6 +421,11 @@ def policy_cross_entropy(probs: np.ndarray, T: np.ndarray, mask: np.ndarray) -> 
 
 
 def argmax_agreement(probs: np.ndarray, T: np.ndarray) -> float:
+    if probs.shape[1] == 1:
+        # Scalar sigmoid: compare (p>0.5) to (t==1)
+        pred = (probs.reshape(-1) > 0.5).astype(np.int32)
+        truth = (T.reshape(-1) > 0.5).astype(np.int32)
+        return float((pred == truth).mean())
     return float((probs.argmax(axis=1) == T.argmax(axis=1)).mean())
 
 
@@ -499,8 +523,21 @@ def main() -> int:
     print(f"reweight:     {' '.join(f'{_rw_names[i]}:{inv_freq[i]:.2f}' for i in range(4))}")
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 
+    if args.scalar_value and not args.power:
+        print(f"[ERROR] --scalar-value requires --power <focus>", file=sys.stderr)
+        return 1
+    # Reshape T_value from (n, 4) one-hot to (n, 1) scalar "focus-power wins?"
+    # when --scalar-value is set. Target becomes a single 0/1.
+    if args.scalar_value:
+        pi_sv = POWER_NAMES.index(args.power)
+        T_value = T_value[:, pi_sv:pi_sv+1].astype(np.float32)  # (n, 1)
+        Tv_val = Tv_val[:, pi_sv:pi_sv+1].astype(np.float32)
+        Tv_tr  = Tv_tr[:, pi_sv:pi_sv+1].astype(np.float32)
+        print(f"[scalar-value] targets reshaped to (n,1) P({args.power} wins)")
+
     model = DualHeadMLP(d, args.hidden1, args.hidden2, 4, ACTION_DIM,
-                        seed=args.seed, policy_hidden=args.policy_hidden)
+                        seed=args.seed, policy_hidden=args.policy_hidden,
+                        scalar_value=args.scalar_value)
     if args.warm_start:
         with open(args.warm_start) as wf:
             old = json.load(wf)
@@ -520,8 +557,16 @@ def main() -> int:
                 setattr(model, f"W{li+1}", W)
                 setattr(model, f"b{li+1}", b)
             vl = old["layers"][2]
-            model.Wv = np.array(vl["W"], dtype=np.float32)
-            model.bv = np.array(vl["b"], dtype=np.float32)
+            old_Wv = np.array(vl["W"], dtype=np.float32)
+            old_bv = np.array(vl["b"], dtype=np.float32)
+            # Warm-start value head only if shape matches. Scalar-value mode
+            # expects (H2, 1); legacy 4-way expects (H2, 4). Mismatch → keep
+            # fresh random init and let training learn the new shape.
+            if old_Wv.shape == model.Wv.shape:
+                model.Wv = old_Wv
+                model.bv = old_bv
+            else:
+                print(f"[warm-start] value-head shape {old_Wv.shape} ≠ current {model.Wv.shape} — fresh init")
             # Policy head: warm-start only if architectures match. If the old
             # model had no hidden layer and we now do (or vice versa), the
             # final-projection shapes differ — keep the freshly initialized
@@ -585,8 +630,12 @@ def main() -> int:
         val_p = policy_cross_entropy(p_probs_val, Tp_val, hp_val)
         val_agree = argmax_agreement(v_probs_val, Tv_val)
         pol_top1 = policy_top1_accuracy(p_probs_val, Tp_val, hp_val)
-        dist = per_class_pred_dist(v_probs_val, 4)
-        dist_str = " ".join(f"{names[c]}:{dist[c]:.2f}" for c in range(4))
+        if args.scalar_value:
+            # Scalar mode: just show mean predicted probability
+            dist_str = f"p̄({args.power}):{float(v_probs_val.mean()):.3f}"
+        else:
+            dist = per_class_pred_dist(v_probs_val, 4)
+            dist_str = " ".join(f"{names[c]}:{dist[c]:.2f}" for c in range(4))
         dt = time.time() - t0
         print(
             f"ep {epoch:2d}  "

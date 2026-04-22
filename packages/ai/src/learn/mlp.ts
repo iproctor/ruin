@@ -10,7 +10,7 @@ import { FEATURE_DIM, POWERS } from './features.js';
  * Only forward is implemented. Training lives in Python.
  */
 
-type Activation = 'relu' | 'softmax' | 'linear';
+type Activation = 'relu' | 'softmax' | 'linear' | 'sigmoid';
 
 interface LayerJson {
   // Row-major: W[i_in][j_out] — Python's numpy .tolist() on (in, out) shape
@@ -116,6 +116,8 @@ function applyLayer(input: Float32Array, layer: CompiledLayer, out: Float32Array
     let s = 0;
     for (let j = 0; j < outDim; j++) { out[j] = Math.exp(out[j]! - maxv); s += out[j]!; }
     for (let j = 0; j < outDim; j++) out[j] = out[j]! / s;
+  } else if (layer.activation === 'sigmoid') {
+    for (let j = 0; j < outDim; j++) out[j] = 1 / (1 + Math.exp(-out[j]!));
   }
 }
 
@@ -315,10 +317,12 @@ export class Mlp {
       compiled.push({ W, inDim, outDim, b: new Float32Array(lin.b), activation: 'softmax' });
     }
 
-    // Validate value head output = POWERS.length
+    // Validate value head output: either POWERS.length (full 4-way softmax)
+    // or 1 (scalar P(viewpoint wins), for focus-trained models). The scalar
+    // form uses sigmoid activation; the 4-way uses softmax.
     const last = compiled[compiled.length - 1]!;
-    if (last.outDim !== POWERS.length) {
-      throw new Error(`Mlp: value head output dim mismatch — model ${last.outDim}, powers ${POWERS.length}`);
+    if (last.outDim !== POWERS.length && last.outDim !== 1) {
+      throw new Error(`Mlp: value head output dim ${last.outDim} is neither ${POWERS.length} (multi-power) nor 1 (scalar)`);
     }
 
     return new Mlp(compiled, policyChain, perPowerPolicyHeads);
