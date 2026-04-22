@@ -15,6 +15,9 @@ HOSTS=(
   78.46.79.158     # hetz1 — coordinator
   188.40.109.160   # hetz2 — worker
   65.21.15.12      # hetz3 — worker
+  88.198.24.105    # hetz4 — worker
+  148.251.48.178   # hetz5 — worker
+  148.251.138.112  # hetz6 — worker
 )
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
