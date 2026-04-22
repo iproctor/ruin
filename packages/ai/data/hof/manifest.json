@@ -2,27 +2,33 @@
   "capacity": 5,
   "members": [
     {
-      "iter": 1278,
-      "freq": 0.125,
-      "file": "model_tenzen_hof_1278.json",
+      "iter": 1284,
+      "freq": 0.14,
+      "file": "model_tenzen_hof_1284.json",
       "power": "tenzen"
     },
     {
-      "iter": 1276,
-      "freq": 0.112,
-      "file": "model_tenzen_hof_1276.json",
+      "iter": 1285,
+      "freq": 0.131,
+      "file": "model_tenzen_hof_1285.json",
       "power": "tenzen"
     },
     {
-      "iter": 1277,
-      "freq": 0.109,
-      "file": "model_tenzen_hof_1277.json",
+      "iter": 1300,
+      "freq": 0.13,
+      "file": "model_tenzen_hof_1300.json",
       "power": "tenzen"
     },
     {
-      "iter": 1253,
-      "freq": 0.101,
-      "file": "model_tenzen_hof_1253.json",
+      "iter": 1295,
+      "freq": 0.129,
+      "file": "model_tenzen_hof_1295.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1283,
+      "freq": 0.128,
+      "file": "model_tenzen_hof_1283.json",
       "power": "tenzen"
     }
   ]
