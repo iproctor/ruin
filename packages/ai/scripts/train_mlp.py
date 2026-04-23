@@ -631,8 +631,12 @@ def main() -> int:
         val_agree = argmax_agreement(v_probs_val, Tv_val)
         pol_top1 = policy_top1_accuracy(p_probs_val, Tp_val, hp_val)
         if args.scalar_value:
-            # Scalar mode: just show mean predicted probability
-            dist_str = f"p̄({args.power}):{float(v_probs_val.mean()):.3f}"
+            # Scalar mode: mean + std of predicted probability. Std distinguishes
+            # a model that's learned to discriminate (wide spread) from one that
+            # has collapsed to the base rate (std near 0 → uninformative to MCTS).
+            v_mean = float(v_probs_val.mean())
+            v_std = float(v_probs_val.std())
+            dist_str = f"p̄({args.power}):{v_mean:.3f} σ:{v_std:.3f}"
         else:
             dist = per_class_pred_dist(v_probs_val, 4)
             dist_str = " ".join(f"{names[c]}:{dist[c]:.2f}" for c in range(4))
