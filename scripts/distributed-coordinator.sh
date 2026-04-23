@@ -23,7 +23,7 @@
 #   GAMES_PER_BATCH   games per local collection batch (default 100)
 #   WORKERS           local worker processes for collect:parallel (default 16)
 #   TRAIN_THRESHOLD   number of inbox files needed to trigger a train (default 6)
-#   TRAIN_EPOCHS      epochs per training pass (default 40)
+#   TRAIN_EPOCHS      epochs per training pass (default 25)
 #   TRAIN_THREADS     openblas threads for training (default 8)
 #   BENCH_EVERY       run benchmark every N trains (default 5)
 #   BENCH_GAMES       games per benchmark (default 48)
@@ -55,7 +55,7 @@ TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
 # archive/ most-recent-first to fill the window. This keeps training data size
 # stable even when workers produce small batches.
 TRAIN_WINDOW=${TRAIN_WINDOW:-18}
-TRAIN_EPOCHS=${TRAIN_EPOCHS:-40}
+TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
