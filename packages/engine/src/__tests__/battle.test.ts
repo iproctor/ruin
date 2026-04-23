@@ -139,6 +139,29 @@ describe('interactive hit assignment', () => {
     }
   });
 
+  test('awaiting_action event for battle_hit_assignment carries full context (peasantsAvailable)', () => {
+    // Regression: the engine used to emit a trimmed context on the event while
+    // storing the full one in state. Clients that rebuild state by replaying
+    // events (battle animations) would lose peasantsAvailable until reload,
+    // hiding the peasant-claim UI.
+    let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 1 });
+    for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'peasant');
+    s = addToken(s, 'norrsund', 'peasant');
+    const raw = resolveBattlePhase(s);
+    if (raw.state.pendingAction?.actionKind !== 'battle_hit_assignment') return; // 0 hits this seed
+
+    const stateContext = raw.state.pendingAction.context;
+    const awaitingEvent = raw.log.events.find(
+      e => e.type === 'awaiting_action' &&
+        (e as { actionKind?: string }).actionKind === 'battle_hit_assignment',
+    ) as { context: Record<string, unknown> } | undefined;
+    expect(awaitingEvent).toBeDefined();
+    expect(awaitingEvent!.context).toEqual(stateContext);
+    expect(awaitingEvent!.context['peasantsAvailable']).toBe(2);
+  });
+
   test('attacker chooses to kill a figure — figure is removed', () => {
     // Use deterministic seed that guarantees hits
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 1 });

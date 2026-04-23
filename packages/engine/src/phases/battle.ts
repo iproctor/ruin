@@ -689,6 +689,7 @@ function pauseForHitChoice(
   extraContext: Record<string, unknown> = {},
 ): { state: GameState; log: GameLog } {
   const peasantsAvailable = state.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
+  const context = { regionId, hitsRemaining, changerOfFateActive, peasantsAvailable, ...extraContext };
   const s: GameState = {
     ...state,
     battleState: {
@@ -698,10 +699,14 @@ function pauseForHitChoice(
     pendingAction: {
       waitingFor: attacker,
       actionKind: 'battle_hit_assignment',
-      context: { regionId, hitsRemaining, changerOfFateActive, peasantsAvailable, ...extraContext },
+      context,
     },
   };
-  log.emit({ type: 'awaiting_action', power: attacker, actionKind: 'battle_hit_assignment', context: { regionId, hitsRemaining }, description: `${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.` });
+  // Emit the full context so clients that rebuild state by replaying events
+  // (e.g. during battle animation) see the same pendingAction.context as
+  // server-side state. Otherwise the hit-assignment UI loses fields like
+  // peasantsAvailable until the player reloads the page.
+  log.emit({ type: 'awaiting_action', power: attacker, actionKind: 'battle_hit_assignment', context, description: `${regionId}: ${attacker} must assign ${hitsRemaining} hit(s). Waiting for choice.` });
   return { state: s, log };
 }
 
