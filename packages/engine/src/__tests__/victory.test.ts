@@ -79,14 +79,15 @@ describe('world deck exhausted victory', () => {
     expect(checkVictory(s)).toBeNull();
   });
 
-  test('highest VP wins when world deck exhausted at world phase', () => {
+  test('nobody wins when world deck exhausts (mortal world victor)', () => {
+    // RULES.md: "If no Power has won by the time the World Deck is exhausted,
+    // the mortal world is the victor and all players lose."
     let s = makeState({ phase: 'world', worldDeck: [], pendingAction: null });
     s = setVP(s, 'lasha', 40);
     s = setVP(s, 'xarm', 20);
     const result = checkVictory(s)!;
     expect(result.condition).toBe('world_exhausted');
-    expect(result.winners).toContain('lasha');
-    expect(result.winners).not.toContain('xarm');
+    expect(result.winners).toEqual([]);
   });
 
   test('not triggered in non-world phase with empty deck', () => {

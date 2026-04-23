@@ -519,7 +519,9 @@ export default function StatusBar({ state, myPower, players, events: eventLog, o
 
       {state.winners && (
         <span className="gsb-winner">
-          ♛ {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} prevails
+          {state.winners.length > 0
+            ? <>♛ {state.winners.map((w) => POWER_LABELS[w]).join(' & ')} prevails</>
+            : <>☩ the mortal world endures — all players lose</>}
         </span>
       )}
 

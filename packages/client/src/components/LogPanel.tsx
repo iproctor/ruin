@@ -118,7 +118,9 @@ function renderEvent(event: GameEvent): ReactNode | null {
     case 'round_start':
       return <div style={{ color: PAPER_DIM, fontWeight: 700, fontSize: '0.75rem', marginTop: 6, marginBottom: 2 }}>Round {event.round}</div>;
     case 'game_over':
-      return <>Game over! Winners: {event.winners.map((w, i) => <span key={w}>{i > 0 && ', '}<Pw power={w} /></span>)} ({event.condition}).</>;
+      return event.winners.length > 0
+        ? <>Game over! Winners: {event.winners.map((w, i) => <span key={w}>{i > 0 && ', '}<Pw power={w} /></span>)} ({event.condition}).</>
+        : <>Game over. The mortal world endures — all players lose ({event.condition}).</>;
     case 'awaiting_action':
       return null;
 
