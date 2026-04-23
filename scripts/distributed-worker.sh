@@ -54,6 +54,13 @@ RSYNC_SSH="ssh ${SSH_OPTS}"
 
 mkdir -p "$DATA_DIR"
 
+# One-shot cleanup: the abandoned gormen focus experiment left a stale
+# model_gormen.json on every box. load-model.ts auto-loads per-power
+# overrides if the file exists, so gormen has been playing with that
+# stale brain in every self-play game. Delete on startup so workers
+# fall back to model.json for gormen.
+rm -f "$DATA_DIR/model_gormen.json"
+
 # Track which model we last collected against (mtime as a string).
 LAST_MODEL_MTIME=""
 BATCH_COUNTER=0
