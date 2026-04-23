@@ -28,10 +28,11 @@ export function checkVictory(state: GameState): WinResult | null {
     return { winners, condition: 'ruination' };
   }
 
-  // World deck exhausted (checked at start of world phase)
+  // World deck exhausted (checked at start of world phase).
+  // Per RULES.md: "If no Power has won by the time the World Deck is exhausted,
+  // the mortal world is the victor and all players lose." — no winners.
   if (state.worldDeck.length === 0 && state.phase === 'world') {
-    const winners = findVPWinners(state);
-    return { winners, condition: 'world_exhausted' };
+    return { winners: [], condition: 'world_exhausted' };
   }
 
   return null;

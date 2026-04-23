@@ -50,7 +50,9 @@ export function renderText(event: GameEvent): string | null {
     case 'round_start':
       return `Round ${event.round} begins.`;
     case 'game_over':
-      return `Game over! Winners: ${event.winners.map(P).join(', ')} (${event.condition}).`;
+      return event.winners.length > 0
+        ? `Game over! Winners: ${event.winners.map(P).join(', ')} (${event.condition}).`
+        : `Game over. The mortal world endures — all players lose (${event.condition}).`;
     case 'awaiting_action':
       return null;
 
