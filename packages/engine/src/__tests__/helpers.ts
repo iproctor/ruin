@@ -398,7 +398,7 @@ export function autoResolveBattle(
  *   - upgrade_choice: pick the first available upgrade
  *   - place_token: pick the first non-ruined region
  *   - remove_corruption: pick the first region with own tokens
- *   - remove_world_tokens: pick the first removable token anywhere
+ *   - remove_world_tokens: pick the first non-chaos-stone token, falling back to chaos_stone
  *
  * Returns the final resolved state (phase advanced to 'world' or 'completed').
  */
@@ -454,12 +454,26 @@ export function autoResolveEndPhase(
         break;
       }
       case 'dial_remove_world_token': {
+        // Prefer non-chaos-stone so tests that care about chaos stones can
+        // isolate the code path by leaving other tokens on the board.
+        let picked = false;
         for (const regionId of REGION_ORDER) {
           const token = s.regions[regionId]!.tokens.find(t => t !== 'chaos_stone');
           if (token) {
             next = applyAction(s, { kind: 'dial_remove_world_token', power, regionId, tokenType: token });
             s = next.state; log.absorb(next.log);
+            picked = true;
             break;
+          }
+        }
+        if (!picked) {
+          for (const regionId of REGION_ORDER) {
+            const token = s.regions[regionId]!.tokens[0];
+            if (token) {
+              next = applyAction(s, { kind: 'dial_remove_world_token', power, regionId, tokenType: token });
+              s = next.state; log.absorb(next.log);
+              break;
+            }
           }
         }
         break;

@@ -82,19 +82,9 @@ export function resolveWorldPhase(state: GameState): { state: GameState; log: Ga
   const cardDef = WORLD_CARD_BY_ID[cardId!];
   if (!cardDef) return { state: s, log };
 
-  // Remove comet-icon cards from track first
+  // Remove comet-icon cards (and their Event tokens) from track first
   if (cardDef.hasCometIcon) {
-    const { slot1, slot2 } = s.worldTrack;
-    let removed: string[] = [];
-    if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
-      removed.push(slot1);
-      s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
-    }
-    if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
-      removed.push(slot2);
-      s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
-    }
-    if (removed.length) log.emit({ type: 'comet_removed', cardIds: removed });
+    s = clearOldCometCards(s, log);
   }
 
   // Apply immediate effects (non-choice ones first)
@@ -160,19 +150,9 @@ export function applyCompanionWorldPick(
   const cardId = action.cardId;
   log.emit({ type: 'world_card_drawn', cardId, cardName: cardDef.name });
 
-  // Remove comet-icon cards from track first
+  // Remove comet-icon cards (and their Event tokens) from track first
   if (cardDef.hasCometIcon) {
-    const { slot1, slot2 } = s.worldTrack;
-    const removed: string[] = [];
-    if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
-      removed.push(slot1);
-      s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
-    }
-    if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
-      removed.push(slot2);
-      s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
-    }
-    if (removed.length) log.emit({ type: 'comet_removed', cardIds: removed });
+    s = clearOldCometCards(s, log);
   }
 
   const result = applyWorldCardImmediate(s, cardId, log);
@@ -219,6 +199,33 @@ export function applyWorldChoice(state: GameState, action: WorldChoiceAction): {
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/** Remove any existing comet-icon cards from the world track, along with the
+ *  Event tokens they placed on the map. Event tokens are only ever placed by
+ *  comet cards, so clearing every Event on the board is correct. */
+function clearOldCometCards(state: GameState, log: GameLog): GameState {
+  let s = state;
+  const { slot1, slot2 } = s.worldTrack;
+  const removed: string[] = [];
+  if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
+    removed.push(slot1);
+    s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
+  }
+  if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
+    removed.push(slot2);
+    s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
+  }
+  if (removed.length === 0) return s;
+
+  log.emit({ type: 'comet_removed', cardIds: removed });
+  for (const regionId of REGION_ORDER) {
+    const count = s.regions[regionId]!.tokens.filter(t => t === 'event').length;
+    for (let i = 0; i < count; i++) {
+      s = log.apply(s, { type: 'token_removed', regionId, tokenType: 'event' });
+    }
+  }
+  return s;
+}
 
 function placeOnTrackOrDiscard(state: GameState, cardId: string, log: GameLog): GameState {
   const def = WORLD_CARD_BY_ID[cardId];

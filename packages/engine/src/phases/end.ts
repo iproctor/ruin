@@ -559,9 +559,7 @@ function advanceDial(
     }
 
     case 'remove_world_tokens': {
-      const hasTokens = REGION_ORDER.some(r =>
-        s.regions[r]!.tokens.some(t => t !== 'chaos_stone'),
-      );
+      const hasTokens = REGION_ORDER.some(r => s.regions[r]!.tokens.length > 0);
       if (hasTokens) {
         rewards.push({ kind: 'remove_world_tokens', power, remaining: entry.instruction.amount, count: entry.instruction.amount });
       }

@@ -149,6 +149,10 @@ export interface BattleState {
   /** Companion mode: hits reported by a human rolling physical dice. When set,
    *  the upcoming roll for this power uses this count instead of rolling. */
   companionDice?: { power: Power; kind: 'normal' | 'war_frenzy' | 'undying_fury'; hits: number } | null;
+  /** True once Xarm has earned a dial counter from killing an enemy in the
+   *  current region's battle. Prevents a second DAC when War Frenzy kills and
+   *  the normal battle also kills. Reset when advancing to the next region. */
+  xarmDialEarnedThisRegion?: boolean;
 }
 
 // ─── Dial pending rewards (queued interactive end-phase rewards) ──────────────

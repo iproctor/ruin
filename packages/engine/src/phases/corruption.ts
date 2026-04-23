@@ -1,10 +1,11 @@
 import type { GameState, Power, RegionId } from '../types.js';
 import {
   REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, RUINATION_CARDS, CARD_BY_ID,
+  REGIONS, POWER_ORDER,
   CORRUPTION_RUIN_THRESHOLD, MAX_RUINATION_CARDS,
 } from '../constants.js';
 import {
-  isWorldCardActive, isRuined,
+  isWorldCardActive, isRuined, countToken,
   magicSymbolCount, totalCorruption, followersInRegion,
 } from '../helpers.js';
 import { GameLog } from '../gameLog.js';
@@ -34,6 +35,72 @@ export function getPowerDomination(state: GameState, regionId: RegionId, power: 
   if (region.ruinationCardIndex !== null) return 0;
   const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
   return calcDomination(state, regionId, power, changerOfFateActive);
+}
+
+/**
+ * Preview which non-Xarm powers would earn a Dial Advancement Counter in this
+ * region if the upcoming corruption phase ran now with every current cultist
+ * (and Musk-controlled cultist) surviving. Returned in standard POWER_ORDER.
+ *
+ * Accounts for:
+ *   - Narcotic Musk (follower's `controlledBy`)
+ *   - Lasha Ravers upgrade (warriors lay corruption as if cultists)
+ *   - Tenzen Shimmer (one enemy cultist per region doesn't count)
+ *   - Xarm War Cry (blocks all corruption in region)
+ *   - Tenzen Changer of Fate (suspends region card effects)
+ *   - Gormen Vile Consumption (adds floor(gormen-figs / 2) more corruption)
+ *   - Tenzen Fatespinner upgrade (counts as 2 chaos stones for the condition)
+ *
+ * Xarm's DAC condition fires in the battle phase, not during corruption, so
+ * Xarm is never returned.
+ */
+export function previewDialAdvancementEarners(
+  state: GameState,
+  regionId: RegionId,
+): Power[] {
+  const region = state.regions[regionId]!;
+  if (isRuined(region)) return [];
+  if (regionCardActive(state, regionId, 'xarm_war_cry')) return [];
+
+  const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+
+  const earners: Power[] = [];
+  for (const power of POWER_ORDER) {
+    if (power === 'xarm') continue;
+    if (!state.activePowers.includes(power)) continue;
+
+    let tokens = corruptionTokensToPlace(state, regionId, power, changerOfFateActive);
+
+    if (power === 'gormen' && !changerOfFateActive &&
+        regionCardActive(state, regionId, 'gormen_vile_consumption')) {
+      const gormenFigures = followersInRegion(state, regionId).filter(f => f.power === 'gormen').length;
+      tokens += Math.floor(gormenFigures / 2);
+    }
+
+    if (tokens < 2) continue;
+
+    let qualifies = false;
+    switch (power) {
+      case 'gormen':
+        qualifies = REGIONS[regionId]!.populous;
+        break;
+      case 'tenzen': {
+        const magicCount = magicSymbolCount(state, regionId);
+        const chaosStones = countToken(region, 'chaos_stone');
+        const hasFatespinnerInRegion = followersInRegion(state, regionId)
+          .some(f => f.class === 'incarnation' && f.power === 'tenzen');
+        const fatespinnerBonus = hasFatespinnerInRegion &&
+          state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') ? 2 : 0;
+        qualifies = magicCount + chaosStones + fatespinnerBonus >= 2;
+        break;
+      }
+      case 'lasha':
+        qualifies = region.tokens.some(t => t === 'noble' || t === 'hero');
+        break;
+    }
+    if (qualifies) earners.push(power);
+  }
+  return earners;
 }
 
 /** Returns the leading power and their domination value, or null if ruined/tied/zero. */

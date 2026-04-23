@@ -158,7 +158,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
       if (!reward || reward.kind !== 'remove_world_tokens') throw new Error('No remove_world_tokens reward pending');
       const region = s.regions[action.regionId]!;
       const idx = region.tokens.lastIndexOf(action.tokenType);
-      if (idx === -1 || action.tokenType === 'chaos_stone') throw new Error(`No removable ${action.tokenType} in ${action.regionId}`);
+      if (idx === -1) throw new Error(`No removable ${action.tokenType} in ${action.regionId}`);
       s = {
         ...s,
         pendingAction: null,

@@ -18,7 +18,7 @@ const POWER_EPITHETS: Record<Power, string> = {
   xarm:   'war is a force that gives us meaning',
   gormen: 'ripe with decay',
   tenzen: 'just as planned',
-  lasha:  'you asked for this',
+  lasha:  'pain and pleasure, indivisible',
 };
 
 const POWER_DESCRIPTIONS: Record<Power, string> = {

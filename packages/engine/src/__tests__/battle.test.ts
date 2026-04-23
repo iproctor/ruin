@@ -8,6 +8,7 @@
  */
 import type { GameState } from '../types.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from '../phases/battle.js';
+import { resolveEndPhase } from '../phases/end.js';
 import { enumerateBattleHitStrategies } from '../legalActions.js';
 import { applyAction } from '../reducers.js';
 import { REGION_ORDER } from '../constants.js';
@@ -378,6 +379,35 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     expect(found).toBe(true);
   });
 
+  test('War Frenzy + normal battle kills earn at most one DAC per region (regression)', () => {
+    // If War Frenzy kills an enemy AND Xarm also kills an enemy in the normal
+    // battle of the same region, Xarm should earn exactly one DAC — not two.
+    let found = false;
+    for (let seed = 0; seed < 500; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      // Enough Xarm warriors to reliably generate normal-battle hits too.
+      s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+      s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+      s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+      // Two low-defense enemies so a kill can happen in both WF and normal.
+      s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+      s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+      s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+      const { state, log } = autoResolveBattle(resolveBattlePhase(s));
+      const frenzyRoll = log.entries.find(l => l.includes('War Frenzy — Xarm'));
+      const dacEntries = log.entries.filter(l => l.includes('earns DAC'));
+      const killsByXarm = log.entries.filter(l => l.includes('Xarm') && l.includes('kills'));
+      // Scenario we want to exercise: WF happened AND Xarm had multiple kills.
+      if (frenzyRoll && killsByXarm.length >= 2 && dacEntries.length >= 1) {
+        expect(dacEntries).toHaveLength(1);
+        expect(state.powers.xarm!.dialCounters).toBeLessThanOrEqual(1);
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   test('War Frenzy is cancelled by Null Weave', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
@@ -555,6 +585,80 @@ describe('Tenzen Recursive Pattern (persist if Tenzen killed)', () => {
       const card = state.regions.norrsund!.chaosCards.find(c => c?.cardId === 'tenzen_persistence_matrix');
       if (card) expect(card.persistNextRound).toBe(true);
     }
+  });
+
+  test('regression: persistNextRound set via direct applyBattleHitAssignment', () => {
+    // Reproduces the reported bug scenario: Tenzen kills a figure in a region
+    // that contains Persistence Matrix → persistNextRound should be true on
+    // the slot afterwards (regardless of slot index).
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'tenzen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    // Put persistence at slot 1 (not slot 0) to catch index-specific bugs
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'almerida', 0); // decoy in another region
+    s = placeCard(s, 'tenzen_persistence_matrix', 'tenzen', 'norrsund', 1);
+
+    const gormen = followersInRegion(s, 'norrsund').find(f => f.power === 'gormen')!;
+    const sPaused: GameState = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        xarmDialEarnedThisRegion: false,
+        nextStep: { type: 'post_normal' },
+      },
+      pendingAction: {
+        waitingFor: 'tenzen',
+        actionKind: 'battle_hit_assignment',
+        context: { regionId: 'norrsund', hitsRemaining: 1, changerOfFateActive: false, peasantsAvailable: 0 },
+      },
+    };
+    const { state } = applyBattleHitAssignment(sPaused, {
+      kind: 'battle_hit_assignment',
+      power: 'tenzen',
+      regionId: 'norrsund',
+      followerIds: [gormen.id],
+    });
+    const card = state.regions.norrsund!.chaosCards[1];
+    expect(card?.cardId).toBe('tenzen_persistence_matrix');
+    expect(card?.persistNextRound).toBe(true);
+  });
+
+  test('regression: full round-trip — Tenzen kills, end phase keeps Persistence Matrix', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'tenzen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeCard(s, 'tenzen_persistence_matrix', 'tenzen', 'norrsund');
+
+    const gormen = followersInRegion(s, 'norrsund').find(f => f.power === 'gormen')!;
+    const sPaused: GameState = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        xarmDialEarnedThisRegion: false,
+        nextStep: { type: 'post_normal' },
+      },
+      pendingAction: {
+        waitingFor: 'tenzen',
+        actionKind: 'battle_hit_assignment',
+        context: { regionId: 'norrsund', hitsRemaining: 1, changerOfFateActive: false, peasantsAvailable: 0 },
+      },
+    };
+    const { state: afterKill } = applyBattleHitAssignment(sPaused, {
+      kind: 'battle_hit_assignment',
+      power: 'tenzen',
+      regionId: 'norrsund',
+      followerIds: [gormen.id],
+    });
+    expect(afterKill.regions.norrsund!.chaosCards[0]?.persistNextRound).toBe(true);
+
+    const { state: afterEnd } = resolveEndPhase({ ...afterKill, phase: 'end', pendingAction: null });
+    const card = afterEnd.regions.norrsund!.chaosCards[0];
+    expect(card?.cardId).toBe('tenzen_persistence_matrix');
+    expect(card?.persistNextRound).toBe(false); // reset for next round
   });
 });
 
