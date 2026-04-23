@@ -237,6 +237,25 @@ describe('world track', () => {
     expect(state.worldTrack.slot1).toBe('eastern_armistice');
     expect(state.worldTrack.slot2).toBeNull();
   });
+
+  test('comet card on incoming draw clears Event tokens placed by prior comet cards', () => {
+    // Simulate prior comet card having placed Event tokens on the map.
+    let s = makeState({ phase: 'world', pendingAction: null, worldDeck: ['the_chokepoint'] });
+    s = { ...s, worldTrack: { slot1: 'eastern_armistice', slot2: null, discardCard: null } };
+    s = addToken(s, 'almerida', 'event');
+    s = addToken(s, 'normagne', 'event');
+    s = addToken(s, 'norrsund', 'event');
+    const { state } = resolveWorldPhase(s);
+    // Prior comet's events are gone
+    expect(state.regions.almerida!.tokens).not.toContain('event');
+    expect(state.regions.norrsund!.tokens).not.toContain('event');
+    // New comet's events are present
+    expect(state.regions.the_barrens!.tokens).toContain('event');
+    expect(state.regions.mittelreich!.tokens).toContain('event');
+    expect(state.regions.toscavar!.tokens).toContain('event');
+    // Normagne was cleared by the comet replacement but isn't a target of chokepoint
+    expect(state.regions.normagne!.tokens).not.toContain('event');
+  });
 });
 
 // ─── applyWorldChoice ─────────────────────────────────────────────────────────

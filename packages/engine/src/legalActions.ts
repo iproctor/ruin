@@ -110,8 +110,7 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
       if (!reward || reward.kind !== 'remove_world_tokens') return [];
       const actions: DialRemoveWorldTokenAction[] = [];
       for (const regionId of REGION_ORDER) {
-        const tokens = state.regions[regionId]!.tokens.filter(t => t !== 'chaos_stone');
-        for (const tokenType of new Set(tokens)) {
+        for (const tokenType of new Set(state.regions[regionId]!.tokens)) {
           actions.push({ kind: 'dial_remove_world_token' as const, power, regionId, tokenType } satisfies DialRemoveWorldTokenAction);
         }
       }

@@ -1605,13 +1605,14 @@ function DialRemoveWorldTokenPanel({
   onActions?: (actions: Action[]) => void;
 }) {
   const remaining = (context['remaining'] as number) ?? 1;
-  type RemovableToken = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen';
+  type RemovableToken = 'event' | 'hero' | 'noble' | 'peasant' | 'ratmen' | 'chaos_stone';
   const TOKEN_NAMES: Record<RemovableToken, string> = {
     event: TOKEN_LABELS.event,
     hero: TOKEN_LABELS.hero,
     noble: TOKEN_LABELS.noble,
     peasant: TOKEN_LABELS.peasant,
     ratmen: TOKEN_LABELS.ratmen,
+    chaos_stone: TOKEN_LABELS.chaos_stone,
   };
 
   type Selection = { regionId: RegionId; tokenType: RemovableToken };
@@ -1622,7 +1623,6 @@ function DialRemoveWorldTokenPanel({
   for (const regionId of ALL_REGIONS) {
     const seen = new Set<string>();
     for (const t of state.regions[regionId]!.tokens) {
-      if (t === 'chaos_stone') continue;
       if (seen.has(t)) continue;
       seen.add(t);
       options.push({ regionId, tokenType: t as RemovableToken });

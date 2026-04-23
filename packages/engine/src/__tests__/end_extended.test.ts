@@ -7,6 +7,7 @@
  *   - drawOneCard reshuffles from discard when deck is empty
  */
 import { resolveEndPhase } from '../phases/end.js';
+import { getLegalActions } from '../legalActions.js';
 import {
   makeState, placeFollower, addToken, addCorruption, setVP, setWorldCard,
   giveInDeck, autoResolveEndPhase,
@@ -230,7 +231,7 @@ describe('dial instruction: remove_corruption (Gormen pos 2, threat 10)', () => 
 });
 
 describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () => {
-  test('removes world tokens (non-chaos-stone) from regions', () => {
+  test('removes world tokens from regions', () => {
     // Lasha dial: pos 5 → pos 6 = remove_world_tokens 2
     // Give xarm equal counters to prevent lasha getting a bonus advance to victory (pos 7)
     let s = endState();
@@ -249,14 +250,31 @@ describe('dial instruction: remove_world_tokens (Lasha pos 6, threat 27)', () =>
     expect(log.entries.some(l => l.includes('Lasha') && l.includes('removes'))).toBe(true);
   });
 
-  test('chaos_stone tokens are not removed', () => {
+  test('chaos_stone tokens are removable when nothing else is on the board', () => {
     // Lasha dial: pos 5 → pos 6 = remove_world_tokens 2
+    // RULES.md: "Remove X World tokens (of any type) from the board" — chaos stones count.
     let s = endState();
     s = setDial(s, 'lasha', 5, 1);
+    s = setDial(s, 'xarm', 0, 1); // tie → no bonus advance
     s = addToken(s, 'norrsund', 'chaos_stone');
+    s = addToken(s, 'toscavar', 'chaos_stone');
     const { state } = autoResolveEndPhase(resolveEndPhase(s));
-    // chaos_stone is exempt from removal
-    expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
+    expect(state.regions.norrsund!.tokens).not.toContain('chaos_stone');
+    expect(state.regions.toscavar!.tokens).not.toContain('chaos_stone');
+  });
+
+  test('legal actions for dial_remove_world_token include chaos_stone', () => {
+    // Legal-actions regression: when chaos_stone is the only token on a region,
+    // it must still show up as a removable option (used by the client UI).
+    let s = endState();
+    s = setDial(s, 'lasha', 5, 1);
+    s = setDial(s, 'xarm', 0, 1);
+    s = addToken(s, 'norrsund', 'chaos_stone');
+    s = addToken(s, 'toscavar', 'peasant'); // keep the reward queue alive via non-chaos token
+    const after = resolveEndPhase(s).state;
+    expect(after.pendingAction?.actionKind).toBe('dial_remove_world_token');
+    const legal = getLegalActions(after, 'lasha') as Array<{ kind: string; regionId: string; tokenType: string }>;
+    expect(legal.some(a => a.regionId === 'norrsund' && a.tokenType === 'chaos_stone')).toBe(true);
   });
 
   test('awaiting_action carries count upfront and remaining reduces per pick', () => {

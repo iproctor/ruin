@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion, previewDialAdvancementEarners } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import { INK, SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_HOT, CARD_FACE, CARD_INK, MAGIC, HIGHLIGHT, RUINED, RUINED_TEXT, PENDING, ERROR } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
@@ -555,15 +555,13 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           { label: `R${R}`, color: PAPER_FADE },
           { label: `V${V}`, color: PAPER_FADE },
         ];
+        let dacSegments: { ch: string; color: string }[] | null = null;
         if (isRuined) {
           parts.push({ label: 'RUINED', color: ERROR, bold: true });
         } else {
           if (dom.leader) {
-            // Raw domination value when dominating
             parts.push({ label: `D${dom.value}`, color: POWER_COLORS[dom.leader], bold: true });
           } else {
-            // Closest-to-dominating power, shown as deficit from threshold
-            // (need R+1 to dominate → deficit = D - R - 1, always ≤ -1)
             const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
             let bestPw: Power | null = null;
             let bestDom = 0;
@@ -576,8 +574,36 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
             }
           }
           parts.push({ label: `C${corruptionTotal}${cultCount > 0 ? `+${cultCount}` : ''}${danger ? '!' : ''}`, color: cColor, bold: danger || !!topRuiner });
+
+          // DAC preview — non-Xarm powers that would earn a dial counter this corruption phase.
+          //   1 earner  → all three letters that power's color
+          //   2 earners → D = first, A = PAPER (separator), C = second
+          //   3 earners → D / A / C each its own earner's color
+          const dacEarners = previewDialAdvancementEarners(state, regionId);
+          if (dacEarners.length > 0) {
+            let cD: string, cA: string, cC: string;
+            if (dacEarners.length === 1) {
+              cD = cA = cC = POWER_COLORS[dacEarners[0]!];
+            } else if (dacEarners.length === 2) {
+              cD = POWER_COLORS[dacEarners[0]!];
+              cA = PAPER;
+              cC = POWER_COLORS[dacEarners[1]!];
+            } else {
+              cD = POWER_COLORS[dacEarners[0]!];
+              cA = POWER_COLORS[dacEarners[1]!];
+              cC = POWER_COLORS[dacEarners[2]!];
+            }
+            dacSegments = [
+              { ch: 'D', color: cD },
+              { ch: 'A', color: cA },
+              { ch: 'C', color: cC },
+            ];
+          }
         }
         const step = (w / 2) / parts.length;
+        // Render DAC in the right half of the stats row so it never overlaps
+        // the variable-width C-label. Keep POP aligned to the far right.
+        const dacX = x + w / 2 + 12;
         return (
           <g>
             {parts.map((p, i) => (
@@ -586,6 +612,13 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
                 {p.label}
               </text>
             ))}
+            {dacSegments && (
+              <text x={dacX} y={y + 25} fontSize="8" fontWeight={700} style={{ userSelect: 'none' }}>
+                {dacSegments.map((s, j) => (
+                  <tspan key={j} fill={s.color}>{s.ch}</tspan>
+                ))}
+              </text>
+            )}
           </g>
         );
       })()}

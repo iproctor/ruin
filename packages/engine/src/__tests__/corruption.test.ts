@@ -3,7 +3,8 @@
  * dial advancement, ruination, and all persistent card effects active during
  * the corruption phase.
  */
-import { resolveCorruptionPhase } from '../phases/corruption.js';
+import { resolveCorruptionPhase, previewDialAdvancementEarners } from '../phases/corruption.js';
+import { applyActionForPreview } from '../reducers.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
   withUpgrade, setVP, ruinRegion,
@@ -351,5 +352,193 @@ describe('Tenzen Fatespinner upgrade (counts as 2 chaos stones for dial)', () =>
     const countersBefore = s.powers.tenzen!.dialCounters;
     const { state } = resolveCorruptionPhase(s);
     expect(state.powers.tenzen!.dialCounters).toBeGreaterThan(countersBefore);
+  });
+});
+
+// ─── previewDialAdvancementEarners (client stat-line helper) ─────────────────
+
+describe('previewDialAdvancementEarners', () => {
+  test('Xarm is never reported (battle-phase condition)', () => {
+    // 2 xarm cultists in a populous noble region — engine-DAC condition
+    // matches none of the corruption-phase conditions, but make sure Xarm
+    // isn't surfaced anyway.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'xarm', 'cultist', 'normagne');
+    s = placeFollower(s, 'xarm', 'cultist', 'normagne');
+    s = addToken(s, 'normagne', 'noble');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+  });
+
+  test('Gormen earns when 2 cultists are in a Populous region', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne'); // populous
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual(['gormen']);
+  });
+
+  test('Gormen does NOT earn in a non-Populous region', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund'); // not populous
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual([]);
+  });
+
+  test('Tenzen earns when 2 cultists are in a region with 2 chaos stones', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'chaos_stone');
+    s = addToken(s, 'norrsund', 'chaos_stone');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['tenzen']);
+  });
+
+  test('Tenzen Fatespinner upgrade makes a single magic symbol + Fatespinner enough', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'tenzen', 'tenzen_fatespinner_up');
+    s = placeFollower(s, 'tenzen', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    // Fatespinner bonus = 2; no magic symbols needed
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['tenzen']);
+  });
+
+  test('Lasha earns when 2 cultists are in a region with a Noble token', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'noble');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['lasha']);
+  });
+
+  test('Lasha Ravers upgrade lets warriors lay corruption', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_ravers_up');
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');
+    s = addToken(s, 'norrsund', 'hero');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['lasha']);
+  });
+
+  test('without Ravers upgrade Lasha warriors do not count', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');
+    s = placeFollower(s, 'lasha', 'warrior', 'norrsund');
+    s = addToken(s, 'norrsund', 'hero');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual([]);
+  });
+
+  test('Narcotic Musk: controlled enemy cultist counts toward Lasha', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund', { controlledBy: 'lasha' });
+    s = addToken(s, 'norrsund', 'hero');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['lasha']);
+  });
+
+  test('Vile Consumption adds corruption toward Gormen DAC', () => {
+    // 1 gormen cultist + Vile Consumption in a populous region
+    // vile consumption: floor(1 gormen figure / 2) = 0 → not enough
+    // Add an extra warrior so figures=2, floor(2/2)=1 extra → 1 cultist + 1 = 2
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'warrior', 'normagne');
+    s = placeCard(s, 'gormen_vile_consumption', 'gormen', 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual(['gormen']);
+  });
+
+  test('Tenzen Shimmer reduces enemy cultist count by 1', () => {
+    // 2 gormen cultists in a populous region — normally Gormen earns.
+    // With Tenzen Shimmer in play, Gormen loses 1 cultist → only 1 placed → no DAC.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+  });
+
+  test('War Cry blocks everything in the region', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeCard(s, 'xarm_war_cry', 'xarm', 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+  });
+
+  test('Changer of Fate suspends Shimmer so Gormen earns again', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'normagne', 0);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'normagne', 1);
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual(['gormen']);
+  });
+
+  test('Multiple earners are returned in POWER_ORDER (gormen, tenzen, lasha)', () => {
+    // Set up a region where all three non-Xarm powers qualify.
+    // Populous + noble + 2 chaos stones → satisfies all three region conditions.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'tenzen', 'cultist', 'normagne');
+    s = placeFollower(s, 'tenzen', 'cultist', 'normagne');
+    s = placeFollower(s, 'lasha', 'cultist', 'normagne');
+    s = placeFollower(s, 'lasha', 'cultist', 'normagne');
+    s = addToken(s, 'normagne', 'noble');
+    s = addToken(s, 'normagne', 'chaos_stone');
+    s = addToken(s, 'normagne', 'chaos_stone');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual(['gormen', 'tenzen', 'lasha']);
+  });
+
+  test('Ruined region returns no earners', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = ruinRegion(s, 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+  });
+
+  test('reflects a pending summon applied via applyActionForPreview (client displayState path)', () => {
+    // One Gormen cultist already in Normagne (populous).
+    // Pre-summon: only 1 cultist — no DAC yet.
+    // The client stages a summoning action; displayState runs applyActionForPreview
+    // and the preview helper should then see 2 cultists → Gormen earns DAC.
+    let s = makeState({ phase: 'summoning', pendingAction: { waitingFor: 'gormen', actionKind: 'summoning_action', context: {} } });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+
+    const staged = applyActionForPreview(s, {
+      kind: 'summoning_summon_figure',
+      power: 'gormen',
+      followerId: 'gormen_cultist_2',
+      toRegion: 'normagne',
+    }).state;
+    expect(previewDialAdvancementEarners(staged, 'normagne')).toEqual(['gormen']);
+  });
+
+  test('Lasha: pending summon of second cultist into a noble region triggers DAC', () => {
+    // Lasha has 1 cultist in a region with a Noble token.
+    // Before summon: only 1 cultist, below threshold → no DAC.
+    // After pending summon of a 2nd cultist → Lasha should earn DAC.
+    let s = makeState({ phase: 'summoning', pendingAction: { waitingFor: 'lasha', actionKind: 'summoning_action', context: {} } });
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'noble');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual([]);
+
+    const staged = applyActionForPreview(s, {
+      kind: 'summoning_summon_figure',
+      power: 'lasha',
+      followerId: 'lasha_cultist_2',
+      toRegion: 'norrsund',
+    }).state;
+    expect(previewDialAdvancementEarners(staged, 'norrsund')).toEqual(['lasha']);
+  });
+
+  test('Lasha: two cultists already in a noble region show DAC without any pending action', () => {
+    // Baseline — the stat line should show the Lasha DAC even before any summon is staged.
+    let s = makeState({ phase: 'summoning', pendingAction: { waitingFor: 'lasha', actionKind: 'summoning_action', context: {} } });
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'noble');
+    expect(previewDialAdvancementEarners(s, 'norrsund')).toEqual(['lasha']);
   });
 });
