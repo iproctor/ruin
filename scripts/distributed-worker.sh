@@ -42,7 +42,7 @@ LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 # power and snapshots for others. Only that power's visits are recorded.
 FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
-TENZEN_CUTOFF_SHIFT=0.85
+TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
 HOF_MIX=0.1
 export HOF_MIX
