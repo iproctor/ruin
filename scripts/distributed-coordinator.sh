@@ -249,16 +249,16 @@ while true; do
     # Adaptive HOF mix: when focus power's class freq drops, boost HOF_MIX
     # so more collection games use a strong snapshot, pulling training data
     # back toward strong behavior. Linear ramp:
-    #   freq ≥ 0.115 → HOF_MIX = 0.10 (baseline)
-    #   freq  = 0.05 → HOF_MIX = 0.36
-    #   freq ≤ 0.05 → HOF_MIX = 0.36 (clamped)
+    #   freq ≥ 0.125 → HOF_MIX = 0.10 (baseline)
+    #   freq  = 0.05 → HOF_MIX = 0.40
+    #   freq ≤ 0.05 → HOF_MIX = 0.40 (clamped)
     # Written to hof_mix.txt; workers rsync this file and read it before
     # each collect call.
     if [ -n "$TZ_FREQ" ]; then
       ADAPTIVE_MIX=$(awk -v f="$TZ_FREQ" 'BEGIN {
-        if (f >= 0.115) { mix = 0.10 }
-        else if (f <= 0.05) { mix = 0.36 }
-        else { mix = 0.10 + (0.115 - f) * 4 }
+        if (f >= 0.125) { mix = 0.10 }
+        else if (f <= 0.05) { mix = 0.40 }
+        else { mix = 0.10 + (0.125 - f) * 4 }
         printf "%.2f", mix
       }')
       echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
