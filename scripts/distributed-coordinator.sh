@@ -202,7 +202,7 @@ while true; do
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
     # Scalar-value head: focuses trunk capacity on P(focus_power wins).
     # BCE gradients are sharper than softmax-CE so use smaller LR.
-    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC --scalar-value --lr 1e-3"
+    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC --scalar-value --lr 5e-4"
   else
     TRAIN_OUT="$DATA_DIR/model.json"
     TRAIN_ARGS=""
