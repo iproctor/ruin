@@ -132,6 +132,7 @@ while true; do
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --hof-mix "$HOF_MIX" \
+      --dirichlet-weight 0.25 \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
     mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
     SAMPLES=$(wc -l < "$BATCH_FILE")

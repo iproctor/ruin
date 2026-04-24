@@ -156,6 +156,7 @@ while true; do
       --workers "$WORKERS" --epsilon 0 \
       --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
       --hof-mix "$EFFECTIVE_HOF_MIX" \
+      --dirichlet-weight 0.25 \
       --out "${DATA_DIR}/training.jsonl" 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
     sleep "$IDLE_SECONDS"
