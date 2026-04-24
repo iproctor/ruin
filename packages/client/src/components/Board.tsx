@@ -536,12 +536,16 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
           (tokenCounts.get('chaos_stone') ?? 0);
         const regionFollowers = followersInRegion(state, regionId);
-        const cultCount = regionFollowers.filter(f => f.class === 'cultist').length;
+        const lashaRavers = state.powers.lasha!.upgradesInPlay.includes('lasha_ravers_up');
+        const placesCorruption = (f: FollowerInstance) =>
+          f.class === 'cultist' ||
+          (lashaRavers && f.class === 'warrior' && ((f.controlledBy ?? f.power) as Power) === 'lasha');
+        const cultCount = regionFollowers.filter(placesCorruption).length;
         const danger = corruptionTotal + cultCount >= 12;
-        // Leading ruiner: most (corruption tokens + cultists) in region
+        // Leading ruiner: most (corruption tokens + corruption placers) in region
         const ruinerScore: Partial<Record<Power, number>> = { ...region.corruptionTokens };
         for (const f of regionFollowers) {
-          if (f.class !== 'cultist') continue;
+          if (!placesCorruption(f)) continue;
           const pw = (f.controlledBy ?? f.power) as Power;
           ruinerScore[pw] = (ruinerScore[pw] ?? 0) + 1;
         }
@@ -783,7 +787,11 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
     (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
     (tokenCounts.get('chaos_stone') ?? 0);
   const tooltipFollowers = followersInRegion(state, regionId);
-  const cultCount = tooltipFollowers.filter(f => f.class === 'cultist').length;
+  const lashaRavers = state.powers.lasha!.upgradesInPlay.includes('lasha_ravers_up');
+  const cultCount = tooltipFollowers.filter(f =>
+    f.class === 'cultist' ||
+    (lashaRavers && f.class === 'warrior' && ((f.controlledBy ?? f.power) as Power) === 'lasha'),
+  ).length;
   const willRuin = corruptionTotal + cultCount >= 12;
   const resistance = getRegionResistance(state, regionId);
   const vp = region.conquestValue + (tokenCounts.get('noble') ?? 0);
