@@ -672,3 +672,123 @@ Tenzen
     training learns their weights. First post-change iter will
     save a 842-dim model that then cold-trains the new rows from
     collected data.
+
+  Apr 22         Scalar value head for focus training
+    --scalar-value flag: instead of 4-way softmax + CE, use
+    sigmoid + BCE on a single output predicting P(focus wins).
+    Rationale: focus training only cares about one power's win
+    rate; spending trunk capacity learning to predict the other
+    three's wins is wasted parameters and a noisier gradient.
+
+    eps bumped to 1e-7 for float32 safety (saturated sigmoid at
+    LR=5e-3 was producing NaN via 0 × log(0)). LR set to 1e-3
+    initially, dropped to 5e-4 later.
+
+    Coordinator activates with --scalar-value in TRAIN_ARGS.
+    Loaded by mlp.ts via 'sigmoid' activation type and outDim=1
+    on the value head; evaluator returns probs[0] directly when
+    scalar.
+
+  Apr 22         TENZEN_CUTOFF_SHIFT ramp 0 → 0.3 → 0.5
+    Force the model to evolve its own strategy rather than lean
+    on handmade eval. shift=0.3 → 1313 (0.146); shift=0.5 → 1320
+    (0.150 new high). Both jumps healthy.
+
+  Apr 22         Adaptive HOF threshold 0.10 → 0.115
+    1317-1319 held >0.12 with baseline HOF. Raise the point where
+    HOF self-correction disengages to force the model to maintain
+    higher freq on its own merits. Linear ramp formula updated:
+    mix = 0.10 + (0.115 − freq) × 4, clamped 0.10..0.36.
+
+  Apr 22         TENZEN_CUTOFF_SHIFT 0.5 → 0.7
+    1322 (0.141) and 1323 (0.148) both above 0.14 → push further.
+    Brief dip 1326 (0.107) then recovery 1327 (0.117) via adaptive
+    HOF mix=0.13 firing.
+
+  Apr 22         No-winners-on-exhaustion rule (engine merge)
+    World exhaustion now ends with winners=[] instead of any tie-
+    breaker. Removes the "stall to exhaustion" winning strategy
+    entirely. Expected effect on training: value head must learn
+    that exhaustion-leading states score 0 for everyone (was
+    previously sometimes 1 for tenzen). Archive contamination
+    persists for ~2 iters until pre-rule batches cycle out.
+
+  Apr 22         TRAIN_EPOCHS 40 → 25
+    Val v-loss plateaus by ep 25-30 while train v-loss keeps
+    dropping → widening gap is overfit tail. User hypothesis: high-
+    freq iter trains overconfident value head, which over-values
+    similar states next iter, plays brittle, freq dips. Cutting
+    tail epochs damps the cycle. Saves ~150s/iter too.
+
+  Apr 23         σ added to scalar value-head stats
+    p̄(tenzen) alone doesn't distinguish "model learned to
+    discriminate" from "model collapsed to base rate". Per-epoch
+    log now shows σ alongside mean. Healthy band ~0.30-0.35;
+    collapse would be <0.05.
+
+  Apr 23         TENZEN_CUTOFF_SHIFT 0.7 → 0.85 → 0.7 (failed)
+    First retry: 1339=0.110, 1340=0.109, 1341=0.118 — 3 iters
+    stuck below 0.12, reverted. HOF floor at the time was 0.143.
+
+  Apr 23         TENZEN_CUTOFF_SHIFT 0.7 → 0.85 (retry, succeeded)
+    HOF floor had risen to 0.148 in the meantime. 1353=0.150,
+    1354=0.158 (new high), σ rising 0.35→0.37. The stronger HOF
+    floor was the difference.
+
+  Apr 23         TENZEN_CUTOFF_SHIFT 0.85 → 1.0
+    Pure learned, no handmade eval at any cutoff. P(cutoff=0) = 1.
+    Adaptive HOF threshold simultaneously raised 0.115 → 0.125.
+
+    Result: stuck oscillating in 0.10-0.125 band for 6+ iters.
+    HOF mix ramping 0.10-0.23 responsively, σ healthy 0.29-0.32.
+    Load-bearing HOF — adaptive system holding tenzen up rather
+    than tenzen sustaining on its own. Plateau confirmed.
+
+  Apr 23         Stale gormen model cleanup
+    model_gormen.json from the abandoned April 20 gormen-focus
+    experiment was sitting on every box. load-model.ts auto-
+    loads any model_<power>.json next to model.json as per-power
+    override → gormen had been playing with that 3-day-old
+    specialized brain in every collection game and every bench.
+
+    Deleted on coordinator + local. Added rm -f to the worker
+    startup scripts as self-healing for the 5 worker boxes
+    (workers re-exec on script mtime change). Post-cleanup,
+    gormen freq jumped 0.18 → 0.23-0.27 (baseline gormen is
+    stronger than the abandoned specialization), absorbing some
+    of tenzen's training-pool wins.
+
+  Apr 23         Dirichlet noise weight 0.35 → 0.25
+    Hypothesis: noise on root priors flattens the policy head's
+    output. Tenzen is the only power with a tuned policy head;
+    others run frozen model.json. So noise costs tenzen more
+    than the others — bench (no noise) consistently shows tenzen
+    ~25% while training (with noise) shows ~12%. Lowering moves
+    closer to AlphaZero canonical 0.25.
+
+  Apr 24         LR 1e-3 → 5e-4
+    Warm-starting from previous iter every iter is fine-tuning,
+    not from-scratch training. v-loss dropping 0.5→0.015 in 25
+    epochs and σ drifting 0.30→0.35 per iter were both signs
+    LR was too big for the warm-start regime. Half-step.
+
+  Apr 24         FOCUS_POWER tenzen → lasha
+    Tenzen plateaued at HOF-supported 0.10-0.125 band. Switching
+    to lasha which has been lagging in benchmarks (0.21-0.33
+    range, similar to others under symmetric model.json bench).
+
+    Same regimen carries: shift=1.0 (no-op for lasha — no
+    handmade lasha eval), 25 epochs, LR 5e-4, dirichlet 0.25,
+    HOF threshold 0.125.
+
+    model_lasha.json doesn't exist → warm-start falls back to
+    model.json for the first iter. Tenzen continues playing in
+    opponent slot via model_tenzen.json (auto per-power override)
+    at 1000 iters instead of 3000 — slightly weaker tactically
+    but matches benchmark conditions.
+
+    HOF: tenzen HOF entries cleared from coordinator (preserved
+    locally for later). Per-power subdir refactor:
+    hof/<power>/manifest.json + hof/<power>/model_hof_<iter>.json.
+    Lasha HOF starts empty; populates once lasha clears 0.10
+    floor.
