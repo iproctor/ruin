@@ -8,6 +8,18 @@
       "power": "tenzen"
     },
     {
+      "iter": 1355,
+      "freq": 0.165,
+      "file": "model_tenzen_hof_1355.json",
+      "power": "tenzen"
+    },
+    {
+      "iter": 1382,
+      "freq": 0.161,
+      "file": "model_tenzen_hof_1382.json",
+      "power": "tenzen"
+    },
+    {
       "iter": 1353,
       "freq": 0.158,
       "file": "model_tenzen_hof_1353.json",
@@ -17,18 +29,6 @@
       "iter": 1324,
       "freq": 0.155,
       "file": "model_tenzen_hof_1324.json",
-      "power": "tenzen"
-    },
-    {
-      "iter": 1337,
-      "freq": 0.154,
-      "file": "model_tenzen_hof_1337.json",
-      "power": "tenzen"
-    },
-    {
-      "iter": 1348,
-      "freq": 0.15,
-      "file": "model_tenzen_hof_1348.json",
       "power": "tenzen"
     }
   ]
