@@ -518,8 +518,14 @@ def main() -> int:
     sw_val = sample_weights[:n_val]
     sw_tr = sample_weights[n_val:]
     _rw_names = ["xarm", "gormen", "tenzen", "lasha"]
+    # avg rank: mean target value per power across all samples. Range [0,1]:
+    # 1.0 = always 1st, 0.5 = random placement, 0.0 = always 4th. Richer than
+    # class freq (top-rank rate) for tracking "fight harder" gains under
+    # rank-target training — captures finishing 2nd/3rd, not just winning.
+    avg_rank = T_value.mean(axis=0)
     print(f"class counts: {' '.join(f'{_rw_names[i]}:{int(class_counts[i])}' for i in range(4))}")
     print(f"class freq:   {' '.join(f'{_rw_names[i]}:{class_freq[i]:.3f}' for i in range(4))}")
+    print(f"avg rank:     {' '.join(f'{_rw_names[i]}:{avg_rank[i]:.3f}' for i in range(4))}")
     print(f"reweight:     {' '.join(f'{_rw_names[i]}:{inv_freq[i]:.2f}' for i in range(4))}")
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 
