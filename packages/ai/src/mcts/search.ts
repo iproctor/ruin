@@ -64,70 +64,75 @@ function makeRootPriorsFromRaw(
   forPower?: Power,
   dirichlet?: { alpha: number; weight: number },
 ): ((action: Action) => number) | null {
-  // Build slot → raw policy
+  // 1. Per-slot raw policy mass.
   const slotPriors = new Map<number, number>();
-  let totalForLegal = 0;
+  const slotCount = new Map<number, number>();
   for (const a of rootActions) {
     const idx = canonicalActionIndex(a, state);
     if (idx >= 0) {
-      const p = raw[idx]!;
-      slotPriors.set(idx, p);
-      totalForLegal += p;
+      slotPriors.set(idx, raw[idx]!);
+      slotCount.set(idx, (slotCount.get(idx) ?? 0) + 1);
     }
   }
-  // Normalize within the legal-action set
+  let totalForLegal = 0;
+  for (const v of slotPriors.values()) totalForLegal += v;
   if (totalForLegal <= 0) return null;
 
-  // Dirichlet noise over legal slots. Each slot gets a sample from
-  // Gamma(alpha); normalise to a probability simplex.
-  let slotNoise: Map<number, number> | null = null;
-  if (dirichlet && slotPriors.size > 0) {
-    const slots = [...slotPriors.keys()];
-    const gammas = slots.map(() => sampleGamma(dirichlet.alpha));
-    const total = gammas.reduce((a, b) => a + b, 0) || 1;
-    slotNoise = new Map();
-    for (let i = 0; i < slots.length; i++) {
-      slotNoise.set(slots[i]!, gammas[i]! / total);
+  // 2. Per-action raw prior. When several legal actions canonicalise to the
+  // same slot, split the slot's mass evenly among them so the action-level
+  // priors sum to 1 (matching the slot-level normalisation).
+  const N = rootActions.length;
+  const actionPriors = new Array<number>(N);
+  for (let i = 0; i < N; i++) {
+    const idx = canonicalActionIndex(rootActions[i]!, state);
+    if (idx >= 0) {
+      actionPriors[i] = (slotPriors.get(idx)! / totalForLegal) / slotCount.get(idx)!;
+    } else {
+      actionPriors[i] = 1 / N; // canonical-action lookup failed, uniform fallback
     }
   }
 
-  // Boost zero-cost card priors: the policy head systematically undervalues
-  // free cards because their effects are indirect. Give them a minimum prior
-  // floor so MCTS explores them enough to learn their value.
+  // 3. Dirichlet noise per legal action (NOT per slot — per-slot noise
+  // duplicates mass across same-slot actions and inflates effective noise).
+  if (dirichlet && N > 0) {
+    const gammas = new Array<number>(N);
+    let gtotal = 0;
+    for (let i = 0; i < N; i++) { gammas[i] = sampleGamma(dirichlet.alpha); gtotal += gammas[i]!; }
+    if (gtotal <= 0) gtotal = 1;
+    const w = dirichlet.weight;
+    for (let i = 0; i < N; i++) {
+      actionPriors[i] = (1 - w) * actionPriors[i]! + w * (gammas[i]! / gtotal);
+    }
+  }
+
+  // 4. Heuristic floors (per action).
   const FREE_CARD_PRIOR_FLOOR = 0.06;
-  const zeroCostSlots = new Set<number>();
-  for (const a of rootActions) {
-    if (isZeroCostCardPlay(state, a)) {
-      const idx = canonicalActionIndex(a, state);
-      if (idx >= 0) zeroCostSlots.add(idx);
-    }
-  }
-
-  // Urgent retreat: solo cultist in xarm-threatened region moving to safety.
-  // Heavy prior boost for all non-xarm powers — this is a near-certain kill
-  // for xarm if they stay, and the value head doesn't reliably see it.
   const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
-  const urgentRetreatSlots = new Set<number>();
-  if (forPower !== 'xarm') {
-    for (const a of rootActions) {
-      if (isUrgentRetreatFromXarm(state, a)) {
-        const idx = canonicalActionIndex(a, state);
-        if (idx >= 0) urgentRetreatSlots.add(idx);
-      }
+  for (let i = 0; i < N; i++) {
+    const a = rootActions[i]!;
+    if (isZeroCostCardPlay(state, a)) {
+      actionPriors[i] = Math.max(actionPriors[i]!, FREE_CARD_PRIOR_FLOOR);
+    }
+    if (forPower !== 'xarm' && isUrgentRetreatFromXarm(state, a)) {
+      actionPriors[i] = Math.max(actionPriors[i]!, URGENT_RETREAT_PRIOR_FLOOR);
     }
   }
 
-  return (action: Action) => {
-    const idx = canonicalActionIndex(action, state);
-    if (idx < 0) return 1 / rootActions.length;
-    let p = (slotPriors.get(idx) ?? 0) / totalForLegal;
-    if (slotNoise !== null) {
-      p = (1 - dirichlet!.weight) * p + dirichlet!.weight * (slotNoise.get(idx) ?? 0);
-    }
-    if (zeroCostSlots.has(idx)) p = Math.max(p, FREE_CARD_PRIOR_FLOOR);
-    if (urgentRetreatSlots.has(idx)) p = Math.max(p, URGENT_RETREAT_PRIOR_FLOOR);
-    return p;
-  };
+  // 5. Renormalise after floors so total mass = 1. Without this, PUCT's
+  // effective exploration constant becomes state-dependent (lots of
+  // floor-firing actions = inflated total = different c_puct in practice).
+  let finalTotal = 0;
+  for (let i = 0; i < N; i++) finalTotal += actionPriors[i]!;
+  if (finalTotal > 0) {
+    for (let i = 0; i < N; i++) actionPriors[i] = actionPriors[i]! / finalTotal;
+  }
+
+  // 6. Build per-action lookup. Action object identity is stable through
+  // selection/expansion, so we key the Map by action reference.
+  const priorByAction = new Map<Action, number>();
+  for (let i = 0; i < N; i++) priorByAction.set(rootActions[i]!, actionPriors[i]!);
+
+  return (action: Action) => priorByAction.get(action) ?? (1 / N);
 }
 
 // Standard normal via Box-Muller. Accepts Math.random() as a source.
@@ -624,9 +629,15 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
     let bestUntriedIdx = -1;
     if (hasUntried) {
       if (usePuct) {
+        // Below root, childPriors is null (only root has a policy lookup).
+        // Use uniform prior 1/N over legal actions at this node so PUCT's
+        // exploration term has the right scale instead of treating every
+        // sibling as if it had prior=1.
+        const totalLegalHere = current.children.length + current.untriedActions.length;
+        const fallbackPrior = totalLegalHere > 0 ? 1 / totalLegalHere : 1.0;
         for (let i = 0; i < current.untriedActions.length; i++) {
           const action = current.untriedActions[i]!;
-          const prior = current.childPriors !== null ? current.childPriors(action) : 1.0;
+          const prior = current.childPriors !== null ? current.childPriors(action) : fallbackPrior;
           const s = puctForUntriedAction(current, action, prior, explorationC);
           if (s > bestUntriedScore) { bestUntriedScore = s; bestUntriedIdx = i; }
         }
@@ -700,8 +711,12 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
   const childUntriedActions = getChildUntriedActions(newState);
 
   // Look up the prior for this child if the parent has a priors function
-  // (only the root sets one — see runMcts). Default 1.0 = uniform.
-  const childPrior = node.childPriors ? node.childPriors(action) : 1.0;
+  // (only the root sets one — see runMcts). Below root, fall back to uniform
+  // 1/N over the parent's legal actions so PUCT exploration scales correctly
+  // instead of treating each sibling as if it had prior=1.
+  const totalLegalHere = node.children.length + node.untriedActions.length + 1;
+  const fallbackPrior = 1 / totalLegalHere;
+  const childPrior = node.childPriors ? node.childPriors(action) : fallbackPrior;
 
   const child = createNode(
     newState, action, actingPower, node, forPower, childUntriedActions, childPrior,
