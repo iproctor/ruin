@@ -205,9 +205,7 @@ function computeRankTarget(state: import('@ruin/engine').GameState, winners: Pow
   const ranked = [...POWERS].sort((a, b) => {
     const aWin = winnerSet.has(a), bWin = winnerSet.has(b);
     if (aWin !== bWin) return aWin ? -1 : 1;
-    const aps = state.powers.find(s => s.power === a)!;
-    const bps = state.powers.find(s => s.power === b)!;
-    return bps.victoryPoints - aps.victoryPoints;
+    return state.powers[b].victoryPoints - state.powers[a].victoryPoints;
   });
   for (let i = 0; i < ranked.length; i++) {
     target[POWERS.indexOf(ranked[i])] = (N - 1 - i) / (N - 1);
