@@ -250,18 +250,21 @@ while true; do
 
     # Adaptive HOF mix: when focus power's avg rank drops, boost HOF_MIX
     # so more collection games use a strong snapshot. Avg rank is in [0,1]:
-    # 0.5 = random placement, ~0.30 = near-bottom, ~0.40 = below average.
-    # Linear ramp tuned around tenzen-class powers (norm ~0.40):
+    # 0.5 = random placement, ~0.30 = near-bottom, ~0.10 = always-last.
+    # Linear ramp tuned to only fire HARD when rank collapses entirely:
     #   rank ≥ 0.45 → HOF_MIX = 0.10 (baseline, doing fine)
-    #   rank  = 0.30 → HOF_MIX = 0.40
-    #   rank ≤ 0.30 → HOF_MIX = 0.40 (clamped, catastrophic)
+    #   rank ≤ 0.10 → HOF_MIX = 0.40 (catastrophic — always-last territory)
+    #   linear between
+    # Wider ramp than before so mid-rank tenzen (~0.27) doesn't get
+    # smothered by HOF snapshots — current model needs room to actually
+    # train against opponents instead of being replaced by HOF half the time.
     # Written to hof_mix.txt; workers rsync this file and read it before
     # each collect call.
     if [ -n "$FOCUS_RANK" ]; then
       ADAPTIVE_MIX=$(awk -v r="$FOCUS_RANK" 'BEGIN {
         if (r >= 0.45) { mix = 0.10 }
-        else if (r <= 0.30) { mix = 0.40 }
-        else { mix = 0.10 + (0.45 - r) * 2 }
+        else if (r <= 0.10) { mix = 0.40 }
+        else { mix = 0.10 + (0.45 - r) * (0.30 / 0.35) }
         printf "%.2f", mix
       }')
       echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
