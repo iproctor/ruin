@@ -233,38 +233,39 @@ while true; do
   if [ -n "$FOCUS_POWER" ]; then
     # Promote the model that GENERATED the good data, not the trainee.
     # Workers played this iter's training games using the previous model
-    # (model_tenzen.json as of the start of this iter), which corresponds to
-    # snapshot iter N-1. Class freq in the log reflects that prior model's
+    # (model_<focus>.json as of the start of this iter), which corresponds
+    # to snapshot iter N-1. Avg rank in the log reflects that prior model's
     # play; training drift (new model plays worse than data said it should)
     # must not cause us to HOF the worse trainee.
     DATA_GEN_ITER=$((ITER - 1))
-    FOCUS_FREQ=$(grep "^class freq:" "$LOG_FILE" \
+    FOCUS_RANK=$(grep "^avg rank:" "$LOG_FILE" \
       | tail -1 \
       | grep -oE "${FOCUS_POWER}:[0-9.]+" \
       | cut -d: -f2)
-    if [ -n "$FOCUS_FREQ" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
+    if [ -n "$FOCUS_RANK" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
       python3 "$ROOT/scripts/hof-promote.py" \
-        --iter "$DATA_GEN_ITER" --freq "$FOCUS_FREQ" --power "$FOCUS_POWER" \
+        --iter "$DATA_GEN_ITER" --rank "$FOCUS_RANK" --power "$FOCUS_POWER" \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
     fi
 
-    # Adaptive HOF mix: when focus power's class freq drops, boost HOF_MIX
-    # so more collection games use a strong snapshot, pulling training data
-    # back toward strong behavior. Linear ramp:
-    #   freq ≥ 0.125 → HOF_MIX = 0.10 (baseline)
-    #   freq  = 0.05 → HOF_MIX = 0.40
-    #   freq ≤ 0.05 → HOF_MIX = 0.40 (clamped)
+    # Adaptive HOF mix: when focus power's avg rank drops, boost HOF_MIX
+    # so more collection games use a strong snapshot. Avg rank is in [0,1]:
+    # 0.5 = random placement, ~0.30 = near-bottom, ~0.40 = below average.
+    # Linear ramp tuned around tenzen-class powers (norm ~0.40):
+    #   rank ≥ 0.45 → HOF_MIX = 0.10 (baseline, doing fine)
+    #   rank  = 0.30 → HOF_MIX = 0.40
+    #   rank ≤ 0.30 → HOF_MIX = 0.40 (clamped, catastrophic)
     # Written to hof_mix.txt; workers rsync this file and read it before
     # each collect call.
-    if [ -n "$FOCUS_FREQ" ]; then
-      ADAPTIVE_MIX=$(awk -v f="$FOCUS_FREQ" 'BEGIN {
-        if (f >= 0.125) { mix = 0.10 }
-        else if (f <= 0.05) { mix = 0.40 }
-        else { mix = 0.10 + (0.125 - f) * 4 }
+    if [ -n "$FOCUS_RANK" ]; then
+      ADAPTIVE_MIX=$(awk -v r="$FOCUS_RANK" 'BEGIN {
+        if (r >= 0.45) { mix = 0.10 }
+        else if (r <= 0.30) { mix = 0.40 }
+        else { mix = 0.10 + (0.45 - r) * 2 }
         printf "%.2f", mix
       }')
       echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
-      echo "[hof_mix] freq=${FOCUS_FREQ} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
+      echo "[hof_mix] rank=${FOCUS_RANK} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
     fi
   fi
 
