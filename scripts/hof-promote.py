@@ -4,18 +4,21 @@ Promote a trained snapshot into the hall-of-fame when its class freq beats
 the current worst HOF member. Called by the coordinator after each
 training iter.
 
-Manifest (packages/ai/data/hof/manifest.json):
+Per-power layout:
+  packages/ai/data/hof/<power>/manifest.json
+  packages/ai/data/hof/<power>/model_hof_<iter>.json
+
+Manifest:
   {
     "capacity": 5,
     "members": [
-      { "iter": 1286, "freq": 0.161, "file": "model_tenzen_hof_1286.json", "power": "tenzen" },
+      { "iter": 1286, "freq": 0.161, "file": "model_hof_1286.json" },
       ...
     ]
   }
 
 Under capacity: always add. At capacity: replace the worst-by-freq if new > worst.
-Collect-data.ts loads every file matching model_<power>_hof_*.json in hof/, so
-promoting/demoting files is sufficient — no other wiring needed.
+Collect-data.ts loads every file in hof/<power>/ (except manifest.json).
 """
 
 import argparse
@@ -41,7 +44,7 @@ def main() -> int:
         print(f'[hof] iter {args.iter} freq {args.freq:.3f} < floor {args.min_freq:.3f} — skipping')
         return 0
 
-    hof_dir = os.path.join(args.data_dir, 'hof')
+    hof_dir = os.path.join(args.data_dir, 'hof', args.power)
     os.makedirs(hof_dir, exist_ok=True)
     manifest_path = os.path.join(hof_dir, 'manifest.json')
 
@@ -51,8 +54,7 @@ def main() -> int:
     else:
         manifest = {'capacity': args.capacity, 'members': []}
 
-    members = [m for m in manifest.get('members', []) if m.get('power') == args.power]
-    other_members = [m for m in manifest.get('members', []) if m.get('power') != args.power]
+    members = list(manifest.get('members', []))
     capacity = manifest.get('capacity', args.capacity)
 
     snap = f'model_{args.power}_iter_{args.iter}.json'
@@ -61,39 +63,31 @@ def main() -> int:
         print(f'[hof] snapshot {snap_path} not found — skipping')
         return 0
 
-    # If we already have this iter in HOF, nothing to do.
     if any(m['iter'] == args.iter for m in members):
         return 0
 
-    hof_file = f'model_{args.power}_hof_{args.iter}.json'
+    hof_file = f'model_hof_{args.iter}.json'
     hof_path = os.path.join(hof_dir, hof_file)
 
     if len(members) < capacity:
         shutil.copy(snap_path, hof_path)
-        members.append({
-            'iter': args.iter, 'freq': args.freq,
-            'file': hof_file, 'power': args.power,
-        })
+        members.append({'iter': args.iter, 'freq': args.freq, 'file': hof_file})
         action = f'added iter {args.iter} ({args.freq:.3f})'
     else:
         worst = min(members, key=lambda m: m['freq'])
         if args.freq <= worst['freq']:
-            # Not an improvement.
             return 0
         old = os.path.join(hof_dir, worst['file'])
         if os.path.exists(old):
             os.remove(old)
         shutil.copy(snap_path, hof_path)
         members = [m for m in members if m['iter'] != worst['iter']]
-        members.append({
-            'iter': args.iter, 'freq': args.freq,
-            'file': hof_file, 'power': args.power,
-        })
+        members.append({'iter': args.iter, 'freq': args.freq, 'file': hof_file})
         action = (f'promoted iter {args.iter} ({args.freq:.3f}), '
                   f'evicted iter {worst["iter"]} ({worst["freq"]:.3f})')
 
     members.sort(key=lambda m: -m['freq'])
-    manifest['members'] = other_members + members
+    manifest['members'] = members
     manifest['capacity'] = capacity
     with open(manifest_path, 'w') as f:
         json.dump(manifest, f, indent=2)

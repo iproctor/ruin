@@ -146,21 +146,23 @@ const focusPowerModel = focusPower ? livePerPowerModels[focusPower as Power] ?? 
 const hofMix = parseFloat(getArg('--hof-mix', '0'));
 const hofModelsByPower: Partial<Record<Power, ModelJson[]>> = {};
 if (hofMix > 0) {
-  const hofDir = path.resolve(`packages/ai/data/hof`);
-  if (fs.existsSync(hofDir)) {
+  const hofRoot = path.resolve(`packages/ai/data/hof`);
+  if (fs.existsSync(hofRoot)) {
     for (const p of ALL_POWERS) {
-      const files = fs.readdirSync(hofDir)
-        .filter(f => f.startsWith(`model_${p}_hof_`) && f.endsWith('.json'));
+      const dir = path.join(hofRoot, p);
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir)
+        .filter(f => f.endsWith('.json') && f !== 'manifest.json');
       if (files.length === 0) continue;
       const pool: ModelJson[] = [];
       for (const f of files) {
-        pool.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson);
+        pool.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8')) as ModelJson);
       }
       hofModelsByPower[p] = pool;
       console.log(`[hof] ${p}: loaded ${pool.length} hall-of-fame models (mix=${hofMix})`);
     }
   } else {
-    console.log(`[hof] no ${hofDir} — skipping HOF mix`);
+    console.log(`[hof] no ${hofRoot} — skipping HOF mix`);
   }
 }
 

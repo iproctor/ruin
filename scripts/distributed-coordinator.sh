@@ -40,7 +40,8 @@ WORKERS=${WORKERS:-16}
 FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1]. Controls the per-game sampled Tenzen eval
 # cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
-# openings, 1 forces all-learned. Ramp toward 1 over many iters.
+# openings, 1 forces all-learned. Kept at 1 so tenzen (opponent slot)
+# plays purely with its trained value head, matching benchmark conditions.
 TENZEN_CUTOFF_SHIFT=1.0
 # Hall of Fame mix: fraction of games where the focus power uses a random
 # snapshot from packages/ai/data/hof/ instead of the live focus model.
@@ -237,13 +238,13 @@ while true; do
     # play; training drift (new model plays worse than data said it should)
     # must not cause us to HOF the worse trainee.
     DATA_GEN_ITER=$((ITER - 1))
-    TZ_FREQ=$(grep "^class freq:" "$LOG_FILE" \
+    FOCUS_FREQ=$(grep "^class freq:" "$LOG_FILE" \
       | tail -1 \
       | grep -oE "${FOCUS_POWER}:[0-9.]+" \
       | cut -d: -f2)
-    if [ -n "$TZ_FREQ" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
+    if [ -n "$FOCUS_FREQ" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
       python3 "$ROOT/scripts/hof-promote.py" \
-        --iter "$DATA_GEN_ITER" --freq "$TZ_FREQ" --power "$FOCUS_POWER" \
+        --iter "$DATA_GEN_ITER" --freq "$FOCUS_FREQ" --power "$FOCUS_POWER" \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
     fi
 
@@ -255,15 +256,15 @@ while true; do
     #   freq ≤ 0.05 → HOF_MIX = 0.40 (clamped)
     # Written to hof_mix.txt; workers rsync this file and read it before
     # each collect call.
-    if [ -n "$TZ_FREQ" ]; then
-      ADAPTIVE_MIX=$(awk -v f="$TZ_FREQ" 'BEGIN {
+    if [ -n "$FOCUS_FREQ" ]; then
+      ADAPTIVE_MIX=$(awk -v f="$FOCUS_FREQ" 'BEGIN {
         if (f >= 0.125) { mix = 0.10 }
         else if (f <= 0.05) { mix = 0.40 }
         else { mix = 0.10 + (0.125 - f) * 4 }
         printf "%.2f", mix
       }')
       echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
-      echo "[hof_mix] freq=${TZ_FREQ} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
+      echo "[hof_mix] freq=${FOCUS_FREQ} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
     fi
   fi
 
