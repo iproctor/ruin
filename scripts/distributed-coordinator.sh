@@ -211,7 +211,7 @@ while true; do
   if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
       --in "$RECENT_FILE" --out "$TRAIN_OUT" \
       --iter "$ITER" $TRAIN_ARGS --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |reweight|policy rows|avg target|--power|warm-)" \
+      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|avg target|--power|warm-)" \
       | tee -a "$LOG_FILE"; then
     echo "  ! training failed" | tee -a "$LOG_FILE"
     continue
