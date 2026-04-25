@@ -196,16 +196,20 @@ interface GameResult {
 }
 
 function computeRankTarget(state: import('@ruin/engine').GameState, winners: Power[] | null): number[] {
-  // Sort powers: winners first (when set), then by victoryPoints descending.
-  // Assign linear-decay value by position: top → 1.0, last → 0.0.
-  // For the no-winner exhaustion case (winners=[] or null), pure VP rank.
+  // Sort powers: winners first (when set), then by composite progress score.
+  // Score = VP + threatValue. Threat is the engine's dial-position number
+  // (xarm/lasha advance their dial as their main path; without crediting it,
+  // a near-dial-victory power gets miscounted as "low rank" purely by VP).
+  // VP max ~50, threat max ~32, so VP still dominates but dial counts.
+  // Linear-decay value by position: top → 1.0, last → 0.0.
   const target = new Array(POWERS.length).fill(0);
   const N = POWERS.length;
   const winnerSet = new Set(winners ?? []);
+  const score = (p: Power) => state.powers[p].victoryPoints + state.powers[p].threatValue;
   const ranked = [...POWERS].sort((a, b) => {
     const aWin = winnerSet.has(a), bWin = winnerSet.has(b);
     if (aWin !== bWin) return aWin ? -1 : 1;
-    return state.powers[b].victoryPoints - state.powers[a].victoryPoints;
+    return score(b) - score(a);
   });
   for (let i = 0; i < ranked.length; i++) {
     target[POWERS.indexOf(ranked[i])] = (N - 1 - i) / (N - 1);
