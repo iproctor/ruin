@@ -25,8 +25,16 @@ export function applyEvent(state: GameState, event: GameEvent): GameState {
 function applyEventInner(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     // ── Lifecycle ─────────────────────────────────────────────────────────
-    case 'phase_start':
-      return { ...state, phase: event.phase };
+    case 'phase_start': {
+      // Reset every power's per-phase DAC tracker — "one DAC per (region,
+      // phase)" applies independently each phase.
+      const powers = { ...state.powers };
+      for (const p of state.activePowers) {
+        const ps = powers[p];
+        if (ps) powers[p] = { ...ps, dacRegionsThisPhase: [] };
+      }
+      return { ...state, phase: event.phase, powers };
+    }
     case 'round_start':
       return { ...state, round: event.round };
     case 'game_over':
@@ -133,10 +141,16 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
       return setControlledBy(state, event.targetId, 'lasha');
     case 'heartrippers_corruption':
       return addCorruption(state, event.regionId, 'xarm', event.tokens);
-    case 'dial_counter':
+    case 'dial_counter': {
+      const ps = state.powers[event.power]!;
+      const dacRegions = ps.dacRegionsThisPhase.includes(event.regionId)
+        ? ps.dacRegionsThisPhase
+        : [...ps.dacRegionsThisPhase, event.regionId];
       return patchPower(state, event.power, {
-        dialCounters: state.powers[event.power]!.dialCounters + 1,
+        dialCounters: ps.dialCounters + 1,
+        dacRegionsThisPhase: dacRegions,
       });
+    }
 
     // ── Corruption ────────────────────────────────────────────────────────
     case 'domination_result':

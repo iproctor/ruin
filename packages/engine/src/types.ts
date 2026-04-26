@@ -88,6 +88,11 @@ export interface PowerState {
   followers: FollowerInstance[]; // all followers (on board + reserve)
   freeRedeployIds: string[];    // follower IDs that used a free redeploy this round (Plaguecarrier upgrade)
   summoningTurnsTaken: number;   // cumulative non-pass summoning actions this game (tempo signal)
+  /** Regions where this power has already earned a dial advancement counter
+   *  during the current phase. Used to enforce the "one DAC per (region,
+   *  phase)" rule for triggers that fire mid-phase (e.g. Plaguefather summons).
+   *  Reset whenever the phase changes. */
+  dacRegionsThisPhase: RegionId[];
 }
 
 // ─── Pending action ───────────────────────────────────────────────────────────
@@ -152,10 +157,6 @@ export interface BattleState {
   /** Companion mode: hits reported by a human rolling physical dice. When set,
    *  the upcoming roll for this power uses this count instead of rolling. */
   companionDice?: { power: Power; kind: 'normal' | 'war_frenzy' | 'undying_fury'; hits: number } | null;
-  /** True once Xarm has earned a dial counter from killing an enemy in the
-   *  current region's battle. Prevents a second DAC when War Frenzy kills and
-   *  the normal battle also kills. Reset when advancing to the next region. */
-  xarmDialEarnedThisRegion?: boolean;
 }
 
 // ─── Dial pending rewards (queued interactive end-phase rewards) ──────────────

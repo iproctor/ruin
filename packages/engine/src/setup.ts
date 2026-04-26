@@ -106,6 +106,7 @@ export function createInitialState(config: GameConfig): GameState {
       followers,
       freeRedeployIds: [],
       summoningTurnsTaken: 0,
+      dacRegionsThisPhase: [],
     };
   }
 

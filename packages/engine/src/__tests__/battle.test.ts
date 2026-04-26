@@ -628,7 +628,6 @@ describe('Tenzen Recursive Pattern (persist if Tenzen killed)', () => {
         regionOrder: [...REGION_ORDER],
         currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
         log: [],
-        xarmDialEarnedThisRegion: false,
         nextStep: { type: 'post_normal' },
       },
       pendingAction: {
@@ -661,7 +660,6 @@ describe('Tenzen Recursive Pattern (persist if Tenzen killed)', () => {
         regionOrder: [...REGION_ORDER],
         currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
         log: [],
-        xarmDialEarnedThisRegion: false,
         nextStep: { type: 'post_normal' },
       },
       pendingAction: {
@@ -910,7 +908,6 @@ describe('Lasha Rapture: release timing', () => {
         currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
         log: [],
         nextStep: { type: 'post_normal' },
-        xarmDialEarnedThisRegion: false,
       },
       pendingAction: {
         waitingFor: 'xarm',

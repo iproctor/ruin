@@ -73,9 +73,17 @@ export function applySummonFigure(
   // Apply summon via event
   s = log.apply(s, { type: 'summon_figure', power, followerId, followerClass: follower.class, toRegion, fromRegion, cost });
 
-  // Plaguefather corruption after summon
+  // Plaguefather corruption after summon. The 2 tokens placed satisfy
+  // Gormen's DAC condition ("place 2+ corruption tokens in a Populous region
+  // during the same phase") when the summon target is a populous region.
+  // Only one DAC per (region, phase): if Gormen has already earned a DAC for
+  // this region this phase (e.g. Plaguefather was moved out and back), skip.
   if (plaguefatherActive) {
     s = log.apply(s, { type: 'card_effect', subtype: 'plaguefather_corruption', power, regionId: toRegion, tokens: 2 });
+    if (s.regions[toRegion]!.populous &&
+        !s.powers['gormen']!.dacRegionsThisPhase.includes(toRegion)) {
+      s = log.apply(s, { type: 'dial_counter', regionId: toRegion, power: 'gormen' });
+    }
   }
 
   // Tenzen Apprentice upgrade: carry Chaos Stone when moved from board.

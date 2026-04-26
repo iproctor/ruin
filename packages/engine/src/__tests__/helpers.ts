@@ -68,6 +68,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       followers: makeFollowers(power),
       freeRedeployIds: [],
       summoningTurnsTaken: 0,
+      dacRegionsThisPhase: [],
     };
   };
 
