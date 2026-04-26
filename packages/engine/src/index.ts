@@ -8,7 +8,7 @@ export type {
   TenzenDiscardAction, SummonFigureAction, PlayCardAction, SummoningPassAction,
   WorldChoiceAction, HeroRemovalAction, WorldCardEffectAction, UpgradeChoiceAction,
   CorruptionHarvestChoiceAction, CardOnPlayChoiceAction, ForcedDiscardAction,
-  BattleHitAssignmentAction,
+  BattleHitAssignmentAction, RaptureChoiceAction,
   DialPendingReward,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
   CompanionOptions, CompanionWorldPickAction, CompanionDiceRollAction,

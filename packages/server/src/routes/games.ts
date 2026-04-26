@@ -186,6 +186,7 @@ const zAction = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('dial_remove_corruption'),    power: zPowerEnum, regionId: zRegionId, targetPower: zPowerEnum}),
   z.object({ kind: z.literal('dial_remove_world_token'),   power: zPowerEnum, regionId: zRegionId, tokenType: zTokenType }),
   z.object({ kind: z.literal('tenzen_apprentice_choice'),  power: zPowerEnum, followerId: z.string(), fromRegion: zRegionId, toRegion: zRegionId, carry: z.boolean() }),
+  z.object({ kind: z.literal('rapture_choice'),            power: z.literal('lasha'), regionId: zRegionId, targetFollowerId: z.string() }),
   z.object({ kind: z.literal('companion_world_pick'),      power: zPowerEnum, cardId: z.string() }),
   z.object({ kind: z.literal('companion_dice_roll'),       power: zPowerEnum, hits: z.number().int().min(0).max(100) }),
 ]);

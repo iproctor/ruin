@@ -104,6 +104,7 @@ export type ActionKind =
   | 'card_on_play_choice'      // on-play card effect requiring player choice
   | 'forced_discard'           // player must discard N cards (deferred opponent effect)
   | 'tenzen_apprentice_choice' // Tenzen Apprentices upgrade: carry a chaos stone or leave it
+  | 'rapture_choice'           // Lasha Rapture upgrade: pick which enemy to enthrall (2+ targets)
   | 'dial_place_token'         // dial reward: place a noble or chaos stone on any region
   | 'dial_remove_corruption'   // dial reward: remove a corruption token (any power's) from a region
   | 'dial_remove_world_token'  // dial reward: remove a world token from a region
@@ -140,7 +141,8 @@ export type BattleNextStep =
   | { type: 'undying_fury';  powerIndex: number }
   | { type: 'post_normal' }
   | { type: 'post_undying' }
-  | { type: 'war_frenzy_step' };
+  | { type: 'war_frenzy_step' }
+  | { type: 'post_rapture' }; // resume after a rapture_choice was made
 
 export interface BattleState {
   regionOrder: RegionId[];          // remaining regions to resolve
@@ -464,6 +466,13 @@ export interface TenzenApprenticeChoiceAction {
   carry: boolean;        // true = carry the chaos stone, false = leave it
 }
 
+export interface RaptureChoiceAction {
+  kind: 'rapture_choice';
+  power: 'lasha';
+  regionId: RegionId;
+  targetFollowerId: string; // enemy Cultist or Warrior to enthrall
+}
+
 export type Action =
   | TenzenDiscardAction
   | SummonFigureAction
@@ -477,6 +486,7 @@ export type Action =
   | CardOnPlayChoiceAction
   | ForcedDiscardAction
   | TenzenApprenticeChoiceAction
+  | RaptureChoiceAction
   | DialPlaceTokenAction
   | DialRemoveCorruptionAction
   | DialRemoveWorldTokenAction
