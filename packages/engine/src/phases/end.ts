@@ -176,8 +176,8 @@ function removeChaosCards(
     for (const [i, slot] of region.chaosCards.entries()) {
       if (slot === null || slot === undefined) continue;
 
-      // Recursive Pattern: if Tenzen killed in this region, keep it
       if (slot.cardId === 'tenzen_persistence_matrix' && slot.persistNextRound) {
+        s = log.apply(s, { type: 'card_effect', subtype: 'persistence_matrix_reset', regionId, slotIndex: i as 0 | 1 });
         newSlots[i as 0 | 1] = { ...slot, persistNextRound: false };
         continue;
       }
@@ -618,15 +618,13 @@ function drawOneCard(
   if (deckIds.length === 0 && discardIds.length === 0) return state;
 
   if (deckIds.length === 0) {
-    // Simple reshuffle (no RNG in end phase — use fixed seed offset)
     deckIds = [...discardIds].reverse();
     discardIds = [];
-    // Update state with reshuffled deck before drawing
-    state = updatePower(state, power, { deckIds, discardIds });
   }
 
   const drawn = deckIds[0]!;
-  return log.apply(state, { type: 'card_drawn', power, cardId: drawn, source });
+  const newDeck = deckIds.slice(1);
+  return log.apply(state, { type: 'card_drawn', power, cardId: drawn, source, deckIds: newDeck, discardIds });
 }
 
 function classRank(cls: 'cultist' | 'warrior' | 'incarnation'): number {

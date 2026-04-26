@@ -212,7 +212,7 @@ export function renderText(event: GameEvent): string | null {
 
 // ─── Sub-renderers ──────────────────────────────────────────────────────────
 
-function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): string {
+function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): string | null {
   switch (event.subtype) {
     case 'plaguefather_corruption':
       return `${FOLLOWERS.gormen.incarnation.name} places ${event.tokens} corruption token(s) in ${R(event.regionId)}.`;
@@ -236,6 +236,9 @@ function renderCardEffect(event: Extract<GameEvent, { type: 'card_effect' }>): s
       return `${CARD_BY_ID['tenzen_siphon_power']!.name}: Tenzen gains 1 PP.`;
     case 'depraved_infiltration':
       return `${CARD_BY_ID['lasha_depraved_infiltration']!.name}: 1 corruption token placed in ${R(event.regionId)}.`;
+    case 'persistence_matrix_marked':
+    case 'persistence_matrix_reset':
+      return null;
   }
 }
 

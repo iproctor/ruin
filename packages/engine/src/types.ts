@@ -238,7 +238,7 @@ export type GameEvent =
   | { type: 'token_supply_exhausted'; tokenType: TokenType }
   | { type: 'token_placed'; regionId: RegionId; tokenType: TokenType }
   | { type: 'token_removed'; regionId: RegionId; tokenType: TokenType }
-  | { type: 'world_track_update'; slot1: string | null; slot2: string | null }
+  | { type: 'world_track_update'; slot1: string | null; slot2: string | null; discardCard?: string | null }
 
   // ── Draw ─────────────────────────────────────────────────────────────────────
   | { type: 'tenzen_discard'; cardId: string | null }
@@ -261,6 +261,8 @@ export type GameEvent =
   | { type: 'card_effect'; subtype: 'decay'; power: Power; regionId: RegionId }
   | { type: 'card_effect'; subtype: 'siphon_power'; power: Power; regionId: RegionId; stolenFrom: Power[] }
   | { type: 'card_effect'; subtype: 'depraved_infiltration'; regionId: RegionId }
+  | { type: 'card_effect'; subtype: 'persistence_matrix_marked'; regionId: RegionId; slotIndex: 0 | 1 }
+  | { type: 'card_effect'; subtype: 'persistence_matrix_reset'; regionId: RegionId; slotIndex: 0 | 1 }
 
   // ── Battle ───────────────────────────────────────────────────────────────────
   | { type: 'battle_region_start'; regionId: RegionId }
@@ -308,7 +310,7 @@ export type GameEvent =
   | { type: 'dial_advance'; power: Power; position: number; threat: number | 'victory' }
   | { type: 'dial_vp'; power: Power; vp: number }
   | { type: 'dial_victory'; power: Power }
-  | { type: 'card_drawn'; power: Power; cardId: string; source: string }
+  | { type: 'card_drawn'; power: Power; cardId: string; source: string; deckIds: string[]; discardIds: string[] }
 
   // ── Reducers (interactive action results) ────────────────────────────────────
   | { type: 'forced_discard'; power: Power; count: number; cardIds: string[] }

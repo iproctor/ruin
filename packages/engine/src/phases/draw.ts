@@ -15,15 +15,7 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: GameL
     const drawTarget = getTenzenDrawTarget(s);
     if (tenzen.hand.length >= 1) {
       // Tenzen may want to discard first — always prompt if they have cards
-      s = {
-        ...s,
-        pendingAction: {
-          waitingFor: 'tenzen',
-          actionKind: 'tenzen_discard',
-          context: { drawTarget },
-        },
-      };
-      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', context: { drawTarget }, description: 'Draw phase: waiting for Tenzen discard choice.' });
+      s = log.apply(s, { type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', context: { drawTarget }, description: 'Draw phase: waiting for Tenzen discard choice.' });
       return { state: s, log };
     }
   }
@@ -94,21 +86,11 @@ function resolveAllDraws(state: GameState, log: GameLog): { state: GameState; lo
   }
 
   const firstSummoner = s.summoningOrder[0]!;
-  s = {
-    ...s,
-    phase: 'summoning',
-    pendingAction: {
-      waitingFor: firstSummoner,
-      actionKind: 'summoning_action',
-      context: {},
-    },
-    summoningIndex: 0,
-  };
-  // Emit phase_start here because autoAdvance can't — the phase transition +
-  // pendingAction set happen in the same step, so autoAdvance breaks before
-  // reaching its banner-emit branch.
-  log.emit({ type: 'phase_start', phase: 'summoning', round: s.round });
-  log.emit({ type: 'awaiting_action', power: firstSummoner, actionKind: 'summoning_action', context: {}, description: `${firstSummoner}'s turn to summon.` });
+  // Apply via the log so applyEvent handles phase + pendingAction + index.
+  // Both events are state-mutating; using log.apply keeps the event log
+  // authoritative.
+  s = log.apply(s, { type: 'phase_start', phase: 'summoning', round: s.round });
+  s = log.apply(s, { type: 'awaiting_action', power: firstSummoner, actionKind: 'summoning_action', context: {}, description: `${firstSummoner}'s turn to summon.` });
 
   return { state: s, log };
 }

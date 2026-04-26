@@ -27,20 +27,18 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
   switch (event.type) {
     // ── Lifecycle ─────────────────────────────────────────────────────────
     case 'phase_start': {
-      // Reset every power's per-phase DAC tracker — "one DAC per (region,
-      // phase)" applies independently each phase.
       const powers = { ...state.powers };
       for (const p of state.activePowers) {
         const ps = powers[p];
         if (ps) powers[p] = { ...ps, dacRegionsThisPhase: [] };
       }
-      // Reducer resets summoningIndex when leaving summoning (all-done path)
-      // or entering summoning. Mirror here.
       const summoningIndex = event.phase === 'summoning' || event.phase === 'battle' ? 0 : state.summoningIndex;
-      // Battle state lives only during battle phase; reducer clears it at
-      // phase change (phases/battle.ts:994). Mirror.
       const battleState = event.phase === 'battle' ? state.battleState : null;
-      return { ...state, phase: event.phase, powers, summoningIndex, battleState };
+      // Reducer (phases/world.ts:55) clears discardCard at world phase entry.
+      const worldTrack = event.phase === 'world'
+        ? { ...state.worldTrack, discardCard: null }
+        : state.worldTrack;
+      return { ...state, phase: event.phase, powers, summoningIndex, battleState, worldTrack };
     }
     case 'round_start':
       return { ...state, round: event.round };
@@ -212,7 +210,7 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
     case 'dial_victory':
       return { ...state, winners: [event.power], winCondition: 'threat_dial', phase: 'completed' };
     case 'card_drawn':
-      return drawCard(state, event.power, event.cardId);
+      return drawCard(state, event.power, event.cardId, event.deckIds, event.discardIds);
 
     // ── Reducers ──────────────────────────────────────────────────────────
     case 'forced_discard': {
@@ -291,20 +289,16 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
       return removeToken(state, event.regionId, event.tokenType);
 
     // ── Informational (no state change) ───────────────────────────────────
-    case 'world_track_update':
-      return { ...state, worldTrack: { ...state.worldTrack, slot1: event.slot1, slot2: event.slot2 } };
+    case 'world_track_update': {
+      const discardCard = event.discardCard !== undefined ? event.discardCard : state.worldTrack.discardCard;
+      return { ...state, worldTrack: { slot1: event.slot1, slot2: event.slot2, discardCard } };
+    }
 
     case 'world_card_drawn': {
-      // The reducer (phases/world.ts:78) shifts the deck directly when drawing
-      // and routes "discard"-timing cards to worldTrack.discardCard. Mirror
-      // both here so event replay reconstructs state correctly.
+      // Reducer shifts deck on draw; discardCard is set later by world_track_update.
       let s = state;
       if (s.worldDeck.length > 0 && s.worldDeck[0] === event.cardId) {
         s = { ...s, worldDeck: s.worldDeck.slice(1) };
-      }
-      const def = WORLD_CARD_BY_ID[event.cardId];
-      if (def && def.timing === 'discard') {
-        s = { ...s, worldTrack: { ...s.worldTrack, discardCard: event.cardId } };
       }
       return s;
     }
@@ -518,21 +512,11 @@ function setControlledBy(state: GameState, followerId: string, controller: Power
   return state;
 }
 
-function drawCard(state: GameState, power: Power, cardId: string): GameState {
+function drawCard(state: GameState, power: Power, cardId: string, deckIds: string[], discardIds: string[]): GameState {
   const p = state.powers[power]!;
-  // Add to hand. Remove from deck if present; if deck is empty, clear discard
-  // (the engine reshuffled it into deck, then drew — we just need to keep
-  // deck/discard roughly in sync for the next power_draw to correct fully).
-  let { deckIds, discardIds } = p;
-  if (deckIds.length === 0 && discardIds.length > 0) {
-    deckIds = discardIds;
-    discardIds = [];
-  }
-  const idx = deckIds.indexOf(cardId);
-  const newDeck = idx >= 0 ? [...deckIds.slice(0, idx), ...deckIds.slice(idx + 1)] : deckIds;
   return patchPower(state, power, {
     hand: [...p.hand, cardId],
-    deckIds: newDeck,
+    deckIds,
     discardIds,
   });
 }
@@ -610,6 +594,22 @@ function applyCardEffect(
     }
     case 'depraved_infiltration':
       return addCorruption(state, event.regionId, 'lasha', 1);
+    case 'persistence_matrix_marked': {
+      const region = state.regions[event.regionId]!;
+      const slots = [...region.chaosCards] as typeof region.chaosCards;
+      const slot = slots[event.slotIndex];
+      if (!slot) return state;
+      slots[event.slotIndex] = { ...slot, persistNextRound: true };
+      return { ...state, regions: { ...state.regions, [event.regionId]: { ...region, chaosCards: slots } } };
+    }
+    case 'persistence_matrix_reset': {
+      const region = state.regions[event.regionId]!;
+      const slots = [...region.chaosCards] as typeof region.chaosCards;
+      const slot = slots[event.slotIndex];
+      if (!slot) return state;
+      slots[event.slotIndex] = { ...slot, persistNextRound: false };
+      return { ...state, regions: { ...state.regions, [event.regionId]: { ...region, chaosCards: slots } } };
+    }
   }
 }
 

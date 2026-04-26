@@ -98,15 +98,7 @@ export function applySummonFigure(
       }
 
       // Legacy fallback: pause for separate choice action
-      s = {
-        ...s,
-        pendingAction: {
-          waitingFor: 'tenzen',
-          actionKind: 'tenzen_apprentice_choice',
-          context: { followerId, fromRegion, toRegion },
-        },
-      };
-      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${fromRegion}?` });
+      s = log.apply(s, { type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_apprentice_choice', context: { followerId, fromRegion, toRegion }, description: `Tenzen apprentice: carry Chaos Stone from ${fromRegion}?` });
       return { state: s, log };
     }
   }
@@ -174,15 +166,7 @@ export function applyPlayCard(
         log.absorb(result.log);
         return { state: result.state, log };
       }
-      s = {
-        ...s,
-        pendingAction: {
-          waitingFor: power,
-          actionKind: 'card_on_play_choice',
-          context: { cardId, regionId: toRegion },
-        },
-      };
-      log.emit({ type: 'awaiting_action', power, actionKind: 'card_on_play_choice', context: { cardId, regionId: toRegion }, description: `${power} must choose for ${cardDef.name}.` });
+      s = log.apply(s, { type: 'awaiting_action', power, actionKind: 'card_on_play_choice', context: { cardId, regionId: toRegion }, description: `${power} must choose for ${cardDef.name}.` });
       return { state: s, log };
     }
   }

@@ -207,16 +207,11 @@ function clearOldCometCards(state: GameState, log: GameLog): GameState {
   let s = state;
   const { slot1, slot2 } = s.worldTrack;
   const removed: string[] = [];
-  if (slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon) {
-    removed.push(slot1);
-    s = { ...s, worldTrack: { ...s.worldTrack, slot1: null } };
-  }
-  if (slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon) {
-    removed.push(slot2);
-    s = { ...s, worldTrack: { ...s.worldTrack, slot2: null } };
-  }
+  const newSlot1 = slot1 && WORLD_CARD_BY_ID[slot1]?.hasCometIcon ? (removed.push(slot1), null) : slot1;
+  const newSlot2 = slot2 && WORLD_CARD_BY_ID[slot2]?.hasCometIcon ? (removed.push(slot2), null) : slot2;
   if (removed.length === 0) return s;
 
+  s = log.apply(s, { type: 'world_track_update', slot1: newSlot1, slot2: newSlot2 });
   log.emit({ type: 'comet_removed', cardIds: removed });
   for (const regionId of REGION_ORDER) {
     const count = s.regions[regionId]!.tokens.filter(t => t === 'event').length;
@@ -230,13 +225,9 @@ function clearOldCometCards(state: GameState, log: GameLog): GameState {
 function placeOnTrackOrDiscard(state: GameState, cardId: string, log: GameLog): GameState {
   const def = WORLD_CARD_BY_ID[cardId];
   if (!def || def.timing === 'discard') {
-    return { ...state, worldTrack: { ...state.worldTrack, discardCard: cardId } };
+    return log.apply(state, { type: 'world_track_update', slot1: state.worldTrack.slot1, slot2: state.worldTrack.slot2, discardCard: cardId });
   }
-
-  // Shift slot1 → slot2, new card → slot1
-  const newTrack = { slot1: cardId, slot2: state.worldTrack.slot1, discardCard: state.worldTrack.discardCard };
-  const s = log.apply(state, { type: 'world_track_update', slot1: newTrack.slot1, slot2: newTrack.slot2 });
-  return s;
+  return log.apply(state, { type: 'world_track_update', slot1: cardId, slot2: state.worldTrack.slot1 });
 }
 
 function advanceToDrawPhase(state: GameState): GameState {

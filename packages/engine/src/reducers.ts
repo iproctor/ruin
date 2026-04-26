@@ -235,7 +235,7 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
     const isEndReEntry = s.phase === 'end' && s.pendingDialRewards !== null;
     const isBattleResume = s.phase === 'battle' && s.battleState !== null;
     if (s.phase !== lastBannerPhase && !isEndReEntry && !isBattleResume) {
-      log.emit({ type: 'phase_start', phase: s.phase, round: s.round });
+      s = log.apply(s, { type: 'phase_start', phase: s.phase, round: s.round });
       lastBannerPhase = s.phase;
     }
 
@@ -246,8 +246,7 @@ export function autoAdvance(result: ApplyResult): ApplyResult {
       case 'world': {
         const victory = checkVictory(s);
         if (victory) {
-          s = { ...s, winners: victory.winners, winCondition: victory.condition, phase: 'completed' };
-          log.emit({ type: 'game_over', winners: victory.winners, condition: victory.condition });
+          s = log.apply(s, { type: 'game_over', winners: victory.winners, condition: victory.condition });
           return { state: s, log };
         }
         next = resolveWorldPhase(s);

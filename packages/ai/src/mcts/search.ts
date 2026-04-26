@@ -391,7 +391,7 @@ export interface TreeProbeStats {
    *  action slot (used to align distributions across independent MCTS runs on
    *  the same state where child-list order can differ). -1 if the action
    *  doesn't map to a canonical slot. */
-  rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number }>;
+  rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number; q: number }>;
   /** Top action by visits. */
   topVisitKind: string;
   /** Top action by prior (null if no policy head). */
@@ -444,7 +444,7 @@ export function probeMctsSearch(
       rootUntriedRemaining: 1,
       usedPuct: false,
       azStyle: modelForPowerLoaded(forPower),
-      rootActions: [{ actionKind: legalRoot[0]!.kind, slotIdx: canonicalActionIndex(legalRoot[0]!, state), visits: 0, prior: NaN }],
+      rootActions: [{ actionKind: legalRoot[0]!.kind, slotIdx: canonicalActionIndex(legalRoot[0]!, state), visits: 0, prior: NaN, q: NaN }],
       topVisitKind: legalRoot[0]!.kind,
       topPriorKind: null,
       priorVisitAgree: false,
@@ -487,13 +487,14 @@ export function probeMctsSearch(
   }
   const elapsed = Date.now() - t0;
 
-  const rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number }> = [];
+  const rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number; q: number }> = [];
   let totalVisits = 0;
   for (const child of root.children) {
     const kind = child.action?.kind ?? 'null';
     const p = priors && child.action ? priors(child.action) : NaN;
     const slotIdx = child.action ? canonicalActionIndex(child.action, state) : -1;
-    rootActions.push({ actionKind: kind, slotIdx, visits: child.visits, prior: p });
+    const q = child.visits > 0 ? child.totalScore / child.visits : NaN;
+    rootActions.push({ actionKind: kind, slotIdx, visits: child.visits, prior: p, q });
     totalVisits += child.visits;
   }
 

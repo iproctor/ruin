@@ -272,15 +272,12 @@ export function applyBattleHitAssignment(
       s = log.apply(s, { type: 'heartrippers_corruption', regionId, tokens: 1 });
     }
 
-    // Tenzen Persistence Matrix: mark for persistence if Tenzen killed a figure
     if (attacker === 'tenzen' && !changerOfFateActive) {
       const slots = s.regions[regionId]!.chaosCards;
       for (let i = 0; i < slots.length; i++) {
         const slot = slots[i];
         if (slot?.cardId === 'tenzen_persistence_matrix' && slot.playedBy === 'tenzen') {
-          const newSlots = [...slots] as typeof slots;
-          newSlots[i as 0 | 1] = { ...slot, persistNextRound: true };
-          s = updateRegion(s, regionId, { chaosCards: newSlots });
+          s = log.apply(s, { type: 'card_effect', subtype: 'persistence_matrix_marked', regionId, slotIndex: i as 0 | 1 });
         }
       }
     }
@@ -531,6 +528,7 @@ function runWarFrenzy(
     hits = countHits(rolls);
   }
   s = { ...s, actionCount: s.actionCount + 1 };
+  log.emit({ type: 'action_applied', actionCount: s.actionCount });
   log.emit({ type: 'battle_roll', regionId, power: 'xarm', dice: rolls, hits, kind: 'war_frenzy' });
 
   if (hits > 0) {
@@ -598,6 +596,7 @@ function runNormalBattle(
       hits = countHits(rolls);
     }
     s = { ...s, actionCount: s.actionCount + 1 };
+    log.emit({ type: 'action_applied', actionCount: s.actionCount });
     log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'normal' });
 
     if (hits > 0) {
@@ -698,6 +697,7 @@ function runUndyingFury(
       hits = countHits(rolls);
     }
     s = { ...s, actionCount: s.actionCount + 1 };
+    log.emit({ type: 'action_applied', actionCount: s.actionCount });
     log.emit({ type: 'battle_roll', regionId, power, dice: rolls, hits, kind: 'undying_fury' });
 
     if (hits > 0) {
@@ -1033,12 +1033,11 @@ function drawCardForPower(state: GameState, power: Power, log: GameLog): GameSta
     const rng = makeBattleRng(state);
     deckIds = shuffle([...discardIds], rng);
     discardIds = [];
-    // Update state with reshuffled deck before drawing
-    state = updatePower(state, power, { deckIds, discardIds });
   }
 
   const drawn = deckIds[0]!;
-  return log.apply(state, { type: 'card_drawn', power, cardId: drawn, source: CARD_BY_ID['xarm_ritual_death']!.name });
+  const newDeck = deckIds.slice(1);
+  return log.apply(state, { type: 'card_drawn', power, cardId: drawn, source: CARD_BY_ID['xarm_ritual_death']!.name, deckIds: newDeck, discardIds });
 }
 
 // ─── RNG ─────────────────────────────────────────────────────────────────────
