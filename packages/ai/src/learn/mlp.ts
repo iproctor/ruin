@@ -321,8 +321,8 @@ export class Mlp {
     // or 1 (scalar P(viewpoint wins), for focus-trained models). The scalar
     // form uses sigmoid activation; the 4-way uses softmax.
     const last = compiled[compiled.length - 1]!;
-    if (last.outDim !== POWERS.length && last.outDim !== 1) {
-      throw new Error(`Mlp: value head output dim ${last.outDim} is neither ${POWERS.length} (multi-power) nor 1 (scalar)`);
+    if (last.outDim !== POWERS.length && last.outDim !== 1 && last.outDim !== 2) {
+      throw new Error(`Mlp: value head output dim ${last.outDim} not in {1 (scalar end), 2 (scalar end+mid), ${POWERS.length} (multi-power)}`);
     }
 
     return new Mlp(compiled, policyChain, perPowerPolicyHeads);
