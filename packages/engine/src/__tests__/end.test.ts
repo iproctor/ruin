@@ -60,6 +60,37 @@ describe('Enthrallment release', () => {
     const cultist = state.powers.gormen!.followers.find(f => f.class === 'cultist')!;
     expect(cultist.controlledBy).toBeNull();
   });
+
+  // Regression: Lasha plays Musk on a cultist, then summoning-moves the
+  // controlled cultist to a different region. At end of round the Musk discards
+  // but its release used to look only in the card's region, so the cultist
+  // stayed enthralled forever. The release should follow the cultist.
+  test('controlled cultist is released even if Lasha moved it out of the Musk region', () => {
+    let s = makeState({ phase: 'end', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'mittelreich', { controlledBy: 'lasha' });
+    // Musk card stayed in norrsund; the cultist has been moved away.
+    s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
+    const { state } = resolveEndPhase(s);
+    const cultist = state.powers.gormen!.followers.find(f => f.controlledBy === 'lasha');
+    expect(cultist).toBeUndefined();
+  });
+
+  test('multiple Musks discarding release one cultist each', () => {
+    let s = makeState({ phase: 'end', pendingAction: null });
+    // Two Musk cards in different regions.
+    s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'norrsund');
+    s = placeCard(s, 'lasha_narcotic_musk', 'lasha', 'mittelreich');
+    // Two enthralled enemy cultists, scattered across the board (could have
+    // been moved by Lasha during summoning).
+    s = placeFollower(s, 'gormen', 'cultist', 'volensk',  { controlledBy: 'lasha' });
+    s = placeFollower(s, 'xarm',   'cultist', 'almerida', { controlledBy: 'lasha' });
+    const { state } = resolveEndPhase(s);
+    const stillControlled = [
+      ...state.powers.gormen!.followers,
+      ...state.powers.xarm!.followers,
+    ].filter(f => f.controlledBy === 'lasha');
+    expect(stillControlled).toHaveLength(0);
+  });
 });
 
 // ─── Hero tokens ─────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import type {
   TenzenDiscardAction, WorldChoiceAction, CorruptionHarvestChoiceAction,
   UpgradeChoiceAction, CardOnPlayChoiceAction, TokenType, BattleHitAssignmentAction,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
-  HeroRemovalAction,
+  HeroRemovalAction, RaptureChoiceAction,
 } from './types.js';
 import { REGION_ORDER, CARD_BY_ID, UPGRADES, ADJACENCY, FOLLOWERS } from './constants.js';
 import {
@@ -77,6 +77,18 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
         { kind: 'tenzen_apprentice_choice', power: 'tenzen', followerId, fromRegion, toRegion, carry: true },
         { kind: 'tenzen_apprentice_choice', power: 'tenzen', followerId, fromRegion, toRegion, carry: false },
       ];
+    }
+
+    case 'rapture_choice': {
+      const ctx = state.pendingAction.context;
+      const regionId = ctx['regionId'] as RegionId;
+      const candidateIds = (ctx['candidateIds'] as string[]) ?? [];
+      return candidateIds.map(id => ({
+        kind: 'rapture_choice',
+        power: 'lasha',
+        regionId,
+        targetFollowerId: id,
+      } satisfies RaptureChoiceAction));
     }
 
     case 'dial_remove_corruption': {

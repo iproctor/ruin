@@ -164,6 +164,10 @@ function removeChaosCards(
   log: GameLog,
 ): { state: GameState } {
   let s = state;
+  // Track Lasha-controlled enemy cultists released by Musk discards. Musk
+  // controls move with the cultist, so we can't search by region — we walk all
+  // followers and release one un-released cultist per discarded Musk card.
+  const releasedByMusk = new Set<string>();
 
   for (const regionId of REGION_ORDER) {
     const region = s.regions[regionId]!;
@@ -178,13 +182,20 @@ function removeChaosCards(
         continue;
       }
 
-      // Enthrallment: when discarded, release the controlled cultist
+      // Enthrallment: when discarded, release the controlled cultist. Search
+      // across the whole board because Lasha may have moved the controlled
+      // cultist out of the Musk's region during summoning.
       if (slot.cardId === 'lasha_narcotic_musk') {
-        // Find a lasha-controlled enemy cultist in this region and release it
-        const controlled = followersInRegion(s, regionId).find(
-          f => f.controlledBy === 'lasha' && f.power !== 'lasha' && f.class === 'cultist'
-        );
+        let controlled: import('../types.js').FollowerInstance | undefined;
+        for (const power of s.activePowers) {
+          if (power === 'lasha') continue;
+          controlled = s.powers[power]!.followers.find(
+            f => f.controlledBy === 'lasha' && f.class === 'cultist' && !releasedByMusk.has(f.id),
+          );
+          if (controlled) break;
+        }
         if (controlled) {
+          releasedByMusk.add(controlled.id);
           s = log.apply(s, { type: 'narcotic_release', power: controlled.power as Power, followerId: controlled.id });
         }
       }
@@ -194,6 +205,22 @@ function removeChaosCards(
 
     // Update the slots to keep only persistent cards (Recursive Pattern)
     s = updateRegion(s, regionId, { chaosCards: newSlots });
+  }
+
+  // Release any remaining Rapture-controlled figures at end of round. Musk
+  // releases above already covered cultists from discarded Musks; this catches
+  // everything else (warriors, anything left over). Upgrade text: "until end
+  // of round or until The Rapture is killed."
+  const lashaHasRaptureUp = s.powers['lasha']?.upgradesInPlay.includes('lasha_rapture_up') ?? false;
+  if (lashaHasRaptureUp) {
+    for (const power of s.activePowers) {
+      if (power === 'lasha') continue;
+      for (const f of s.powers[power]!.followers) {
+        if (f.controlledBy === 'lasha' && f.power !== 'lasha') {
+          s = log.apply(s, { type: 'control_released', followerId: f.id, power: f.power as Power });
+        }
+      }
+    }
   }
 
   return { state: s };

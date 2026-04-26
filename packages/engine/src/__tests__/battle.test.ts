@@ -10,7 +10,7 @@ import type { GameState } from '../types.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
 import { enumerateBattleHitStrategies } from '../legalActions.js';
-import { applyAction } from '../reducers.js';
+import { applyAction, applyActionForPreview } from '../reducers.js';
 import { REGION_ORDER } from '../constants.js';
 import { GameLog } from '../gameLog.js';
 import {
@@ -770,6 +770,176 @@ describe("Lasha Rapture upgrade (auto-control enemy at battle start)", () => {
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));
     expect(log.entries.some(l => l.includes('Rapture Upgrade'))).toBe(true);
+  });
+
+  test('with a single eligible target → auto-pick (no pause)', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    const { state } = resolveBattlePhase(s);
+    // No rapture_choice should be raised when the choice is forced.
+    expect(state.pendingAction?.actionKind).not.toBe('rapture_choice');
+    const controlled = state.powers.gormen!.followers.find(
+      f => f.regionId === 'norrsund' && f.controlledBy === 'lasha',
+    );
+    expect(controlled).toBeDefined();
+  });
+
+  test('with 2+ eligible targets → pause for rapture_choice', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    const { state } = resolveBattlePhase(s);
+
+    expect(state.pendingAction?.actionKind).toBe('rapture_choice');
+    expect(state.pendingAction?.waitingFor).toBe('lasha');
+    const ctx = state.pendingAction!.context as { regionId: string; candidateIds: string[] };
+    expect(ctx.regionId).toBe('norrsund');
+    expect(ctx.candidateIds.length).toBe(3); // 2 gormen + 1 xarm
+
+    // No control has been applied yet — we paused first.
+    const anyControlled = followersInRegion(state, 'norrsund').some(
+      f => f.controlledBy === 'lasha' && f.power !== 'lasha',
+    );
+    expect(anyControlled).toBe(false);
+  });
+
+  test('rapture_choice action enthralls the picked target and resumes battle', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    const paused = resolveBattlePhase(s);
+    expect(paused.state.pendingAction?.actionKind).toBe('rapture_choice');
+
+    // Pick the xarm cultist explicitly. Use the preview reducer so we observe
+    // the immediate post-choice state without autoAdvance running through the
+    // rest of the round (which would clear control at end of round).
+    const xarmCultist = paused.state.powers.xarm!.followers.find(
+      f => f.regionId === 'norrsund' && f.class === 'cultist',
+    )!;
+    const previewed = applyActionForPreview(paused.state, {
+      kind: 'rapture_choice',
+      power: 'lasha',
+      regionId: 'norrsund',
+      targetFollowerId: xarmCultist.id,
+    });
+
+    const xarmStillControlled = previewed.state.powers.xarm!.followers.find(
+      f => f.id === xarmCultist.id,
+    );
+    expect(xarmStillControlled?.controlledBy).toBe('lasha');
+    // The other candidate (gormen cultist) was NOT enthralled.
+    const gormenC = previewed.state.powers.gormen!.followers.find(
+      f => f.regionId === 'norrsund' && f.class === 'cultist',
+    );
+    expect(gormenC?.controlledBy ?? null).toBeNull();
+    // Pending rapture_choice is cleared.
+    expect(previewed.state.pendingAction?.actionKind).not.toBe('rapture_choice');
+
+    // And the full applyAction runs through battle without re-pausing for
+    // rapture_choice (battle resumes via the post_rapture step).
+    const resumed = applyAction(paused.state, {
+      kind: 'rapture_choice',
+      power: 'lasha',
+      regionId: 'norrsund',
+      targetFollowerId: xarmCultist.id,
+    });
+    expect(resumed.state.pendingAction?.actionKind).not.toBe('rapture_choice');
+  });
+});
+
+// ─── Rapture release timing: end of round, not end of battle ─────────────────
+
+describe('Lasha Rapture: release timing', () => {
+  test('controlled enemy stays under Lasha control through corruption phase', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+
+    // Resolve battle. Single target → auto-enthrall, no pause.
+    const battled = autoResolveBattle(resolveBattlePhase(s));
+    expect(battled.state.phase).toBe('corruption');
+    const controlled = battled.state.powers.gormen!.followers.find(
+      f => f.regionId === 'norrsund',
+    );
+    // Per upgrade text "until end of round", control should still be active
+    // after the battle phase has ended.
+    expect(controlled?.controlledBy).toBe('lasha');
+  });
+
+  test('rapture-controlled enemy is released at end-of-round (end phase)', () => {
+    let s = makeState({ phase: 'end', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    // Manually mark a gormen warrior as Lasha-controlled (Musk only enthralls
+    // cultists, so warriors here can only have come from Rapture).
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund', { controlledBy: 'lasha' });
+
+    const after = resolveEndPhase(s);
+    const released = after.state.powers.gormen!.followers.find(
+      f => f.regionId === 'norrsund' && f.class === 'warrior',
+    );
+    expect(released?.controlledBy ?? null).toBeNull();
+  });
+
+  test('killing The Rapture mid-battle releases its enthralled enemies immediately', () => {
+    // Construct a mid-battle state and assign hits straight to The Rapture.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = withUpgrade(s, 'lasha', 'lasha_rapture_up');
+    s = placeFollower(s, 'lasha', 'incarnation', 'norrsund');
+    // Pre-existing Rapture-controlled enemy (no Musk in region).
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund', { controlledBy: 'lasha' });
+    // An attacker who can deal the 4 hits required to kill The Rapture (def 4).
+    s = placeFollower(s, 'xarm', 'incarnation', 'norrsund'); // Heartgrinder att 4
+
+    // Stage the mid-battle pendingAction directly: Xarm is assigning the 4 hits
+    // it just rolled, with The Rapture as the chosen target.
+    const rapture = s.powers.lasha!.followers.find(
+      f => f.regionId === 'norrsund' && f.class === 'incarnation',
+    )!;
+    s = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        nextStep: { type: 'post_normal' },
+        xarmDialEarnedThisRegion: false,
+      },
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'battle_hit_assignment',
+        context: {
+          regionId: 'norrsund',
+          hitsRemaining: 4,
+          peasantsAvailable: 0,
+          changerOfFateActive: false,
+        },
+      },
+    };
+    const after = applyAction(s, {
+      kind: 'battle_hit_assignment',
+      power: 'xarm',
+      regionId: 'norrsund',
+      followerIds: [rapture.id],
+    });
+
+    // Rapture is gone (back in reserve) and the controlled gormen warrior was
+    // released as soon as Rapture was removed from the board.
+    const incarnationAfter = after.state.powers.lasha!.followers.find(
+      f => f.id === rapture.id,
+    );
+    expect(incarnationAfter?.regionId ?? null).toBeNull();
+    const formerlyEnthralled = after.state.powers.gormen!.followers.find(
+      f => f.class === 'warrior' && f.regionId === 'norrsund',
+    );
+    expect(formerlyEnthralled?.controlledBy ?? null).toBeNull();
   });
 });
 

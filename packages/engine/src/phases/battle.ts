@@ -1,7 +1,7 @@
 import type {
   GameState, Power, RegionId, FollowerInstance,
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
-  CompanionDiceRollAction,
+  CompanionDiceRollAction, RaptureChoiceAction,
 } from '../types.js';
 import {
   CARD_BY_ID, REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, WORLD_CARD_BY_ID,
@@ -177,6 +177,12 @@ function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
           inner = runPostNormal(inner.state, regionId, inner.log);
         }
       }
+      break;
+    }
+    case 'post_rapture': {
+      // Lasha just submitted a rapture_choice; pick up the rest of the region
+      // (War Frenzy → normal battle → ...).
+      inner = resolveRegionAfterRapture(s, regionId, log);
       break;
     }
   }
@@ -368,7 +374,8 @@ function resolveRegion(
   const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // ── Beginning-of-battle: Rapture upgrade (Lasha) ─────────────────────────
-  // Auto-control weakest enemy Cultist or Warrior until end of round
+  // Pause for player choice when 2+ enemy Cultists/Warriors are eligible;
+  // auto-pick when there's only one (no real choice).
   if (!changerOfFateActive && powersPresent.includes('lasha') &&
       s.powers['lasha']!.upgradesInPlay.includes('lasha_rapture_up')) {
     const raptureRegionFigs = followersInRegion(s, regionId);
@@ -376,15 +383,39 @@ function resolveRegion(
       f => f.class === 'incarnation' && (f.controlledBy ?? f.power) === 'lasha'
     );
     if (rapture) {
-      const target = raptureRegionFigs.find(f => {
+      const targets = raptureRegionFigs.filter(f => {
         const ctrl = f.controlledBy ?? f.power;
         return ctrl !== 'lasha' && (f.class === 'cultist' || f.class === 'warrior');
       });
+      if (targets.length >= 2) {
+        return pauseForRaptureChoice(s, regionId, targets.map(t => t.id), log);
+      }
+      const target = targets[0];
       if (target) {
         s = log.apply(s, { type: 'rapture_control', regionId, targetPower: target.power as Power, targetClass: target.class, targetId: target.id });
       }
     }
   }
+
+  return resolveRegionAfterRapture(s, regionId, log);
+}
+
+/** Continuation of `resolveRegion` after the (possibly interactive) Rapture
+ *  enthrall step. Called both from the initial path and from `resumeBattle`
+ *  when the player has just submitted a `rapture_choice`. */
+function resolveRegionAfterRapture(
+  state: GameState,
+  regionId: RegionId,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  let s = state;
+  const region = s.regions[regionId]!;
+  const regionFigures = followersInRegion(s, regionId);
+  const powersPresent = s.activePowers.filter(p =>
+    regionFigures.some(f => (f.controlledBy ?? f.power) === p)
+  );
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+  const hasWarFrenzy = regionCardActive(s, regionId, 'xarm_war_frenzy');
 
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
   if (!changerOfFateActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
@@ -411,6 +442,66 @@ function resolveRegion(
     if (s.pendingAction !== null) return { state: s, log };
   }
 
+  // unused — region/peasants only referenced inside conditionals above
+  void region;
+  return { state: s, log };
+}
+
+function pauseForRaptureChoice(
+  state: GameState,
+  regionId: RegionId,
+  candidateIds: string[],
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  const s: GameState = {
+    ...state,
+    battleState: {
+      ...state.battleState!,
+      nextStep: { type: 'post_rapture' },
+    },
+    pendingAction: {
+      waitingFor: 'lasha',
+      actionKind: 'rapture_choice',
+      context: { regionId, candidateIds },
+    },
+  };
+  log.emit({
+    type: 'awaiting_action',
+    power: 'lasha',
+    actionKind: 'rapture_choice',
+    context: { regionId, candidateIds },
+    description: `${regionId}: Lasha must choose an enemy Cultist or Warrior to enthrall via The Rapture.`,
+  });
+  return { state: s, log };
+}
+
+/** Resume after Lasha submitted a rapture_choice. Re-validates the target,
+ *  applies the rapture_control event, then continues the region's pipeline. */
+export function applyRaptureChoice(
+  state: GameState,
+  action: RaptureChoiceAction,
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  let s: GameState = { ...state, pendingAction: null };
+  const { regionId, targetFollowerId } = action;
+
+  const figs = followersInRegion(s, regionId);
+  const target = figs.find(f => f.id === targetFollowerId);
+  if (!target) {
+    throw new Error(`rapture_choice: target ${targetFollowerId} not in ${regionId}`);
+  }
+  const ctrl = target.controlledBy ?? target.power;
+  if (ctrl === 'lasha' || (target.class !== 'cultist' && target.class !== 'warrior')) {
+    throw new Error(`rapture_choice: ${targetFollowerId} is not a valid Rapture target`);
+  }
+
+  s = log.apply(s, {
+    type: 'rapture_control',
+    regionId,
+    targetPower: target.power as Power,
+    targetClass: target.class,
+    targetId: target.id,
+  });
   return { state: s, log };
 }
 
@@ -801,6 +892,34 @@ function removeFigureFromBoard(
 ): { state: GameState; log: GameLog } {
   let s = state;
 
+  // Detect "The Rapture was killed": release any Lasha-controlled enemies in
+  // this region that were enthralled via the Rapture upgrade. Per the upgrade
+  // text, control ends "or until The Rapture is killed". Skip enemies still
+  // controlled by an active Narcotic Musk card in the same region.
+  const removed = (() => {
+    for (const power of s.activePowers) {
+      const f = s.powers[power]!.followers.find(f => f.id === followerId);
+      if (f) return { power, follower: f };
+    }
+    return null;
+  })();
+  const lashaHasRaptureUp = s.powers['lasha']?.upgradesInPlay.includes('lasha_rapture_up') ?? false;
+  if (removed && removed.power === 'lasha' && removed.follower.class === 'incarnation' && lashaHasRaptureUp) {
+    const muskHere = s.regions[regionId]!.chaosCards.some(
+      c => c?.cardId === 'lasha_narcotic_musk' && c.playedBy === 'lasha',
+    );
+    for (const power of s.activePowers) {
+      if (power === 'lasha') continue;
+      for (const f of s.powers[power]!.followers) {
+        if (f.regionId !== regionId) continue;
+        if (f.controlledBy !== 'lasha') continue;
+        // Musk only enthralls cultists; if a musk card is here, leave the cultist controlled.
+        if (muskHere && f.class === 'cultist') continue;
+        s = log.apply(s, { type: 'control_released', followerId: f.id, power: f.power as Power });
+      }
+    }
+  }
+
   // Find which power owns this figure and mark it in reserve
   for (const power of s.activePowers) {
     const follower = s.powers[power]!.followers.find(f => f.id === followerId);
@@ -853,28 +972,17 @@ function finalizeBattle(
     }
   }
 
-  // Clear per-round flags: protected (Fate's Aegis), Rapture-granted controlledBy
-  const lashHasRaptureUp = s.powers['lasha']?.upgradesInPlay.includes('lasha_rapture_up') ?? false;
-
+  // Clear per-round flags: protected (Fate's Aegis).
+  // NOTE: Rapture-granted control is NOT released here — per the upgrade text
+  // ("until end of round or until The Rapture is killed"), it persists through
+  // the corruption phase and is released alongside other end-of-round
+  // discards in the End Phase. Rapture death triggers immediate release in
+  // `removeFigureFromBoard` instead.
   for (const power of s.activePowers) {
     const p = s.powers[power]!;
-
-    // Collect protected follower IDs to clear
     const protectedIds = p.followers.filter(f => f.protected).map(f => f.id);
     if (protectedIds.length > 0) {
       s = log.apply(s, { type: 'protected_cleared', followerIds: protectedIds });
-    }
-
-    // Collect controlled followers to release
-    for (const f of s.powers[power]!.followers) {
-      if (f.controlledBy === 'lasha' && f.power !== 'lasha' && lashHasRaptureUp) {
-        const regionId = f.regionId;
-        const hasEnthrallment = regionId !== null &&
-          s.regions[regionId]!.chaosCards.some(c => c?.cardId === 'lasha_narcotic_musk' && c.playedBy === 'lasha');
-        if (!hasEnthrallment) {
-          s = log.apply(s, { type: 'control_released', followerId: f.id, power: f.power as Power });
-        }
-      }
     }
   }
 
