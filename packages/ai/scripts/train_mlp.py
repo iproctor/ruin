@@ -83,17 +83,16 @@ def parse_args() -> argparse.Namespace:
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 
-def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Returns (X, T, TM, P, has_policy, power_idx):
+    Returns (X, T, P, has_policy, power_idx):
       X         (N, D)   — features
-      TM        (N, 4)   — mid-game (round-3) rank target (auxiliary)
       T         (N, 4)   — soft value targets
       P         (N, 298) — normalized policy targets (zeros if no visits recorded)
       has_policy(N,)     — bool, True if this row has a real policy target
       power_idx (N,)     — int, acting power index (0-3), or -1 if not tagged
     """
-    xs, ts, tms, ps, mask, pwr = [], [], [], [], [], []
+    xs, ts, ps, mask, pwr = [], [], [], [], []
     max_dim = 0
     with open(path, "r") as f:
         for line in f:
@@ -111,9 +110,6 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
                 soft = [0.0, 0.0, 0.0, 0.0]
                 soft[int(obj["y"])] = 1.0
                 ts.append(soft)
-            # Mid-game rank target (round-3 standings). Falls back to end target
-            # for samples written before the mid-target field was added.
-            tms.append(obj.get("tm", ts[-1]))
             policy = np.zeros(ACTION_DIM, dtype=np.float32)
             has = False
             if "visits" in obj:
@@ -140,11 +136,10 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
             xs[i] = x + [0.0] * (max_dim - len(x))
     X = np.array(xs, dtype=np.float32)
     T = np.array(ts, dtype=np.float32)
-    TM = np.array(tms, dtype=np.float32)
     P = np.array(ps, dtype=np.float32)
     M = np.array(mask, dtype=bool)
     PI = np.array(pwr, dtype=np.int32)
-    return X, T, TM, P, M, PI
+    return X, T, P, M, PI
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
@@ -172,12 +167,8 @@ class DualHeadMLP:
         self.b1 = np.zeros(h1, dtype=np.float32)
         self.W2 = rng.normal(0, math.sqrt(2 / h1), (h1, h2)).astype(np.float32)
         self.b2 = np.zeros(h2, dtype=np.float32)
-        # Value head dims:
-        #  - 4-way softmax (legacy): outDim = c
-        #  - scalar sigmoid (focus mode): outDim = 2 (end-game rank, mid-game rank).
-        #    Inference reads index 0 (end). Mid is auxiliary — gives the trunk
-        #    a shorter-horizon prediction task to sharpen mid-trunk features.
-        value_out = 2 if scalar_value else c
+        # Value head: either 4-way softmax (legacy) or scalar sigmoid (focus mode)
+        value_out = 1 if scalar_value else c
         self.Wv = rng.normal(0, math.sqrt(2 / h2), (h2, value_out)).astype(np.float32)
         self.bv = np.zeros(value_out, dtype=np.float32)
         # Optional policy hidden layer: a2 -> Wph -> ReLU -> Wp.
@@ -423,13 +414,12 @@ class DualHeadMLP:
 # ── Loss helpers ─────────────────────────────────────────────────────────────
 
 def soft_cross_entropy(probs: np.ndarray, T: np.ndarray) -> float:
-    # Sigmoid (scalar) vs softmax (multi-class) detection by output shape.
-    # outDim ∈ {1, 2}: per-output BCE, then mean. (2 = end+mid scalar heads.)
-    # outDim == 4 (legacy): multi-class softmax CE.
-    # Use float32-safe epsilon (1e-7); 1e-12 underflows to 0 in float32 and
-    # makes log(1-p) → -inf for saturated sigmoid outputs.
+    # If probs is (n, 1), it's scalar sigmoid output → binary cross-entropy.
+    # Else multi-class softmax CE. Use float32-safe epsilon (1e-7); 1e-12
+    # rounds to 0 in float32 and makes log(1-p) underflow to -inf for
+    # saturated sigmoid outputs.
     eps = 1e-7
-    if probs.shape[1] in (1, 2):
+    if probs.shape[1] == 1:
         p = np.clip(probs, eps, 1.0 - eps)
         t = T.reshape(p.shape)
         return float(-(t * np.log(p) + (1.0 - t) * np.log(1.0 - p)).mean())
@@ -445,11 +435,10 @@ def policy_cross_entropy(probs: np.ndarray, T: np.ndarray, mask: np.ndarray) -> 
 
 
 def argmax_agreement(probs: np.ndarray, T: np.ndarray) -> float:
-    if probs.shape[1] in (1, 2):
-        # Sigmoid (scalar): use first column (end-game prediction) for
-        # threshold agreement. Mid-game column is auxiliary and not reported.
-        pred = (probs[:, 0] > 0.5).astype(np.int32)
-        truth = (T[:, 0] > 0.5).astype(np.int32)
+    if probs.shape[1] == 1:
+        # Scalar sigmoid: compare (p>0.5) to (t==1)
+        pred = (probs.reshape(-1) > 0.5).astype(np.int32)
+        truth = (T.reshape(-1) > 0.5).astype(np.int32)
         return float((pred == truth).mean())
     return float((probs.argmax(axis=1) == T.argmax(axis=1)).mean())
 
@@ -483,7 +472,7 @@ def main() -> int:
     print()
 
     _t_load = time.time()
-    X, T_value, T_mid, T_policy, has_policy, power_idx = load_jsonl(args.in_path)
+    X, T_value, T_policy, has_policy, power_idx = load_jsonl(args.in_path)
     n, d = X.shape
     print(f"loaded {n} samples, feature dim {d}  ({time.time() - _t_load:.1f}s)")
     print(f"policy rows: {int(has_policy.sum())} / {n}  ({100 * has_policy.mean():.1f}%)")
@@ -504,10 +493,10 @@ def main() -> int:
 
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)
-    X = X[perm]; T_value = T_value[perm]; T_mid = T_mid[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
+    X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
     n_val = int(n * args.val)
-    X_val,  Tv_val, Tm_val, Tp_val, hp_val, pi_val = X[:n_val], T_value[:n_val], T_mid[:n_val], T_policy[:n_val], has_policy[:n_val], power_idx[:n_val]
-    X_tr,   Tv_tr,  Tm_tr,  Tp_tr,  hp_tr,  pi_tr  = X[n_val:], T_value[n_val:], T_mid[n_val:], T_policy[n_val:], has_policy[n_val:], power_idx[n_val:]
+    X_val,  Tv_val, Tp_val, hp_val, pi_val = X[:n_val], T_value[:n_val], T_policy[:n_val], has_policy[:n_val], power_idx[:n_val]
+    X_tr,   Tv_tr,  Tp_tr,  hp_tr,  pi_tr  = X[n_val:], T_value[n_val:], T_policy[n_val:], has_policy[n_val:], power_idx[n_val:]
     # ── Inverse-frequency reweighting ──────────────────────────────────────────
     # Break the self-reinforcing loop: if xarm wins 80% of games, xarm-win
     # samples dominate the gradient and the model learns "predict xarm" instead
@@ -557,18 +546,14 @@ def main() -> int:
     if args.scalar_value and not args.power:
         print(f"[ERROR] --scalar-value requires --power <focus>", file=sys.stderr)
         return 1
-    # Reshape T_value to (n, 2) — column 0 = end-game rank for focus power,
-    # column 1 = mid-game (round-3) rank for focus power. The 2-output value
-    # head trains both jointly. Inference reads column 0 only.
+    # Reshape T_value from (n, 4) one-hot to (n, 1) scalar "focus-power wins?"
+    # when --scalar-value is set. Target becomes a single 0/1.
     if args.scalar_value:
         pi_sv = POWER_NAMES.index(args.power)
-        T_value = np.concatenate([
-            T_value[:, pi_sv:pi_sv+1],
-            T_mid[:, pi_sv:pi_sv+1],
-        ], axis=1).astype(np.float32)  # (n, 2)
-        Tv_val = np.concatenate([Tv_val[:, pi_sv:pi_sv+1], Tm_val[:, pi_sv:pi_sv+1]], axis=1).astype(np.float32)
-        Tv_tr  = np.concatenate([Tv_tr[:, pi_sv:pi_sv+1],  Tm_tr[:, pi_sv:pi_sv+1]],  axis=1).astype(np.float32)
-        print(f"[scalar-value] targets reshaped to (n,2) [end, mid] for {args.power}")
+        T_value = T_value[:, pi_sv:pi_sv+1].astype(np.float32)  # (n, 1)
+        Tv_val = Tv_val[:, pi_sv:pi_sv+1].astype(np.float32)
+        Tv_tr  = Tv_tr[:, pi_sv:pi_sv+1].astype(np.float32)
+        print(f"[scalar-value] targets reshaped to (n,1) P({args.power} wins)")
 
     model = DualHeadMLP(d, args.hidden1, args.hidden2, 4, ACTION_DIM,
                         seed=args.seed, policy_hidden=args.policy_hidden,
@@ -594,17 +579,18 @@ def main() -> int:
             vl = old["layers"][2]
             old_Wv = np.array(vl["W"], dtype=np.float32)
             old_bv = np.array(vl["b"], dtype=np.float32)
-            # Warm-start value head only if shape matches.
-            #  - Scalar mode: now (H2, 2); old (H2, 1) gets duplicated into
-            #    both columns so end and mid heads start at same calibration.
-            #  - Legacy 4-way: (H2, 4) — unchanged.
+            # Warm-start value head only if shape matches. Scalar-value mode
+            # expects (H2, 1); legacy 4-way expects (H2, 4). Mismatch → keep
+            # fresh random init and let training learn the new shape.
+            #  - 2-output models (mid-target era): take column 0 (end head)
+            #    and discard column 1.
             if old_Wv.shape == model.Wv.shape:
                 model.Wv = old_Wv
                 model.bv = old_bv
-            elif args.scalar_value and old_Wv.shape == (model.Wv.shape[0], 1):
-                model.Wv = np.concatenate([old_Wv, old_Wv], axis=1).astype(np.float32)
-                model.bv = np.concatenate([old_bv, old_bv]).astype(np.float32)
-                print(f"[warm-start] value-head 1→2 outputs, duplicating column for end+mid heads")
+            elif args.scalar_value and old_Wv.shape == (model.Wv.shape[0], 2):
+                model.Wv = old_Wv[:, 0:1].astype(np.float32)
+                model.bv = old_bv[0:1].astype(np.float32)
+                print(f"[warm-start] value-head 2→1 outputs, dropped mid-game column")
             else:
                 print(f"[warm-start] value-head shape {old_Wv.shape} ≠ current {model.Wv.shape} — fresh init")
             # Policy head: warm-start only if architectures match. If the old
@@ -674,12 +660,12 @@ def main() -> int:
             # Scalar mode: mean + std of predicted probability. Std distinguishes
             # a model that's learned to discriminate (wide spread) from one that
             # has collapsed to the base rate (std near 0 → uninformative to MCTS).
-            # End-game head (column 0) is the inference signal; report its
-            # mean and σ. Mid-game head (column 1) is auxiliary trunk-shaper.
-            v_mean = float(v_probs_val[:, 0].mean())
-            v_std = float(v_probs_val[:, 0].std())
-            v_mean_mid = float(v_probs_val[:, 1].mean())
-            dist_str = f"p̄({args.power}):{v_mean:.3f} σ:{v_std:.3f} p̄_mid:{v_mean_mid:.3f}"
+            # Scalar mode: mean + std of predicted probability. Std distinguishes
+            # a model that's learned to discriminate (wide spread) from one that
+            # has collapsed to the base rate (std near 0 → uninformative to MCTS).
+            v_mean = float(v_probs_val.mean())
+            v_std = float(v_probs_val.std())
+            dist_str = f"p̄({args.power}):{v_mean:.3f} σ:{v_std:.3f}"
         else:
             dist = per_class_pred_dist(v_probs_val, 4)
             dist_str = " ".join(f"{names[c]}:{dist[c]:.2f}" for c in range(4))

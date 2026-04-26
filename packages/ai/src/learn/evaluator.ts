@@ -74,11 +74,10 @@ export function evaluateLearned(state: GameState, power: Power): number {
   // own hand contents (not opponents' — those are hidden info).
   const x = extractFeatures(state, power);
   const probs = model.forward(x);
-  // Scalar value head: outDim=1 (legacy single end-game head) or outDim=2
-  // (current: end-game + mid-game heads). Inference always reads column 0
-  // (end-game P(viewpoint wins) via sigmoid). Mid head is training-only.
-  // Multi-power head (outDim=4) outputs per-power softmax; extract the
-  // viewpoint's component.
+  // Scalar value head (outDim=1) directly predicts P(viewpoint wins) via
+  // sigmoid. Brief mid-target experiment used outDim=2 (end, mid) — those
+  // models are tolerated and read column 0 (end). Multi-power head
+  // (outDim=4) outputs per-power softmax; extract the viewpoint's component.
   if (probs.length === 1 || probs.length === 2) return probs[0]!;
   return probs[powerIndex(power)]!;
 }

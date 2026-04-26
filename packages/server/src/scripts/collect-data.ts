@@ -193,11 +193,6 @@ interface GameResult {
   // Unnormalized — scalar BCE handles any [0,1] target. The legacy 4-way
   // softmax path (unused) gets an ill-conditioned target; not a concern.
   target: number[];
-  // Mid-game rank target — same formula but evaluated at the end of round 3.
-  // Auxiliary training signal that gives the trunk a shorter-horizon
-  // prediction task. If the game ends before round 3 transitions (rare),
-  // falls back to the end-game target.
-  midTarget: number[];
 }
 
 function computeRankTarget(state: import('@ruin/engine').GameState, winners: Power[] | null): number[] {
@@ -332,17 +327,17 @@ function runGame(seed: number): GameResult {
     for (const p of ALL_POWERS) currentModelPowers.add(p);
   }
 
-  // Capture round-3 standings as auxiliary mid-game target the moment the
-  // round ticks past 3. Same rank formula, computed against round-3 state.
-  let midTarget: number[] | null = null;
-  let prevRound = state.round;
-  const MID_GAME_ROUND = 3;
+  // Truncation: with some probability, cap the game at an early round so the
+  // AI sees training signal where round-3-ish standings ARE the outcome.
+  // Pushes the model to play strong early — it doesn't know whether a given
+  // game will run full length or end short. computeRankTarget handles
+  // winners=null via VP+threat ranking, so no formal winner needed.
+  const truncateProb = 0.3;
+  const maxRoundCap = rand() < truncateProb ? 3 + Math.floor(rand() * 3) : 999; // 3-5 or no cap
+
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) break;
-    if (midTarget === null && state.round > MID_GAME_ROUND && prevRound <= MID_GAME_ROUND) {
-      midTarget = computeRankTarget(state, null);
-    }
-    prevRound = state.round;
+    if (state.round > maxRoundCap) break; // truncation: leave winners null
     const pending = state.pendingAction;
     if (!pending) break;
 
@@ -466,12 +461,10 @@ function runGame(seed: number): GameResult {
   else delete process.env['TENZEN_EVAL_CUTOFF'];
 
   const winners = state.winners;
-  // Rank-based target — works for both winner and no-winner (exhaustion) games.
+  // Rank-based target — works for winner, no-winner exhaustion, AND truncated
+  // games (winners=null → ranks by VP+threat).
   const target = computeRankTarget(state, winners);
-  // Fallback: if the game somehow ended before the round-3 transition fired,
-  // mid-target = end-target. Shouldn't happen — minimum game length is more
-  // than 3 rounds — but keep the fallback for safety.
-  return { samples, winners, rounds: state.round, target, midTarget: midTarget ?? target };
+  return { samples, winners, rounds: state.round, target };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -487,18 +480,15 @@ const winCounts: Record<string, number> = {};
 for (let i = 0; i < gameCount; i++) {
   const seed = baseSeed + i;
   const t0 = Date.now();
-  const { samples, winners, rounds, target, midTarget } = runGame(seed);
+  const { samples, winners, rounds, target } = runGame(seed);
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
-  // Even no-winner (exhaustion) games are valid training data under
-  // rank-based targets — they show what "fighting hard but losing" looks like.
-  // Each sample gets the same rank-target vector for the value head, plus
-  // its own visit distribution (when present) for the policy head.
+  // Both natural exhaustion and truncated games keep their samples — the
+  // rank target ranks by VP+threat in winners=null cases.
   for (const s of samples) {
-    const row: { x: number[]; t: number[]; tm: number[]; p?: number; visits?: Record<string, number> } = {
+    const row: { x: number[]; t: number[]; p?: number; visits?: Record<string, number> } = {
       x: s.x,
       t: target,
-      tm: midTarget,
     };
     if (s.p !== undefined) row.p = s.p;
     if (s.visits && Object.keys(s.visits).length > 0) row.visits = s.visits;
