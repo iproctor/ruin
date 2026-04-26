@@ -20,19 +20,11 @@ import { followersInRegion, REGION_ORDER, CHAOS_CARDS } from '@ruin/engine';
  *     cultists in the region. Pick the region hitting the most opponents,
  *     breaking ties by highest total threat among hit opponents.
  */
-export function getAutoPlay(state: GameState, power: Power): Action | null {
-  if (power !== 'tenzen') return null;
-
-  // Upgrade-choice forcing — lock in the Apprentices → +PP pick order so
-  // MCTS doesn't wander into Fractals/Fatespinner early when the ruin
-  // engine needs cultists-carrying-stones.
-  if (state.pendingAction?.actionKind === 'upgrade_choice') {
-    return bestTenzenUpgrade(state);
-  }
-
-  // bestSiphonPlay autoplay disabled — let MCTS decide the Siphon slot.
-  // Forced slotting may have been constraining the learned policy from
-  // discovering better Siphon usage (e.g. saving it for a later region).
+export function getAutoPlay(_state: GameState, _power: Power): Action | null {
+  // Apprentices-first upgrade priority disabled — let MCTS pick first upgrade
+  // freely. Tenzen has been stuck near base rate; forcing apprentices may
+  // have been a ceiling. Letting the policy explore alternatives.
+  // bestSiphonPlay similarly disabled (see history).
   return null;
 }
 
