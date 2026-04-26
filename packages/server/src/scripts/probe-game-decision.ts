@@ -1,21 +1,23 @@
 /**
- * Replay a saved game from the DB up to a specified decision and run a
- * fresh MCTS probe at that state. Reports visit / prior / value distribution
- * across the legal actions so you can see why a particular choice was made.
+ * Replay a saved game from the DB and probe every decision the target power
+ * made. At each pendingAction for that power, run MCTS and report what it
+ * picks now vs what was actually played in the game.
  *
  * Usage:
  *   pnpm tsx packages/server/src/scripts/probe-game-decision.ts \
- *     --game <gameId> [--match incarnation|cultist|warrior|seq=N]
+ *     --game <gameId> [--power tenzen] [--kind summoning_action]
+ *     [--match incarnation|cultist|warrior|seq=N|all] [--iter 3000]
  *
- *   --match incarnation: stop right before the first tenzen incarnation summon
- *   --match cultist:     stop right before the first tenzen cultist summon
- *   --match seq=N:       stop right before the awaiting_action at seq N
+ *   --match incarnation: only probe the first tenzen incarnation summon
+ *   --match cultist:     only probe the first tenzen cultist summon
+ *   --match seq=N:       only probe the awaiting_action at seq N
+ *   --match all:         probe every decision (default)
  */
 
 import { db } from '../db/client.js';
 import { gameEvents, games, gamePlayers } from '../db/schema.js';
 import { eq, asc } from 'drizzle-orm';
-import { applyEvent, createInitialState, type GameState, type GameEvent, type Power, type PlayerType, getLegalActions } from '@ruin/engine';
+import { applyEvent, createInitialState, type GameState, type GameEvent, type Power, type PlayerType, type Action, getLegalActions } from '@ruin/engine';
 import { probeMctsSearch, canonicalActionIndex } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -26,39 +28,48 @@ function getArg(flag: string, def = ''): string {
 }
 
 const gameId = getArg('--game');
-const match = getArg('--match', 'incarnation');
+const targetPower = (getArg('--power', 'tenzen')) as Power;
+const targetKind = getArg('--kind', 'summoning_action');
+const match = getArg('--match', 'all');
 const iters = parseInt(getArg('--iter', '3000'), 10);
 const timeMs = parseInt(getArg('--time', '999999'), 10);
+const topN = parseInt(getArg('--top', '15'), 10);
 if (!gameId) { console.error('--game required'); process.exit(1); }
 
 loadLearnedModelIfPresent();
+
+function describeAction(state: GameState, a: Action): string {
+  if (a.kind === 'summoning_summon_figure') {
+    const fid = (a as any).followerId as string;
+    const f = state.powers[a.power].followers.find(ff => ff.id === fid);
+    return `summon ${f?.class ?? '?'} → ${(a as any).toRegion}`;
+  }
+  if (a.kind === 'summoning_play_card') {
+    return `play ${(a as any).cardId} → ${(a as any).toRegion}`;
+  }
+  return a.kind;
+}
+
+function describeEventAsAction(ev: GameEvent): string {
+  if (ev.type === 'summon_figure') return `summon ${ev.followerClass} → ${ev.toRegion}`;
+  if (ev.type === 'play_card') return `play ${ev.cardId} → ${ev.toRegion}`;
+  if (ev.type === 'summoning_pass') return `pass`;
+  if (ev.type === 'tenzen_discard') return `discard ${ev.cardId ?? '(none)'}`;
+  return ev.type;
+}
+
+function shouldProbe(decisionIdx: number, totalDecisions: number, awaitSeq: number, nextEv: GameEvent | null): boolean {
+  if (match === 'all') return true;
+  if (match.startsWith('seq=')) return awaitSeq === parseInt(match.slice(4), 10);
+  if (!nextEv || nextEv.type !== 'summon_figure') return false;
+  return (nextEv as any).followerClass === match;
+}
 
 async function main() {
   const rows = await db.select({ seq: gameEvents.seq, event: gameEvents.event })
     .from(gameEvents).where(eq(gameEvents.gameId, gameId)).orderBy(asc(gameEvents.seq));
   if (rows.length === 0) { console.error('no events for game'); process.exit(1); }
 
-  // Find target seq: awaiting_action whose NEXT event matches what we want.
-  let targetSeq = -1;
-  if (match.startsWith('seq=')) {
-    targetSeq = parseInt(match.slice(4), 10);
-  } else {
-    for (let i = 0; i < rows.length - 1; i++) {
-      const ev = rows[i]!.event as GameEvent;
-      const next = rows[i + 1]!.event as GameEvent;
-      if (ev.type === 'awaiting_action' && (ev as any).power === 'tenzen' && (ev as any).actionKind === 'summoning_action'
-          && next.type === 'summon_figure'
-          && (next as any).power === 'tenzen'
-          && (next as any).followerClass === match) {
-        targetSeq = rows[i]!.seq;
-        break;
-      }
-    }
-  }
-  if (targetSeq < 0) { console.error(`no matching decision for ${match}`); process.exit(1); }
-  console.log(`replaying to seq=${targetSeq} (${match} decision)`);
-
-  // Reconstruct initial state via createInitialState (events log changes only).
   const gameRow = (await db.select().from(games).where(eq(games.id, gameId)))[0];
   if (!gameRow) { console.error('game not found'); process.exit(1); }
   const playerRows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, gameId));
@@ -73,61 +84,106 @@ async function main() {
   const seed = finalState.rngSeed;
   let state: GameState = createInitialState({ gameId, activePowers, playerTypes, seed });
 
-  // Replay events up to and INCLUDING targetSeq (so pendingAction is set).
-  for (const r of rows) {
+  console.log(`\n=== Probe game ${gameId} ===`);
+  console.log(`power=${targetPower} kind=${targetKind} match=${match} iter=${iters}\n`);
+
+  // Pre-count how many target-power decisions there are for progress reporting.
+  let totalDecisions = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const ev = rows[i]!.event as GameEvent;
+    if (ev.type === 'awaiting_action' && (ev as any).power === targetPower && (ev as any).actionKind === targetKind) {
+      totalDecisions++;
+    }
+  }
+
+  let decisionIdx = 0;
+  let probedCount = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
     const ev = r.event as GameEvent;
     state = applyEvent(state, ev);
-    if (r.seq === targetSeq) break;
-  }
-  if (state.pendingAction === null) { console.error('no pendingAction at target — wrong seq?'); process.exit(1); }
 
-  const power = state.pendingAction.waitingFor;
-  console.log(`\nState: round ${state.round} phase ${state.phase}`);
-  console.log(`Tenzen PP=${state.powers.tenzen.powerPoints}/${state.powers.tenzen.basePowerPoints}`);
-  console.log(`Tenzen on board: ${state.powers.tenzen.followers.filter(f => f.regionId).map(f => `${f.class}@${f.regionId}`).join(', ') || '(none)'}`);
-  console.log(`Tenzen reserve: ${state.powers.tenzen.followers.filter(f => !f.regionId).length} figures`);
-  console.log(`Tenzen hand: ${state.powers.tenzen.hand.join(', ')}`);
+    if (ev.type !== 'awaiting_action') continue;
+    if ((ev as any).power !== targetPower || (ev as any).actionKind !== targetKind) continue;
+    decisionIdx++;
 
-  const legal = getLegalActions(state, power);
-  console.log(`\n${legal.length} legal actions for ${power}\n`);
+    const nextEv = i + 1 < rows.length ? rows[i + 1]!.event as GameEvent : null;
+    if (!shouldProbe(decisionIdx, totalDecisions, r.seq, nextEv)) continue;
 
-  // Run MCTS probe at this state with configurable budget. UI default: time-cap 300ms.
-  console.log(`MCTS budget: iter=${iters} time=${timeMs}ms`);
-  const stats = probeMctsSearch(state, power, { iterations: iters, timeMs });
-  console.log(`actual: ${stats.iterations} iters in ${stats.timeMs}ms (timeCap=${stats.hitTimeCap} iterCap=${stats.hitIterCap})`);
+    // Print state context
+    const ps = state.powers[targetPower]!;
+    console.log(`\n--- Decision ${decisionIdx}/${totalDecisions} (seq=${r.seq}, round=${state.round}) ---`);
+    console.log(`  PP=${ps.powerPoints}/${ps.basePowerPoints}  hand=[${ps.hand.join(',')}]`);
+    const board = ps.followers.filter(f => f.regionId).map(f => `${f.class}@${f.regionId}`).join(', ') || '(none)';
+    console.log(`  board: ${board}`);
+    const reserveByClass = { cultist: 0, warrior: 0, incarnation: 0 };
+    for (const f of ps.followers) if (f.regionId === null) reserveByClass[f.class]++;
+    console.log(`  reserve: cultists=${reserveByClass.cultist} warriors=${reserveByClass.warrior} incarnations=${reserveByClass.incarnation}`);
 
-  // Sort root actions by visits desc.
-  const sorted = [...stats.rootActions].sort((a, b) => b.visits - a.visits);
-  const totalVisits = sorted.reduce((acc, x) => acc + x.visits, 0);
-
-  console.log(`Top 20 actions by visits (chosen: ${stats.topVisitKind}):`);
-  console.log('rank  visits  pct   prior  actionKind   slotIdx');
-  for (let i = 0; i < Math.min(20, sorted.length); i++) {
-    const a = sorted[i]!;
-    const pct = totalVisits > 0 ? (a.visits / totalVisits * 100).toFixed(1) : '0.0';
-    console.log(`${String(i+1).padStart(3)}.  ${String(a.visits).padStart(5)}  ${pct.padStart(4)}%  ${a.prior.toFixed(3)}  ${a.actionKind.padEnd(20)}  ${a.slotIdx}`);
-  }
-
-  // Look up the legal actions to map kinds to specific decisions.
-  console.log('\nLegal action breakdown (count by class+region):');
-  const byKind = new Map<string, number>();
-  for (const a of legal) {
-    let k: string;
-    if (a.kind === 'summoning_summon_figure') {
-      const fid = (a as any).followerId as string;
-      const f = state!.powers[power].followers.find(ff => ff.id === fid);
-      k = `summon ${f?.class ?? '?'} → ${(a as any).toRegion}`;
-    } else if (a.kind === 'summoning_play_card') {
-      k = `play ${(a as any).cardId} → ${(a as any).toRegion}`;
-    } else {
-      k = a.kind;
+    // Brief region summary (only regions with figures or non-empty tokens)
+    const interesting: string[] = [];
+    for (const [rid, region] of Object.entries(state.regions)) {
+      const figs: string[] = [];
+      for (const p of state.activePowers) {
+        for (const f of state.powers[p].followers) {
+          if (f.regionId === rid) figs.push(`${p[0]}.${f.class[0]}`);
+        }
+      }
+      const cards = region.chaosCards.filter(c => c).map(c => `${c!.playedBy[0]}.${c!.cardId.split('_').slice(-1)[0]}`);
+      if (figs.length || cards.length || region.tokens.length) {
+        const parts = [];
+        if (region.tokens.length) parts.push(`t=[${region.tokens.join(',')}]`);
+        if (figs.length) parts.push(`f=[${figs.join(',')}]`);
+        if (cards.length) parts.push(`c=[${cards.join(',')}]`);
+        interesting.push(`    ${rid.padEnd(13)} ${parts.join(' ')}`);
+      }
     }
-    byKind.set(k, (byKind.get(k) ?? 0) + 1);
-  }
-  for (const [k, n] of [...byKind.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`  ${k}: ${n}`);
+    if (interesting.length) console.log(`  regions:\n${interesting.join('\n')}`);
+
+    // What was actually played
+    const actualDesc = nextEv ? describeEventAsAction(nextEv) : '(unknown)';
+    console.log(`  actual play: ${actualDesc}`);
+
+    // Run MCTS
+    const legal = getLegalActions(state, targetPower);
+    const stats = probeMctsSearch(state, targetPower, { iterations: iters, timeMs });
+    const totalVisits = stats.rootActions.reduce((acc, x) => acc + x.visits, 0);
+
+    // Map slot → first matching legal action (for description)
+    const slotToAction = new Map<number, Action>();
+    for (const la of legal) {
+      const sIdx = canonicalActionIndex(la, state);
+      if (!slotToAction.has(sIdx)) slotToAction.set(sIdx, la);
+    }
+
+    const rows2 = stats.rootActions.map(r => {
+      const a = slotToAction.get(r.slotIdx);
+      const desc = a ? describeAction(state, a) : `slot=${r.slotIdx}`;
+      return { desc, visits: r.visits, prior: r.prior, q: r.q };
+    }).sort((a, b) => b.visits - a.visits);
+
+    const top = rows2[0];
+    const mcts_pick = top ? top.desc : '(none)';
+    const matched = mcts_pick === actualDesc;
+    console.log(`  MCTS pick: ${mcts_pick}${matched ? ' ✓ matches actual' : '  ✗ DIFFERENT from actual'}`);
+    console.log(`  (${stats.iterations} iters, ${stats.timeMs}ms)`);
+
+    if (rows2.length > 0) {
+      console.log(`  rank  visits  pct%   prior%    Q       action`);
+      for (let j = 0; j < Math.min(topN, rows2.length); j++) {
+        const x = rows2[j]!;
+        const pct = totalVisits > 0 ? (x.visits / totalVisits * 100).toFixed(1) : '0.0';
+        const pp = (x.prior * 100).toFixed(1);
+        const q = isNaN(x.q) ? '  -  ' : x.q.toFixed(3);
+        const arrow = x.desc === actualDesc ? '  ← actual' : '';
+        console.log(`  ${String(j+1).padStart(3)}.  ${String(x.visits).padStart(5)}  ${pct.padStart(5)}  ${pp.padStart(5)}   ${q}   ${x.desc}${arrow}`);
+      }
+    }
+
+    probedCount++;
   }
 
+  console.log(`\n=== Probed ${probedCount}/${totalDecisions} decisions ===`);
   process.exit(0);
 }
 

@@ -6,15 +6,37 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Mlp, loadModel, loadModelForPower, type ModelJson } from '@ruin/ai';
 import type { Power } from '@ruin/engine';
 
+/** Walk up from this file's directory until we find packages/ai/data/model.json,
+ *  so probe scripts work regardless of CWD. */
+function findRepoModelPath(): string | null {
+  let dir: string;
+  try {
+    dir = path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return null;
+  }
+  for (let i = 0; i < 8; i++) {
+    const candidate = path.join(dir, 'packages/ai/data/model.json');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 export function loadLearnedModelIfPresent(explicitPath?: string): boolean {
+  const repoPath = findRepoModelPath();
   const candidates = explicitPath
     ? [path.resolve(explicitPath)]
     : [
       path.resolve('packages/ai/data/model.json'),
       path.resolve(process.cwd(), 'packages/ai/data/model.json'),
+      ...(repoPath ? [repoPath] : []),
     ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {
