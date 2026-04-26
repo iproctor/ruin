@@ -37,7 +37,7 @@ WORKERS=${WORKERS:-16}
 # Focus power: if set, self-play uses model_<power>.json for that power and
 # snapshots from the league pool for others. Only the focus power's model is
 # trained each iteration; model.json stays frozen.
-FOCUS_POWER=lasha
+FOCUS_POWER=gormen
 # Tenzen cutoff shift ∈ [0,1]. Controls the per-game sampled Tenzen eval
 # cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
 # openings, 1 forces all-learned. Kept at 1 so tenzen (opponent slot)
