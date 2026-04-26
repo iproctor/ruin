@@ -40,7 +40,7 @@ LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
 # Focus power: if set, all self-play games use model_<power>.json for that
 # power and snapshots for others. Only that power's visits are recorded.
-FOCUS_POWER=lasha
+FOCUS_POWER=tenzen
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
 TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
