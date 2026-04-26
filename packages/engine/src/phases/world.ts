@@ -490,6 +490,6 @@ function addTokenIfAvailable(state: GameState, regionId: RegionId, token: TokenT
     log.emit({ type: 'token_supply_exhausted', tokenType: token });
     return state;
   }
-  let s = log.apply(state, { type: 'token_placed', regionId, tokenType: token });
-  return { ...s, tokenSupply: { ...s.tokenSupply, [token]: s.tokenSupply[token] - 1 } };
+  // applyEvent's addToken handler decrements tokenSupply — no manual decrement.
+  return log.apply(state, { type: 'token_placed', regionId, tokenType: token });
 }

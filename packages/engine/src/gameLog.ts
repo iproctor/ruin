@@ -55,6 +55,8 @@ export function renderText(event: GameEvent): string | null {
         : `Game over. The mortal world endures — all players lose (${event.condition}).`;
     case 'awaiting_action':
       return null;
+    case 'action_applied':
+      return null; // bookkeeping event, not user-visible
 
     // ── World ─────────────────────────────────────────────────────────────
     case 'world_card_drawn':

@@ -108,12 +108,13 @@ function regionEqual(rid: string, ra: import('../types.js').RegionState, rb: imp
   for (let slot = 0; slot < 2; slot++) {
     const ca = ra.chaosCards[slot];
     const cb = rb.chaosCards[slot];
-    if (ca === null && cb === null) continue;
-    if (ca === null || cb === null)
+    if (!ca && !cb) continue;
+    if (!ca || !cb)
       return `region[${rid}].chaosCards[${slot}] presence: ${ca?.cardId ?? 'null'} vs ${cb?.cardId ?? 'null'}`;
     const cFields: (keyof import('../types.js').PlayedCard)[] = ['cardId', 'playedBy', 'slotIndex', 'persistNextRound', 'placedAt'];
     for (const k of cFields) {
-      if (ca[k] !== cb[k]) return `region[${rid}].chaosCards[${slot}].${String(k)}: ${ca[k]} vs ${cb[k]}`;
+      const av = ca[k], bv = cb[k];
+      if (av !== bv) return `region[${rid}].chaosCards[${slot}].${String(k)}: ${av} vs ${bv}`;
     }
   }
   return null;
@@ -216,4 +217,4 @@ for (let game = 0; game < NUM_GAMES; game++) {
   }
 }
 console.log(`\n${passed}/${NUM_GAMES} games passed`);
-if (firstFail) process.exit(1);
+if (firstFail) (globalThis as unknown as { process: { exit: (n: number) => void } }).process.exit(1);

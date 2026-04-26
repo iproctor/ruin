@@ -23,7 +23,11 @@ export function applyActionForPreview(state: GameState, action: Action): ApplyRe
   if (s.pendingAction && s.pendingAction.waitingFor !== action.power) {
     throw new Error(`Action from ${action.power} but waiting for ${s.pendingAction.waitingFor}`);
   }
-  return applyActionSwitch(s, action);
+  // Emit at start so event replay can keep actionCount in sync without
+  // inferring it from event count (events != actions; one action emits many).
+  const result = applyActionSwitch(s, action);
+  result.log.events.unshift({ type: 'action_applied', actionCount: s.actionCount });
+  return result;
 }
 
 

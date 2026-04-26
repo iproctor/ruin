@@ -227,6 +227,9 @@ export type GameEvent =
   | { type: 'round_start'; round: number }
   | { type: 'game_over'; winners: Power[]; condition: WinCondition }
   | { type: 'awaiting_action'; power: Power; actionKind: ActionKind; context: Record<string, unknown>; description: string }
+  /** Emitted at the start of every applyAction so event replay can keep
+   *  state.actionCount in sync without inferring it from event count. */
+  | { type: 'action_applied'; actionCount: number }
 
   // ── World ────────────────────────────────────────────────────────────────────
   | { type: 'world_card_drawn'; cardId: string; cardName: string }

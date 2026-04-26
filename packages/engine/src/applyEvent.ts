@@ -49,6 +49,10 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
           context: event.context,
         },
       };
+    case 'action_applied':
+      // Mirrors applyActionForPreview's actionCount increment so event replay
+      // reconstructs RNG offset deterministically.
+      return { ...state, actionCount: event.actionCount };
 
     // ── Summoning ─────────────────────────────────────────────────────────
     // Turn advancement is handled by awaiting_action events, not here.
