@@ -323,7 +323,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
 
     // Per-power breakdown
     for (const p of POWERS) {
-      out[i++] = Math.min((region.corruptionTokens[p] ?? 0) / 8, 1);
+      out[i++] = Math.min((region.corruptionTokens[p] ?? 0) / 12, 1);
       // Skip tipped (dead-but-not-cleared) figures — they no longer contribute
       // to combat or domination this round.
       const figs = followersInRegion(state, r).filter(
