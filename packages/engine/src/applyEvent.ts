@@ -34,14 +34,23 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
         const ps = powers[p];
         if (ps) powers[p] = { ...ps, dacRegionsThisPhase: [] };
       }
-      return { ...state, phase: event.phase, powers };
+      // Reducer resets summoningIndex when leaving summoning (all-done path)
+      // or entering summoning. Mirror here.
+      const summoningIndex = event.phase === 'summoning' || event.phase === 'battle' ? 0 : state.summoningIndex;
+      // Battle state lives only during battle phase; reducer clears it at
+      // phase change (phases/battle.ts:994). Mirror.
+      const battleState = event.phase === 'battle' ? state.battleState : null;
+      return { ...state, phase: event.phase, powers, summoningIndex, battleState };
     }
     case 'round_start':
       return { ...state, round: event.round };
     case 'game_over':
       return { ...state, winners: event.winners, winCondition: event.condition, phase: 'completed' };
-    case 'awaiting_action':
-      return {
+    case 'awaiting_action': {
+      // For summoning_action, also sync summoningIndex so it tracks who's
+      // up. The reducer (phases/summoning.ts:287) mutates summoningIndex
+      // directly without an event.
+      let s: GameState = {
         ...state,
         pendingAction: {
           waitingFor: event.power,
@@ -49,6 +58,12 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
           context: event.context,
         },
       };
+      if (event.actionKind === 'summoning_action') {
+        const idx = s.summoningOrder.indexOf(event.power);
+        if (idx >= 0) s = { ...s, summoningIndex: idx };
+      }
+      return s;
+    }
     case 'action_applied':
       // Mirrors applyActionForPreview's actionCount increment so event replay
       // reconstructs RNG offset deterministically.

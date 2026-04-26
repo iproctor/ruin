@@ -23,7 +23,7 @@ export function beginDrawPhase(state: GameState): { state: GameState; log: GameL
           context: { drawTarget },
         },
       };
-      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', context: {}, description: 'Draw phase: waiting for Tenzen discard choice.' });
+      log.emit({ type: 'awaiting_action', power: 'tenzen', actionKind: 'tenzen_discard', context: { drawTarget }, description: 'Draw phase: waiting for Tenzen discard choice.' });
       return { state: s, log };
     }
   }
