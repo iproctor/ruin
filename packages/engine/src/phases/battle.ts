@@ -143,9 +143,8 @@ function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
     for (const f of tipped) {
       s = removeFigureFromBoard(s, regionId, f.id, log).state;
     }
-    if (enemyKilledByFrenzy && !s.battleState?.xarmDialEarnedThisRegion) {
+    if (enemyKilledByFrenzy && !s.powers['xarm']!.dacRegionsThisPhase.includes(regionId)) {
       s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
-      s = { ...s, battleState: { ...s.battleState!, xarmDialEarnedThisRegion: true } };
     }
   }
 
@@ -305,7 +304,7 @@ function resolveFromRegion(
     s = {
       ...s,
       battleState: s.battleState
-        ? { ...s.battleState, currentRegionIndex: i, xarmDialEarnedThisRegion: false }
+        ? { ...s.battleState, currentRegionIndex: i }
         : null,
     };
 
@@ -646,11 +645,12 @@ function runPostNormal(
     s = r.state;
   }
 
-  // Xarm dial advancement — at most once per region battle (War Frenzy may
-  // have already awarded it before normal battle).
-  if (enemiesKilledByXarm && !s.battleState?.xarmDialEarnedThisRegion) {
+  // Xarm dial advancement — at most once per (region, phase). The dial_counter
+  // event handler appends this region to xarm.dacRegionsThisPhase, so a
+  // second kill in the same region (e.g. War Frenzy then normal battle) won't
+  // double-award.
+  if (enemiesKilledByXarm && !s.powers['xarm']!.dacRegionsThisPhase.includes(regionId)) {
     s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
-    s = { ...s, battleState: { ...s.battleState!, xarmDialEarnedThisRegion: true } };
   }
 
   // ── Undying Fury ─────────────────────────────────────────────────────────

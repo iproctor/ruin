@@ -105,6 +105,7 @@ export function createInitialState(config: GameConfig): GameState {
       passedSummoning: false,
       followers,
       freeRedeployIds: [],
+      dacRegionsThisPhase: [],
     };
   }
 

@@ -11,6 +11,7 @@ import {
 } from './helpers.js';
 import { BASE_POWER_POINTS } from '../constants.js';
 import { followersInRegion } from '../helpers.js';
+import { GameLog } from '../gameLog.js';
 
 // ─── Figure summoning ─────────────────────────────────────────────────────────
 
@@ -415,6 +416,109 @@ describe('Gormen Plaguefather upgrade', () => {
       toRegion: 'norrsund',
     });
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(2);
+  });
+
+  test('summoning Plaguefather to a populous region grants Gormen a DAC', () => {
+    // mittelreich is populous (value 5).
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguefather_up');
+    const before = s.powers.gormen!.dialCounters;
+    const { state } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    expect(state.regions.mittelreich!.corruptionTokens.gormen).toBe(2);
+    expect(state.powers.gormen!.dialCounters - before).toBe(1);
+  });
+
+  test('summoning Plaguefather to a non-populous region does NOT grant a DAC', () => {
+    // norrsund is non-populous (value 1).
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguefather_up');
+    const before = s.powers.gormen!.dialCounters;
+    const { state } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'norrsund',
+    });
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(2);
+    expect(state.powers.gormen!.dialCounters - before).toBe(0);
+  });
+
+  test('without the upgrade, summoning Plaguefather places no corruption and no DAC', () => {
+    let s = makeState();
+    const before = s.powers.gormen!.dialCounters;
+    const { state } = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    expect(state.regions.mittelreich!.corruptionTokens.gormen).toBe(0);
+    expect(state.powers.gormen!.dialCounters - before).toBe(0);
+  });
+
+  test('summoning Plaguefather to the same populous region twice in one phase grants only 1 DAC', () => {
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguefather_up');
+    s = setPP(s, 'gormen', 99); // enough for three Plaguefather summons
+    const before = s.powers.gormen!.dialCounters;
+
+    // First summon: into Mittelreich → +1 DAC.
+    let r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    s = r.state;
+    expect(s.powers.gormen!.dialCounters - before).toBe(1);
+
+    // Move Plaguefather to a different (non-populous) region so we can move it
+    // back. Norrsund is non-populous → no extra DAC.
+    r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'volensk',
+    });
+    s = r.state;
+
+    // Move back to Mittelreich. 2 more corruption are placed, but Gormen
+    // already earned a DAC for Mittelreich this phase → no second DAC.
+    r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    s = r.state;
+    // Volensk IS populous (value 3) so the second summon earns its own DAC.
+    // Only the third summon (back to Mittelreich) is the duplicate that must
+    // be suppressed: 1 (mittelreich) + 1 (volensk) = 2 total, NOT 3.
+    expect(s.powers.gormen!.dialCounters - before).toBe(2);
+    expect(s.regions.mittelreich!.corruptionTokens.gormen).toBe(4); // 2+2 still placed
+  });
+
+  test('summoning Plaguefather to two different populous regions in one phase grants 2 DACs', () => {
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguefather_up');
+    s = setPP(s, 'gormen', 99);
+    const before = s.powers.gormen!.dialCounters;
+    let r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    s = r.state;
+    r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'normagne',
+    });
+    s = r.state;
+    expect(s.powers.gormen!.dialCounters - before).toBe(2);
+  });
+
+  test('per-phase DAC tracker resets between phases (so Mittelreich can earn again next phase)', () => {
+    let s = withUpgrade(makeState(), 'gormen', 'gormen_plaguefather_up');
+    let r = applySummonFigure(s, {
+      kind: 'summoning_summon_figure', power: 'gormen', followerId: 'gormen_incarnation_1',
+      toRegion: 'mittelreich',
+    });
+    s = r.state;
+    expect(s.powers.gormen!.dacRegionsThisPhase).toContain('mittelreich');
+
+    // Simulate a phase change via a phase_start event (the same path the
+    // engine uses when transitioning into the next phase).
+    const log = new GameLog();
+    s = log.apply(s, { type: 'phase_start', phase: 'battle', round: 1 });
+    expect(s.powers.gormen!.dacRegionsThisPhase).toEqual([]);
   });
 });
 

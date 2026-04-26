@@ -228,7 +228,7 @@ function computeRankTarget(state: import('@ruin/engine').GameState, winners: Pow
     return roundsToWin(a) - roundsToWin(b);
   });
   for (let i = 0; i < ranked.length; i++) {
-    target[POWERS.indexOf(ranked[i])] = (N - 1 - i) / (N - 1);
+    target[POWERS.indexOf(ranked[i]!)] = (N - 1 - i) / (N - 1);
   }
   return target;
 }
