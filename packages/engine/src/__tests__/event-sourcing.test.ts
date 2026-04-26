@@ -36,73 +36,128 @@ function replayEvents(initialState: GameState, events: GameEvent[]): GameState {
   return s;
 }
 
+/** Stable JSON-stringify with deterministic key ordering. */
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(stableStringify).join(',') + ']';
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
+}
+
+function powerEqual(power: Power, pa: import('../types.js').PowerState, pb: import('../types.js').PowerState): string | null {
+  const scalars: (keyof import('../types.js').PowerState)[] = [
+    'playerType', 'victoryPoints', 'powerPoints', 'basePowerPoints',
+    'threatValue', 'dialPosition', 'dialCounters', 'claimedPeasants',
+    'passedSummoning', 'summoningTurnsTaken',
+  ];
+  for (const k of scalars) {
+    if (pa[k] !== pb[k]) return `${power}.${String(k)}: ${pa[k]} vs ${pb[k]}`;
+  }
+  // Order-sensitive arrays (deck order matters for draws; hand order observable).
+  // Sorted comparison for unordered sets.
+  const arrays: { key: keyof import('../types.js').PowerState; sorted: boolean }[] = [
+    { key: 'hand', sorted: false },
+    { key: 'deckIds', sorted: false },
+    { key: 'discardIds', sorted: false },
+    { key: 'upgradesInPlay', sorted: true },
+    { key: 'availableUpgradeIds', sorted: true },
+    { key: 'freeRedeployIds', sorted: true },
+    { key: 'dacRegionsThisPhase', sorted: true },
+  ];
+  for (const { key, sorted } of arrays) {
+    const aArr = (pa[key] as string[]).slice();
+    const bArr = (pb[key] as string[]).slice();
+    if (sorted) { aArr.sort(); bArr.sort(); }
+    if (aArr.length !== bArr.length || aArr.some((x, i) => x !== bArr[i]))
+      return `${power}.${String(key)}: [${aArr.join(',')}] vs [${bArr.join(',')}]`;
+  }
+  // Followers — match by id, check every field.
+  const idsA = pa.followers.map(f => f.id).slice().sort();
+  const idsB = pb.followers.map(f => f.id).slice().sort();
+  if (idsA.length !== idsB.length || idsA.some((x, i) => x !== idsB[i]))
+    return `${power}.followers ids differ: [${idsA.join(',')}] vs [${idsB.join(',')}]`;
+  const byIdA = new Map(pa.followers.map(f => [f.id, f]));
+  const byIdB = new Map(pb.followers.map(f => [f.id, f]));
+  const fFields: (keyof import('../types.js').FollowerInstance)[] = [
+    'power', 'class', 'regionId', 'controlledBy', 'tipped', 'protected', 'warFrenzyHits', 'placedAt',
+  ];
+  for (const id of idsA) {
+    const fa = byIdA.get(id)!;
+    const fb = byIdB.get(id)!;
+    for (const k of fFields) {
+      if (fa[k] !== fb[k]) return `${power}.follower[${id}].${String(k)}: ${fa[k]} vs ${fb[k]}`;
+    }
+  }
+  return null;
+}
+
+function regionEqual(rid: string, ra: import('../types.js').RegionState, rb: import('../types.js').RegionState): string | null {
+  const scalars: (keyof import('../types.js').RegionState)[] = [
+    'regionId', 'baseValue', 'resistance', 'conquestValue', 'populous', 'ruinationCardIndex',
+  ];
+  for (const k of scalars) {
+    if (ra[k] !== rb[k]) return `region[${rid}].${String(k)}: ${ra[k]} vs ${rb[k]}`;
+  }
+  if (stableStringify(ra.corruptionTokens) !== stableStringify(rb.corruptionTokens))
+    return `region[${rid}].corruptionTokens: ${stableStringify(ra.corruptionTokens)} vs ${stableStringify(rb.corruptionTokens)}`;
+  // Tokens: positional order matters (some game logic does FIFO removal).
+  if (ra.tokens.length !== rb.tokens.length || ra.tokens.some((t, i) => t !== rb.tokens[i]))
+    return `region[${rid}].tokens: [${ra.tokens.join(',')}] vs [${rb.tokens.join(',')}]`;
+  // Card slots: positional. Compare every PlayedCard field.
+  for (let slot = 0; slot < 2; slot++) {
+    const ca = ra.chaosCards[slot];
+    const cb = rb.chaosCards[slot];
+    if (ca === null && cb === null) continue;
+    if (ca === null || cb === null)
+      return `region[${rid}].chaosCards[${slot}] presence: ${ca?.cardId ?? 'null'} vs ${cb?.cardId ?? 'null'}`;
+    const cFields: (keyof import('../types.js').PlayedCard)[] = ['cardId', 'playedBy', 'slotIndex', 'persistNextRound', 'placedAt'];
+    for (const k of cFields) {
+      if (ca[k] !== cb[k]) return `region[${rid}].chaosCards[${slot}].${String(k)}: ${ca[k]} vs ${cb[k]}`;
+    }
+  }
+  return null;
+}
+
 function statesEqual(a: GameState, b: GameState): string | null {
   for (const power of a.activePowers) {
-    const pa = a.powers[power]!;
-    const pb = b.powers[power]!;
-
-    if (pa.victoryPoints !== pb.victoryPoints)
-      return `${power}.victoryPoints: ${pa.victoryPoints} vs ${pb.victoryPoints}`;
-    if (pa.powerPoints !== pb.powerPoints)
-      return `${power}.powerPoints: ${pa.powerPoints} vs ${pb.powerPoints}`;
-    if (pa.basePowerPoints !== pb.basePowerPoints)
-      return `${power}.basePowerPoints: ${pa.basePowerPoints} vs ${pb.basePowerPoints}`;
-    if (pa.dialPosition !== pb.dialPosition)
-      return `${power}.dialPosition: ${pa.dialPosition} vs ${pb.dialPosition}`;
-    if (pa.passedSummoning !== pb.passedSummoning)
-      return `${power}.passedSummoning: ${pa.passedSummoning} vs ${pb.passedSummoning}`;
-
-    const sortF = (f: typeof pa.followers) => [...f].sort((a, b) => a.id.localeCompare(b.id));
-    const fa = sortF(pa.followers);
-    const fb = sortF(pb.followers);
-    if (fa.length !== fb.length)
-      return `${power}.followers.length: ${fa.length} vs ${fb.length}`;
-    for (let i = 0; i < fa.length; i++) {
-      if (fa[i]!.regionId !== fb[i]!.regionId)
-        return `${power}.follower[${fa[i]!.id}].regionId: ${fa[i]!.regionId} vs ${fb[i]!.regionId}`;
-      if (fa[i]!.controlledBy !== fb[i]!.controlledBy)
-        return `${power}.follower[${fa[i]!.id}].controlledBy: ${fa[i]!.controlledBy} vs ${fb[i]!.controlledBy}`;
-      if (fa[i]!.tipped !== fb[i]!.tipped)
-        return `${power}.follower[${fa[i]!.id}].tipped: ${fa[i]!.tipped} vs ${fb[i]!.tipped}`;
-      if (fa[i]!.protected !== fb[i]!.protected)
-        return `${power}.follower[${fa[i]!.id}].protected: ${fa[i]!.protected} vs ${fb[i]!.protected}`;
-    }
-
-    // Compare hand contents (sorted — order may differ)
-    const ha = [...pa.hand].sort().join(',');
-    const hb = [...pb.hand].sort().join(',');
-    if (ha !== hb)
-      return `${power}.hand: [${ha}] vs [${hb}]`;
-    // Compare discard piles (sorted)
-    const da = [...pa.discardIds].sort().join(',');
-    const db = [...pb.discardIds].sort().join(',');
-    if (da !== db)
-      return `${power}.discardIds: [${da}] vs [${db}]`;
+    const diff = powerEqual(power, a.powers[power]!, b.powers[power]!);
+    if (diff) return diff;
   }
-
   for (const rid of Object.keys(a.regions)) {
-    const ra = a.regions[rid as import('../types.js').RegionId]!;
-    const rb = b.regions[rid as import('../types.js').RegionId]!;
-
-    if (JSON.stringify(ra.corruptionTokens) !== JSON.stringify(rb.corruptionTokens))
-      return `region[${rid}].corruptionTokens: ${JSON.stringify(ra.corruptionTokens)} vs ${JSON.stringify(rb.corruptionTokens)}`;
-    if (ra.ruinationCardIndex !== rb.ruinationCardIndex)
-      return `region[${rid}].ruinationCardIndex: ${ra.ruinationCardIndex} vs ${rb.ruinationCardIndex}`;
-    if ([...ra.tokens].sort().join(',') !== [...rb.tokens].sort().join(','))
-      return `region[${rid}].tokens: ${[...ra.tokens].sort()} vs ${[...rb.tokens].sort()}`;
-    for (let slot = 0; slot < 2; slot++) {
-      if ((ra.chaosCards[slot]?.cardId ?? null) !== (rb.chaosCards[slot]?.cardId ?? null))
-        return `region[${rid}].chaosCards[${slot}]: ${ra.chaosCards[slot]?.cardId} vs ${rb.chaosCards[slot]?.cardId}`;
-    }
+    const diff = regionEqual(
+      rid,
+      a.regions[rid as import('../types.js').RegionId]!,
+      b.regions[rid as import('../types.js').RegionId]!,
+    );
+    if (diff) return diff;
   }
-
   if (a.round !== b.round) return `round: ${a.round} vs ${b.round}`;
   if (a.phase !== b.phase) return `phase: ${a.phase} vs ${b.phase}`;
   if (a.ruinationCardsUsed !== b.ruinationCardsUsed)
     return `ruinationCardsUsed: ${a.ruinationCardsUsed} vs ${b.ruinationCardsUsed}`;
-  if (JSON.stringify(a.winners) !== JSON.stringify(b.winners))
-    return `winners: ${JSON.stringify(a.winners)} vs ${JSON.stringify(b.winners)}`;
-
+  if (stableStringify(a.winners) !== stableStringify(b.winners))
+    return `winners: ${stableStringify(a.winners)} vs ${stableStringify(b.winners)}`;
+  if (a.winCondition !== b.winCondition) return `winCondition: ${a.winCondition} vs ${b.winCondition}`;
+  // Order-sensitive deck.
+  if (a.worldDeck.length !== b.worldDeck.length || a.worldDeck.some((c, i) => c !== b.worldDeck[i]))
+    return `worldDeck: [${a.worldDeck.join(',')}] vs [${b.worldDeck.join(',')}]`;
+  if (stableStringify(a.worldTrack) !== stableStringify(b.worldTrack))
+    return `worldTrack: ${stableStringify(a.worldTrack)} vs ${stableStringify(b.worldTrack)}`;
+  if (stableStringify(a.tokenSupply) !== stableStringify(b.tokenSupply))
+    return `tokenSupply: ${stableStringify(a.tokenSupply)} vs ${stableStringify(b.tokenSupply)}`;
+  if (stableStringify(a.pendingAction) !== stableStringify(b.pendingAction))
+    return `pendingAction: ${stableStringify(a.pendingAction)} vs ${stableStringify(b.pendingAction)}`;
+  if (stableStringify(a.summoningOrder) !== stableStringify(b.summoningOrder))
+    return `summoningOrder: ${stableStringify(a.summoningOrder)} vs ${stableStringify(b.summoningOrder)}`;
+  if (a.summoningIndex !== b.summoningIndex)
+    return `summoningIndex: ${a.summoningIndex} vs ${b.summoningIndex}`;
+  if (stableStringify(a.battleState) !== stableStringify(b.battleState))
+    return `battleState: ${stableStringify(a.battleState)} vs ${stableStringify(b.battleState)}`;
+  if (stableStringify(a.pendingDialRewards) !== stableStringify(b.pendingDialRewards))
+    return `pendingDialRewards: ${stableStringify(a.pendingDialRewards)} vs ${stableStringify(b.pendingDialRewards)}`;
+  if (a.rngSeed !== b.rngSeed) return `rngSeed: ${a.rngSeed} vs ${b.rngSeed}`;
+  if (a.actionCount !== b.actionCount) return `actionCount: ${a.actionCount} vs ${b.actionCount}`;
   return null;
 }
 
@@ -147,11 +202,18 @@ function runEventSourcingGame(game: number): string | null {
   return null;
 }
 
-describe('event sourcing integrity', () => {
-  for (let game = 0; game < NUM_GAMES; game++) {
-    test(`game ${game + 1}: engine state matches event replay`, () => {
-      const err = runEventSourcingGame(game);
-      expect(err).toBeNull();
-    });
+// Run as a script: `npx tsx packages/engine/src/__tests__/event-sourcing.test.ts`
+// or via `pnpm test`. Exits 1 on first divergence.
+let firstFail: string | null = null;
+let passed = 0;
+for (let game = 0; game < NUM_GAMES; game++) {
+  const err = runEventSourcingGame(game);
+  if (err) {
+    if (!firstFail) firstFail = err;
+    console.error(`FAIL: ${err}`);
+  } else {
+    passed++;
   }
-});
+}
+console.log(`\n${passed}/${NUM_GAMES} games passed`);
+if (firstFail) process.exit(1);

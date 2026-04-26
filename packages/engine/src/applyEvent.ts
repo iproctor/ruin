@@ -9,6 +9,7 @@
  */
 
 import type { GameState, GameEvent, Power, RegionId } from './types.js';
+import { WORLD_CARD_BY_ID } from './constants.js';
 
 export function applyEvent(state: GameState, event: GameEvent): GameState {
   const next = applyEventInner(state, event);
@@ -274,7 +275,20 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
     case 'world_track_update':
       return { ...state, worldTrack: { ...state.worldTrack, slot1: event.slot1, slot2: event.slot2 } };
 
-    case 'world_card_drawn':
+    case 'world_card_drawn': {
+      // The reducer (phases/world.ts:78) shifts the deck directly when drawing
+      // and routes "discard"-timing cards to worldTrack.discardCard. Mirror
+      // both here so event replay reconstructs state correctly.
+      let s = state;
+      if (s.worldDeck.length > 0 && s.worldDeck[0] === event.cardId) {
+        s = { ...s, worldDeck: s.worldDeck.slice(1) };
+      }
+      const def = WORLD_CARD_BY_ID[event.cardId];
+      if (def && def.timing === 'discard') {
+        s = { ...s, worldTrack: { ...s.worldTrack, discardCard: event.cardId } };
+      }
+      return s;
+    }
     case 'comet_removed':
     case 'world_card_choice':
     case 'token_supply_exhausted':
@@ -354,26 +368,32 @@ function removeCorruption(state: GameState, regionId: RegionId, power: Power, to
 
 function addToken(state: GameState, regionId: RegionId, tokenType: string): GameState {
   const region = state.regions[regionId]!;
+  const tt = tokenType as GameState['regions'][RegionId]['tokens'][number];
+  // Reducer (phases/world.ts:489-494) decrements tokenSupply when placing.
+  // Mirror here so event replay reconstructs supply correctly.
+  const supply = { ...state.tokenSupply, [tt]: Math.max(0, (state.tokenSupply[tt] ?? 0) - 1) };
   return {
     ...state,
+    tokenSupply: supply,
     regions: {
       ...state.regions,
-      [regionId]: {
-        ...region,
-        tokens: [...region.tokens, tokenType as GameState['regions'][RegionId]['tokens'][number]],
-      },
+      [regionId]: { ...region, tokens: [...region.tokens, tt] },
     },
   };
 }
 
 function removeToken(state: GameState, regionId: RegionId, tokenType: string): GameState {
   const region = state.regions[regionId]!;
-  const idx = region.tokens.indexOf(tokenType as GameState['regions'][RegionId]['tokens'][number]);
+  const tt = tokenType as GameState['regions'][RegionId]['tokens'][number];
+  const idx = region.tokens.indexOf(tt);
   if (idx === -1) return state;
   const tokens = [...region.tokens];
   tokens.splice(idx, 1);
+  // Removed tokens go back to supply.
+  const supply = { ...state.tokenSupply, [tt]: (state.tokenSupply[tt] ?? 0) + 1 };
   return {
     ...state,
+    tokenSupply: supply,
     regions: { ...state.regions, [regionId]: { ...region, tokens } },
   };
 }
