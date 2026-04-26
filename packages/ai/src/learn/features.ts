@@ -163,6 +163,14 @@ const EXPECTED_RUIN_DIMS = REGION_ORDER.length;
 // (only partially encoded). Exposing the answer closes the gap.
 const DOMINATION_LEADER_DIMS = (POWERS.length + 1) * REGION_ORDER.length;
 
+// Cumulative non-pass summoning actions per power this game. Tempo signal:
+// captures Siphon Power and other zero-cost stalls that don't show up in
+// state-of-board features but represent investment. Outcome correlation:
+// powers that take more summoning actions usually have more board presence,
+// which typically correlates with VP/dial progress. /20 normalisation
+// (typical max ~6-12 actions per power per game).
+const SUMMONING_TURNS_DIMS = POWERS.length;
+
 export const FEATURE_DIM =
   GLOBAL_DIMS +
   POWERS.length * PER_POWER +
@@ -173,7 +181,8 @@ export const FEATURE_DIM =
   PROTECTED_LASHA_DIMS +
   POTENTIAL_CORRUPTION_DIMS +
   EXPECTED_RUIN_DIMS +
-  DOMINATION_LEADER_DIMS;
+  DOMINATION_LEADER_DIMS +
+  SUMMONING_TURNS_DIMS;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -489,7 +498,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       const tokens = Math.max(0, cultists + warriors - reduction);
 
       potentialPerRegion[ri]! += tokens;
-      out[i++] = Math.min(tokens / 4, 1);
+      out[i++] = Math.min(tokens / 6, 1);
     }
   }
 
@@ -527,6 +536,14 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       out[start + POWERS.length] = 1;
     }
     i += POWERS.length + 1;
+  }
+
+  // ── Summoning turns taken per power (cumulative this game) ─────────────
+  // Tempo signal — captures Siphon plays and other tempo-investment actions
+  // that current state-of-board features can't represent.
+  for (const p of POWERS) {
+    const turns = state.powers[p]?.summoningTurnsTaken ?? 0;
+    out[i++] = Math.min(turns / 20, 1);
   }
 
   if (i !== FEATURE_DIM) {

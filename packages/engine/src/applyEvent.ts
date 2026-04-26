@@ -51,10 +51,17 @@ function applyEventInner(state: GameState, event: GameEvent): GameState {
         const gp = s.powers['gormen']!;
         s = patchPower(s, 'gormen', { freeRedeployIds: [...(gp.freeRedeployIds ?? []), event.followerId] });
       }
+      // Tempo signal: cumulative non-pass summoning actions this game.
+      const sp = s.powers[event.power]!;
+      s = patchPower(s, event.power, { summoningTurnsTaken: sp.summoningTurnsTaken + 1 });
       return s;
     }
-    case 'play_card':
-      return playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
+    case 'play_card': {
+      let s = playCard(state, event.power, event.cardId, event.toRegion, event.slotIndex, event.cost);
+      const sp = s.powers[event.power]!;
+      s = patchPower(s, event.power, { summoningTurnsTaken: sp.summoningTurnsTaken + 1 });
+      return s;
+    }
     case 'summoning_pass':
       return patchPower(state, event.power, { passedSummoning: true, powerPoints: 0 });
     case 'apprentice_choice':

@@ -67,6 +67,7 @@ export function makeState(overrides: Partial<GameState> = {}): GameState {
       passedSummoning: false,
       followers: makeFollowers(power),
       freeRedeployIds: [],
+      summoningTurnsTaken: 0,
     };
   };
 
