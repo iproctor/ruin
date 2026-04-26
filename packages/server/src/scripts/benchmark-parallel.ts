@@ -51,6 +51,7 @@ interface WorkerMetrics {
   avgRounds: number;
   winConditions: Record<string, number>;
   errors: number;
+  noWinners?: number;
   timeSeconds: number;
   playIndicators?: {
     lashaNobleMovesPerGame: number;
@@ -114,6 +115,7 @@ const POWERS = ['xarm', 'gormen', 'tenzen', 'lasha'];
 const totalGames = results.reduce((a, r) => a + r.games, 0);
 const totalCompleted = results.reduce((a, r) => a + r.completed, 0);
 const totalErrors = results.reduce((a, r) => a + r.errors, 0);
+const totalNoWinners = results.reduce((a, r) => a + (r.noWinners ?? 0), 0);
 
 const totalWins: Record<string, number> = {};
 const totalDac: Record<string, number> = {};
@@ -250,6 +252,7 @@ for (const [c, n] of Object.entries(totalConds).sort((a, b) => b[1] - a[1])) {
   console.log(`  ${c.padEnd(18)} ${n}`);
 }
 
+if (totalNoWinners > 0) console.log(`\nNO WINNER: ${totalNoWinners} (world exhaustion — expected, not a bug)`);
 if (totalErrors > 0) console.log(`\nERRORS: ${totalErrors}`);
 console.log(`\nTotal wall time: ${elapsed}s\n`);
 
@@ -283,6 +286,7 @@ if (finalOut) {
     avgRounds,
     winConditions: totalConds,
     errors: totalErrors,
+    noWinners: totalNoWinners,
     wallTime: parseFloat(elapsed),
   };
   fs.writeFileSync(finalOut, JSON.stringify(summary, null, 2));

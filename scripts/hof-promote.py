@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Promote a trained snapshot into the hall-of-fame when its class freq beats
+Promote a trained snapshot into the hall-of-fame when its avg rank beats
 the current worst HOF member. Called by the coordinator after each
 training iter.
 
@@ -12,13 +12,17 @@ Manifest:
   {
     "capacity": 5,
     "members": [
-      { "iter": 1286, "freq": 0.161, "file": "model_hof_1286.json" },
+      { "iter": 1286, "rank": 0.412, "file": "model_hof_1286.json" },
       ...
     ]
   }
 
-Under capacity: always add. At capacity: replace the worst-by-freq if new > worst.
+Under capacity: always add. At capacity: replace the worst-by-rank if new > worst.
 Collect-data.ts loads every file in hof/<power>/ (except manifest.json).
+
+Avg rank is mean target value across training samples for this power:
+1.0 = always 1st, 0.5 = random placement, 0.0 = always last.
+Captures placement quality (2nd/3rd finishes), not just wins.
 """
 
 import argparse
@@ -31,17 +35,19 @@ import sys
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--iter', type=int, required=True)
-    ap.add_argument('--freq', type=float, required=True)
+    ap.add_argument('--rank', type=float, required=True,
+                    help='Avg rank for the focus power across training samples [0,1]. '
+                         '0.5 = random placement, 1.0 = always 1st, 0.0 = always last.')
     ap.add_argument('--power', required=True)
     ap.add_argument('--capacity', type=int, default=5)
     ap.add_argument('--data-dir', default='packages/ai/data')
-    ap.add_argument('--min-freq', type=float, default=0.1,
-                    help='Skip promotion entirely if the new iter freq is below this '
+    ap.add_argument('--min-rank', type=float, default=0.3,
+                    help='Skip promotion entirely if the new iter avg rank is below this '
                          'floor. Prevents weak iters from polluting HOF during regressions.')
     args = ap.parse_args()
 
-    if args.freq < args.min_freq:
-        print(f'[hof] iter {args.iter} freq {args.freq:.3f} < floor {args.min_freq:.3f} — skipping')
+    if args.rank < args.min_rank:
+        print(f'[hof] iter {args.iter} rank {args.rank:.3f} < floor {args.min_rank:.3f} — skipping')
         return 0
 
     hof_dir = os.path.join(args.data_dir, 'hof', args.power)
@@ -69,24 +75,28 @@ def main() -> int:
     hof_file = f'model_hof_{args.iter}.json'
     hof_path = os.path.join(hof_dir, hof_file)
 
+    def member_score(m):
+        return m.get('rank', m.get('freq', 0))
+
     if len(members) < capacity:
         shutil.copy(snap_path, hof_path)
-        members.append({'iter': args.iter, 'freq': args.freq, 'file': hof_file})
-        action = f'added iter {args.iter} ({args.freq:.3f})'
+        members.append({'iter': args.iter, 'rank': args.rank, 'file': hof_file})
+        action = f'added iter {args.iter} ({args.rank:.3f})'
     else:
-        worst = min(members, key=lambda m: m['freq'])
-        if args.freq <= worst['freq']:
+        worst = min(members, key=member_score)
+        worst_score = member_score(worst)
+        if args.rank <= worst_score:
             return 0
         old = os.path.join(hof_dir, worst['file'])
         if os.path.exists(old):
             os.remove(old)
         shutil.copy(snap_path, hof_path)
         members = [m for m in members if m['iter'] != worst['iter']]
-        members.append({'iter': args.iter, 'freq': args.freq, 'file': hof_file})
-        action = (f'promoted iter {args.iter} ({args.freq:.3f}), '
-                  f'evicted iter {worst["iter"]} ({worst["freq"]:.3f})')
+        members.append({'iter': args.iter, 'rank': args.rank, 'file': hof_file})
+        action = (f'promoted iter {args.iter} ({args.rank:.3f}), '
+                  f'evicted iter {worst["iter"]} ({worst_score:.3f})')
 
-    members.sort(key=lambda m: -m['freq'])
+    members.sort(key=lambda m: -member_score(m))
     manifest['members'] = members
     manifest['capacity'] = capacity
     with open(manifest_path, 'w') as f:

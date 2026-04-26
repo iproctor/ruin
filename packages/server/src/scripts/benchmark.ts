@@ -408,6 +408,7 @@ const aggIndicators = {
   vpFromRuination: { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<Power, number>,
 };
 const errors: string[] = [];
+const noWinners: string[] = [];
 let completed = 0;
 
 for (let i = 0; i < gameCount; i++) {
@@ -423,8 +424,11 @@ for (let i = 0; i < gameCount; i++) {
     continue;
   }
   if (result.winners.length === 0) {
-    errors.push(`seed ${seed}: no winner (${result.winCondition})`);
-    console.log(`NO WINNER (${elapsed}s)`);
+    // World exhaustion under the no-winners rule = expected outcome, not a
+    // bug. Track separately from real errors so bench output isn't misleading.
+    noWinners.push(`seed ${seed}: ${result.winCondition}`);
+    winConditions[result.winCondition] = (winConditions[result.winCondition] ?? 0) + 1;
+    console.log(`NO WINNER ${result.winCondition} (${elapsed}s)`);
     continue;
   }
 
@@ -550,6 +554,11 @@ for (const [c, n] of Object.entries(winConditions).sort((a, b) => b[1] - a[1])) 
   console.log(`  ${c.padEnd(18)} ${n}`);
 }
 
+if (noWinners.length > 0) {
+  console.log(`\nNO WINNER (${noWinners.length}): expected under no-winners-on-exhaustion rule`);
+  for (const e of noWinners.slice(0, 3)) console.log(`  - ${e}`);
+  if (noWinners.length > 3) console.log(`  ... +${noWinners.length - 3} more`);
+}
 if (errors.length > 0) {
   console.log(`\nERRORS (${errors.length}):`);
   for (const e of errors.slice(0, 5)) console.log(`  - ${e}`);
@@ -591,6 +600,7 @@ if (outPath) {
     avgRounds,
     winConditions,
     errors: errors.length,
+    noWinners: noWinners.length,
     timeSeconds: parseFloat(totalElapsed),
   };
   fs.writeFileSync(outPath, JSON.stringify(metrics, null, 2));

@@ -188,23 +188,48 @@ interface GameResult {
   samples: Sample[];
   winners: Power[] | null;
   rounds: number;
-  // Soft target: each power's share of "winning quality" at game end.
-  // Mix of: 1.0 for actual winners, partial credit for VP share otherwise.
-  // Always sums to 1.0.
+  // Rank-based target per power. Linear decay: top → 1.0, last → 0.0.
+  // Gives the value head signal even in losing positions ("fight to 2nd").
+  // Unnormalized — scalar BCE handles any [0,1] target. The legacy 4-way
+  // softmax path (unused) gets an ill-conditioned target; not a concern.
   target: number[];
 }
 
-function computeSoftTarget(_finalState: import('@ruin/engine').GameState, winners: Power[]): number[] {
-  // Hard one-hot target on the winner(s). The trainer applies inverse-frequency
-  // reweighting to balance rare-winner samples; combining a soft progress target
-  // with weighting double-counted and leaked xarm-favor into every sample.
+function computeRankTarget(state: import('@ruin/engine').GameState, winners: Power[] | null): number[] {
+  // Rank by projected rounds-to-win at current pace, via the closer of VP or
+  // dial path. Captures trajectory, not just static state — a power with low
+  // VP but fast gain rate ranks above a stalled higher-VP power.
+  //
+  // For non-winners:
+  //   vp_rate = current VP / rounds_played
+  //   threat_rate = current threatValue / rounds_played
+  //   rounds_to_win = min((50 − vp)/vp_rate, (35 − threat)/threat_rate)
+  // Lower rounds_to_win = better placement.
+  //
+  // Winners always rank top regardless. Linear-decay value by position:
+  // top → 1.0, last → 0.0.
   const target = new Array(POWERS.length).fill(0);
-  if (winners.length === 0) {
-    // No winner (shouldn't happen in training data — filtered upstream)
-    return target.fill(1 / POWERS.length);
+  const N = POWERS.length;
+  const winnerSet = new Set(winners ?? []);
+  const rounds = Math.max(state.round, 1);
+  const VP_TARGET = 50;
+  const THREAT_TARGET = 35;
+  const roundsToWin = (p: Power): number => {
+    const ps = state.powers[p];
+    const vpRate = ps.victoryPoints / rounds;
+    const threatRate = ps.threatValue / rounds;
+    const vpProj = vpRate > 0 ? (VP_TARGET - ps.victoryPoints) / vpRate : Infinity;
+    const threatProj = threatRate > 0 ? (THREAT_TARGET - ps.threatValue) / threatRate : Infinity;
+    return Math.min(vpProj, threatProj);
+  };
+  const ranked = [...POWERS].sort((a, b) => {
+    const aWin = winnerSet.has(a), bWin = winnerSet.has(b);
+    if (aWin !== bWin) return aWin ? -1 : 1;
+    return roundsToWin(a) - roundsToWin(b);
+  });
+  for (let i = 0; i < ranked.length; i++) {
+    target[POWERS.indexOf(ranked[i])] = (N - 1 - i) / (N - 1);
   }
-  const per = 1 / winners.length;
-  for (const w of winners) target[POWERS.indexOf(w)] += per;
   return target;
 }
 
@@ -427,9 +452,8 @@ function runGame(seed: number): GameResult {
   else delete process.env['TENZEN_EVAL_CUTOFF'];
 
   const winners = state.winners;
-  const target = winners && winners.length > 0
-    ? computeSoftTarget(state, winners)
-    : new Array(POWERS.length).fill(1 / POWERS.length);
+  // Rank-based target — works for both winner and no-winner (exhaustion) games.
+  const target = computeRankTarget(state, winners);
   return { samples, winners, rounds: state.round, target };
 }
 
@@ -449,15 +473,9 @@ for (let i = 0; i < gameCount; i++) {
   const { samples, winners, rounds, target } = runGame(seed);
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
-  if (!winners || winners.length === 0) {
-    console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): NO WINNER — skipping samples`);
-    continue;
-  }
-
-  // No collect-time balance filter — trainer already applies inverse-frequency
-  // reweighting on the full dataset (train_mlp.py).
-
-  // Each sample gets the same soft target vector for the value head, plus
+  // Even no-winner (exhaustion) games are valid training data under
+  // rank-based targets — they show what "fighting hard but losing" looks like.
+  // Each sample gets the same rank-target vector for the value head, plus
   // its own visit distribution (when present) for the policy head.
   for (const s of samples) {
     const row: { x: number[]; t: number[]; p?: number; visits?: Record<string, number> } = {
@@ -471,7 +489,7 @@ for (let i = 0; i < gameCount; i++) {
 
   totalSamples += samples.length;
   completedGames++;
-  const winStr = winners.join('+');
+  const winStr = winners && winners.length > 0 ? winners.join('+') : 'NO_WINNER';
   winCounts[winStr] = (winCounts[winStr] ?? 0) + 1;
   console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): ${winStr.padEnd(14)} (${rounds}r, ${samples.length} samples, ${elapsed}s)`);
 }

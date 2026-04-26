@@ -93,13 +93,17 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
       power_idx (N,)     — int, acting power index (0-3), or -1 if not tagged
     """
     xs, ts, ps, mask, pwr = [], [], [], [], []
+    max_dim = 0
     with open(path, "r") as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             obj = json.loads(line)
-            xs.append(obj["x"])
+            x = obj["x"]
+            if len(x) > max_dim:
+                max_dim = len(x)
+            xs.append(x)
             if "t" in obj:
                 ts.append(obj["t"])
             else:
@@ -120,6 +124,16 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
             ps.append(policy)
             mask.append(has)
             pwr.append(obj.get("p", -1))
+    # Right-pad with zeros to max_dim. Lets the pool mix samples from before
+    # and after a feature-dim bump (collect-data's FEATURE_DIM grew but
+    # archive batches predate the change). Pre-bump samples get zeros for
+    # the new tail features — same as the warm-start W1 zero-pad.
+    n_short = sum(1 for x in xs if len(x) < max_dim)
+    if n_short > 0:
+        print(f"[load] padded {n_short}/{len(xs)} samples to width {max_dim}")
+    for i, x in enumerate(xs):
+        if len(x) < max_dim:
+            xs[i] = x + [0.0] * (max_dim - len(x))
     X = np.array(xs, dtype=np.float32)
     T = np.array(ts, dtype=np.float32)
     P = np.array(ps, dtype=np.float32)
@@ -518,8 +532,14 @@ def main() -> int:
     sw_val = sample_weights[:n_val]
     sw_tr = sample_weights[n_val:]
     _rw_names = ["xarm", "gormen", "tenzen", "lasha"]
+    # avg rank: mean target value per power across all samples. Range [0,1]:
+    # 1.0 = always 1st, 0.5 = random placement, 0.0 = always 4th. Richer than
+    # class freq (top-rank rate) for tracking "fight harder" gains under
+    # rank-target training — captures finishing 2nd/3rd, not just winning.
+    avg_rank = T_value.mean(axis=0)
     print(f"class counts: {' '.join(f'{_rw_names[i]}:{int(class_counts[i])}' for i in range(4))}")
     print(f"class freq:   {' '.join(f'{_rw_names[i]}:{class_freq[i]:.3f}' for i in range(4))}")
+    print(f"avg rank:     {' '.join(f'{_rw_names[i]}:{avg_rank[i]:.3f}' for i in range(4))}")
     print(f"reweight:     {' '.join(f'{_rw_names[i]}:{inv_freq[i]:.2f}' for i in range(4))}")
     print(f"train: {len(Tv_tr)}  val: {len(Tv_val)}\n")
 

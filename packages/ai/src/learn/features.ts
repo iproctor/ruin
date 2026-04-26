@@ -106,8 +106,8 @@ const GLOBAL_DIMS = 4;
 // round/10, ruination_cards_used/5, world_slot1_filled, world_slot2_filled
 
 // Per-power: basic stats + upgrade one-hot
-const PER_POWER_BASIC = 18; // 14 base + 3 affordable summons + 1 affordable cards
-// vp, dialPos, dialCounters, pp, basePP, hand, deck, discard,
+const PER_POWER_BASIC = 20; // 14 base + 3 affordable summons + 3 PP threshold flags
+// vp, dialPos, optimisticDac, ppFrac, basePP, hand, deck, discard,
 // figuresOnBoard, figuresReserve, cultistCount, warriorCount, incarnationCount, passedSummoning
 
 const UPGRADE_COUNT = UPGRADE_IDS.length;
@@ -529,6 +529,9 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     i += POWERS.length + 1;
   }
 
+  if (i !== FEATURE_DIM) {
+    throw new Error(`feature dim mismatch: wrote ${i}, expected ${FEATURE_DIM}`);
+  }
   return out;
 }
 
