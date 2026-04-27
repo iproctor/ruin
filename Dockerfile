@@ -28,5 +28,13 @@ COPY --from=builder /app/packages/engine/dist packages/engine/dist/
 COPY --from=builder /app/packages/server/dist packages/server/dist/
 COPY --from=builder /app/packages/ai/dist packages/ai/dist/
 COPY --from=builder /app/packages/client/dist packages/client/dist/
+# Bake in trained model weights so loadLearnedModelIfPresent finds them at startup.
+# Cache invalidates when any model.json file changes; deliberate — model is part
+# of the deployable.
+COPY --from=builder /app/packages/ai/data/model.json packages/ai/data/model.json
+COPY --from=builder /app/packages/ai/data/model_xarm.json packages/ai/data/
+COPY --from=builder /app/packages/ai/data/model_gormen.json packages/ai/data/
+COPY --from=builder /app/packages/ai/data/model_tenzen.json packages/ai/data/
+COPY --from=builder /app/packages/ai/data/model_lasha.json packages/ai/data/
 EXPOSE 3001
 CMD ["node", "packages/server/dist/index.js"]
