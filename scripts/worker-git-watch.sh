@@ -21,7 +21,7 @@ WORKERS=${WORKERS:-7}
 # opponent pool.
 LEAGUE_SIZE=${LEAGUE_SIZE:-0}
 LEAGUE_MIX=${LEAGUE_MIX:-0.5}
-FOCUS_POWER=lasha
+FOCUS_POWER=xarm
 # Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
 TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
