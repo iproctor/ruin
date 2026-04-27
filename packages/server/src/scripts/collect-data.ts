@@ -332,7 +332,11 @@ function runGame(seed: number): GameResult {
   // Pushes the model to play strong early — it doesn't know whether a given
   // game will run full length or end short. computeRankTarget handles
   // winners=null via VP+threat ranking, so no formal winner needed.
-  const truncateProb = 0.3;
+  // Truncation rate bumped 0.3 → 0.5: bench shows games drift to 6-7 rounds
+  // with high domination VP because no power is incentivized to push ruination
+  // (ruin = one-time payoff vs domination = per-round). Training signal needs
+  // to reward "close out the game" harder so value head learns tempo cost.
+  const truncateProb = 0.5;
   const maxRoundCap = rand() < truncateProb ? 3 + Math.floor(rand() * 3) : 999; // 3-5 or no cap
 
   while (state.winners === null && state.phase !== 'completed') {
