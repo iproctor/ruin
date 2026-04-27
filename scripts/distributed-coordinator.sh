@@ -134,7 +134,6 @@ while true; do
       --league-size 0 \
       --hof-mix "$HOF_MIX" \
       --dirichlet-weight 0.25 \
-      --iter 1500 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →|\[league\]|\[hof\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
