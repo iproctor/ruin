@@ -128,6 +128,7 @@ while true; do
       --league-size 0 \
       --hof-mix "$HOF_MIX" \
       --dirichlet-weight 0.25 \
+      --iter 1500 \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
     mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
     SAMPLES=$(wc -l < "$BATCH_FILE")
