@@ -110,9 +110,11 @@ function makeRootPriorsFromRaw(
   const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
   for (let i = 0; i < N; i++) {
     const a = rootActions[i]!;
+    /*
     if (isZeroCostCardPlay(state, a)) {
       actionPriors[i] = Math.max(actionPriors[i]!, FREE_CARD_PRIOR_FLOOR);
     }
+    */
     if (forPower !== 'xarm' && isUrgentRetreatFromXarm(state, a)) {
       actionPriors[i] = Math.max(actionPriors[i]!, URGENT_RETREAT_PRIOR_FLOOR);
     }
