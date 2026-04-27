@@ -243,8 +243,17 @@ while true; do
       | grep -oE "${FOCUS_POWER}:[0-9.]+" \
       | cut -d: -f2)
     if [ -n "$FOCUS_RANK" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
+      # Per-power HOF floor. Tenzen has plateaued at 0.18-0.23 for many cycles
+      # while the others train past 0.55+ — global 0.30 floor leaves tenzen
+      # frozen and falling further behind each cycle. Lower its floor so the
+      # best of cycle promotes, letting model_tenzen.json drift.
+      HOF_FLOOR="0.3"
+      if [ "$FOCUS_POWER" = "tenzen" ]; then
+        HOF_FLOOR="0.18"
+      fi
       python3 "$ROOT/scripts/hof-promote.py" \
         --iter "$DATA_GEN_ITER" --rank "$FOCUS_RANK" --power "$FOCUS_POWER" \
+        --min-rank "$HOF_FLOOR" \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
     fi
 
