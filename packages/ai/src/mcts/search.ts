@@ -468,7 +468,9 @@ export function probeMctsSearch(
     const kind = child.action?.kind ?? 'null';
     const p = priors && child.action ? priors(child.action) : NaN;
     const slotIdx = child.action ? canonicalActionIndex(child.action, state) : -1;
-    const q = child.visits > 0 ? child.totalScore / child.visits : NaN;
+    // Q at root children = AI's avg value from this action. forPower's slot
+    // since root children represent forPower's moves.
+    const q = child.visits > 0 ? child.totalScores[forPower] / child.visits : NaN;
     rootActions.push({ actionKind: kind, slotIdx, visits: child.visits, prior: p, q });
     totalVisits += child.visits;
   }
@@ -721,47 +723,46 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
  */
 const HARD_ROLLOUT_CAP = 120;
 
-function rollout(state: GameState, forPower: Power, seed: number, minDepth: number): number {
+/** Per-power leaf evaluation: each power's value-head score for the state.
+ *  Used for MaxN backup so each tree node tracks values for all four powers
+ *  independently, letting opponent nodes pick actions that maximise the
+ *  acting opponent's own value (not the AI's negated value). */
+function evaluateAllPowers(state: GameState): Record<Power, number> {
+  return {
+    xarm: evaluateState(state, 'xarm'),
+    gormen: evaluateState(state, 'gormen'),
+    tenzen: evaluateState(state, 'tenzen'),
+    lasha: evaluateState(state, 'lasha'),
+  };
+}
+
+function rollout(state: GameState, _forPower: Power, seed: number, minDepth: number): Record<Power, number> {
   // NOTE: a minDepth===0 short-circuit was retried on Apr 20 at 10k iters
   // (the hypothesis: more leaves backprop'd to root would wash out mid-round
   // value-head noise). It didn't — tenzen freq halved 0.205 → 0.109 at the
   // same seeds, and xarm shot to 0.842. Rollout-to-round-change is load-
   // bearing for correctness even at high iter budgets.
+  // minDepth < 0 = skip rollout entirely. Pure value-head leaf eval.
+  if (minDepth < 0) return evaluateAllPowers(state);
+
   const rng = makeRng(seed);
   let current = state;
   let depth = 0;
   const startRound = state.round;
 
   while (!isTerminal(current) && depth < HARD_ROLLOUT_CAP) {
-    // Stop early if we've reached at least minDepth AND the round has
-    // advanced — meaning battle + corruption + end have resolved for the
-    // round we started in.
     if (depth >= minDepth && current.round !== startRound) break;
-
     if (current.pendingAction === null) break;
 
     const waitingFor = current.pendingAction.waitingFor;
-    // Summoning is the hot path — skip the full `getLegalActions` enumeration
-    // (dedup map, onPlayChoice bundling, full materialization) and sample one
-    // action directly via the engine's rollout-specific sampler. Rollouts are
-    // noisy biased-random sims, so duplicate board states and unbundled
-    // on-play choices (engine resolves them next ply) don't affect leaf value.
     let action: Action | undefined;
     if (current.pendingAction.actionKind === 'summoning_action') {
       action = sampleLegalSummoningAction(current, waitingFor, rng, ROLLOUT_AGGRESSION);
     } else {
-      // Rollouts use the cheap hand-picked hit-assignment strategies rather
-      // than the richer root enumeration — fast and good enough for noisy
-      // leaf-value estimates.
       const actions = current.pendingAction.actionKind === 'battle_hit_assignment'
         ? enumerateBattleHitStrategies(current, waitingFor)
         : getLegalActions(current, waitingFor);
       if (actions.length === 0) break;
-      // NOTE: filterPointlessActions deliberately skipped here. Profile showed it
-      // accounted for ~14% of total runtime, almost entirely inside rollouts.
-      // Rollouts are noisy biased-random simulations — pruning "dead" plays from
-      // them barely changes leaf-value estimates but adds significant overhead.
-      // The root and tree expansion still apply the filter (see runMcts).
       action = actions[Math.floor(rng() * actions.length)];
     }
 
@@ -777,17 +778,22 @@ function rollout(state: GameState, forPower: Power, seed: number, minDepth: numb
     depth += 1;
   }
 
-  return evaluateState(current, forPower);
+  return evaluateAllPowers(current);
 }
 
 /**
- * Backpropagation: walk up the tree updating visit counts and total scores.
+ * Backpropagation: walk up the tree updating visit counts and per-power
+ * totalScores. Each tree level stores ALL powers' cumulative values so
+ * MaxN selection can use the acting power's own perspective at each child.
  */
-function backpropagate(node: MctsNode, score: number): void {
+function backpropagate(node: MctsNode, scores: Record<Power, number>): void {
   let current: MctsNode | null = node;
   while (current !== null) {
     current.visits += 1;
-    current.totalScore += score;
+    current.totalScores.xarm += scores.xarm;
+    current.totalScores.gormen += scores.gormen;
+    current.totalScores.tenzen += scores.tenzen;
+    current.totalScores.lasha += scores.lasha;
     current = current.parent;
   }
 }
