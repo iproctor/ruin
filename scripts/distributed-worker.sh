@@ -33,15 +33,11 @@ WORKER_ID=${WORKER_ID:?WORKER_ID env var required (unique small int per worker)}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-7}
 IDLE_SECONDS=${IDLE_SECONDS:-30}
-# League training: non-zero LEAGUE_SIZE enables opponent-snapshot sampling.
-# The worker pulls the most recent LEAGUE_SIZE model_iter_*.json from the
-# coordinator before each batch.
-LEAGUE_SIZE=${LEAGUE_SIZE:-0}
-LEAGUE_MIX=${LEAGUE_MIX:-0.5}
-# Focus power: if set, all self-play games use model_<power>.json for that
-# power and snapshots for others. Only that power's visits are recorded.
-FOCUS_POWER=tenzen
-# Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
+# Co-training era: no FOCUS_POWER, no LEAGUE_SIZE. Every game uses all
+# 4 power models (with HOF mix), records all powers' visit distributions.
+# Coordinator trains all 4 model_<power>.json each iter from the same batch.
+LEAGUE_SIZE=0
+LEAGUE_MIX=0
 TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
 HOF_MIX=0.1
@@ -147,15 +143,10 @@ while true; do
 
   echo "[$(date +%H:%M:%S)] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})..."
   T0=$(date +%s)
-  FOCUS_ARG=""
-  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
-  # Use adaptive HOF mix from coordinator if present, else env fallback.
-  EFFECTIVE_HOF_MIX="$HOF_MIX"
-  [ -f "$DATA_DIR/hof_mix.txt" ] && EFFECTIVE_HOF_MIX=$(cat "$DATA_DIR/hof_mix.txt")
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
-      --hof-mix "$EFFECTIVE_HOF_MIX" \
+      --league-size 0 \
+      --hof-mix "$HOF_MIX" \
       --dirichlet-weight 0.25 \
       --out "${DATA_DIR}/training.jsonl" 2>&1; then
     echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"

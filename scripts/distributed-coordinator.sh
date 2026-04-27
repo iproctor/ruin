@@ -34,40 +34,32 @@ set -uo pipefail
 WORKER_ID=${WORKER_ID:-0}
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-16}
-# Focus power: if set, self-play uses model_<power>.json for that power and
-# snapshots from the league pool for others. Only the focus power's model is
-# trained each iteration; model.json stays frozen.
-FOCUS_POWER=tenzen
-# Tenzen cutoff shift ∈ [0,1]. Controls the per-game sampled Tenzen eval
-# cutoff distribution inside collect-data.ts — 0 favors handmade-assisted
-# openings, 1 forces all-learned. Kept at 1 so tenzen (opponent slot)
-# plays purely with its trained value head, matching benchmark conditions.
+# Co-training: under MaxN MCTS every game already exercises all 4 power
+# value heads (each leaf eval uses all 4 perspectives, each opponent node
+# selects via that power's own value). So train all 4 model_<power>.json
+# heads each iter from the same self-play batch — no FOCUS_POWER, no
+# rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
+# each from its own slice of the batch.
 TENZEN_CUTOFF_SHIFT=1.0
-# Hall of Fame mix: fraction of games where the focus power uses a random
-# snapshot from packages/ai/data/hof/ instead of the live focus model.
-# Guards against training-data collapse by guaranteeing some games show the
-# focus power executing its proper strategy.
+# Hall of Fame mix: fraction of games where any given power uses a random
+# snapshot from its hof/<power>/ pool instead of the live model. Guards
+# against training-data collapse by guaranteeing some games show each power
+# executing a known-strong policy.
 HOF_MIX=0.1
 export TENZEN_CUTOFF_SHIFT
-# Train when this many NEW files (inbox) arrive. With 50 games/batch × 12 batches
-# ≈ 600 games ≈ ~60k samples per train cycle.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-12}
-# Total batches to include in training (new + old). Old batches are pulled from
-# archive/ most-recent-first to fill the window. This keeps training data size
-# stable even when workers produce small batches.
 TRAIN_WINDOW=${TRAIN_WINDOW:-18}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
-# League training: non-zero LEAGUE_SIZE enables sampling opponents from the
-# last N model_iter_*.json snapshots. Prevents role collapse. Value-head
-# samples are unchanged (all powers), but policy-head visits are only
-# recorded for the learner — ~4x fewer policy samples per game. Same inbox
-# file count per train is fine; the trainer just sees sparser visits.
-LEAGUE_SIZE=${LEAGUE_SIZE:-0}
-LEAGUE_MIX=${LEAGUE_MIX:-0.5}
+# League snapshots are obsolete under co-training — opponents always come
+# from each power's own HOF (kept current by the per-iter promotion of all
+# four powers). Forced to 0.
+LEAGUE_SIZE=0
+LEAGUE_MIX=0
+ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"
@@ -134,19 +126,16 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-  FOCUS_ARG=""
-  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
-  # Adaptive mix: if the post-training hook wrote hof_mix.txt, use that
-  # value; otherwise fall back to HOF_MIX env default.
-  EFFECTIVE_HOF_MIX="$HOF_MIX"
-  [ -f "$DATA_DIR/hof_mix.txt" ] && EFFECTIVE_HOF_MIX=$(cat "$DATA_DIR/hof_mix.txt")
+  # Co-training: no --focus-power. All powers use their live per-power
+  # models (with HOF mix), and all powers' visit distributions are recorded
+  # for policy training.
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
-      --hof-mix "$EFFECTIVE_HOF_MIX" \
+      --league-size 0 \
+      --hof-mix "$HOF_MIX" \
       --dirichlet-weight 0.25 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\]|\[focus\]|\[hof\])" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →|\[league\]|\[hof\])" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue
@@ -194,92 +183,48 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # 3b. Train — focus mode trains only model_<power>.json, model.json frozen.
-  T2=$(date +%s)
-  if [ -n "$FOCUS_POWER" ]; then
-    TRAIN_OUT="$DATA_DIR/model_${FOCUS_POWER}.json"
-    WARM_SRC="$DATA_DIR/model_${FOCUS_POWER}.json"
-    # Bootstrap: if focus model doesn't exist yet, warm-start from model.json
+  # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
+  # invocation filters samples to that power and updates only its own
+  # model_<power>.json. Sequential to keep CPU usage bounded.
+  DATA_GEN_ITER=$((ITER - 1))
+  TRAIN_OK=1
+  for POWER in "${ALL_POWERS[@]}"; do
+    T2=$(date +%s)
+    TRAIN_OUT="$DATA_DIR/model_${POWER}.json"
+    WARM_SRC="$DATA_DIR/model_${POWER}.json"
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
-    # Scalar-value head: focuses trunk capacity on P(focus_power wins).
-    # BCE gradients are sharper than softmax-CE so use smaller LR.
-    TRAIN_ARGS="--power $FOCUS_POWER --warm-start $WARM_SRC --scalar-value --lr 5e-4"
-  else
-    TRAIN_OUT="$DATA_DIR/model.json"
-    TRAIN_ARGS=""
-  fi
-  if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-      --in "$RECENT_FILE" --out "$TRAIN_OUT" \
-      --iter "$ITER" $TRAIN_ARGS --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
-      | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|avg target|--power|warm-)" \
-      | tee -a "$LOG_FILE"; then
-    echo "  ! training failed" | tee -a "$LOG_FILE"
-    continue
-  fi
-  T3=$(date +%s)
-  echo "[iter $ITER] trained in $((T3 - T2))s → $(basename $TRAIN_OUT)" | tee -a "$LOG_FILE"
+    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+        --in "$RECENT_FILE" --out "$TRAIN_OUT" \
+        --iter "$ITER" --power "$POWER" --warm-start "$WARM_SRC" \
+        --scalar-value --lr 5e-4 \
+        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|avg target|--power|warm-)" \
+        | tee -a "$LOG_FILE"; then
+      echo "  ! training failed for $POWER" | tee -a "$LOG_FILE"
+      TRAIN_OK=0
+      break
+    fi
+    T3=$(date +%s)
+    cp "$TRAIN_OUT" "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json"
+    echo "[iter $ITER] $POWER trained in $((T3 - T2))s → model_${POWER}.json" | tee -a "$LOG_FILE"
 
-  # 3c. Snapshot
-  if [ -n "$FOCUS_POWER" ]; then
-    cp "$TRAIN_OUT" "$DATA_DIR/model_${FOCUS_POWER}_iter_${ITER_TAG}.json"
-  else
-    cp "$DATA_DIR/model.json" "$DATA_DIR/model_iter_${ITER_TAG}.json"
-  fi
-
-  # 3c.1 HOF promotion: if this iter's focus-power class freq beats the
-  # worst HOF entry, promote it in and evict the worst. Under capacity,
-  # always add. Collect-data.ts reads hof/ at startup so the next batch
-  # picks up the change automatically.
-  if [ -n "$FOCUS_POWER" ]; then
-    # Promote the model that GENERATED the good data, not the trainee.
-    # Workers played this iter's training games using the previous model
-    # (model_<focus>.json as of the start of this iter), which corresponds
-    # to snapshot iter N-1. Avg rank in the log reflects that prior model's
-    # play; training drift (new model plays worse than data said it should)
+    # HOF promotion per power. Promote the prior iter's snapshot (the model
+    # that GENERATED the data), not the freshly-trained one — training drift
     # must not cause us to HOF the worse trainee.
-    DATA_GEN_ITER=$((ITER - 1))
-    FOCUS_RANK=$(grep "^avg rank:" "$LOG_FILE" \
+    POWER_RANK=$(grep "^avg rank:" "$LOG_FILE" \
       | tail -1 \
-      | grep -oE "${FOCUS_POWER}:[0-9.]+" \
+      | grep -oE "${POWER}:[0-9.]+" \
       | cut -d: -f2)
-    if [ -n "$FOCUS_RANK" ] && [ -f "$DATA_DIR/model_${FOCUS_POWER}_iter_${DATA_GEN_ITER}.json" ]; then
-      # Per-power HOF floor. Tenzen has plateaued at 0.18-0.23 for many cycles
-      # while the others train past 0.55+ — global 0.30 floor leaves tenzen
-      # frozen and falling further behind each cycle. Lower its floor so the
-      # best of cycle promotes, letting model_tenzen.json drift.
+    if [ -n "$POWER_RANK" ] && [ -f "$DATA_DIR/model_${POWER}_iter_${DATA_GEN_ITER}.json" ]; then
       HOF_FLOOR="0.3"
-      if [ "$FOCUS_POWER" = "tenzen" ]; then
-        HOF_FLOOR="0.18"
-      fi
+      [ "$POWER" = "tenzen" ] && HOF_FLOOR="0.18"
       python3 "$ROOT/scripts/hof-promote.py" \
-        --iter "$DATA_GEN_ITER" --rank "$FOCUS_RANK" --power "$FOCUS_POWER" \
+        --iter "$DATA_GEN_ITER" --rank "$POWER_RANK" --power "$POWER" \
         --min-rank "$HOF_FLOOR" \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
     fi
-
-    # Adaptive HOF mix: when focus power's avg rank drops, boost HOF_MIX
-    # so more collection games use a strong snapshot. Avg rank is in [0,1]:
-    # 0.5 = random placement, ~0.30 = near-bottom, ~0.10 = always-last.
-    # Linear ramp tuned to only fire HARD when rank collapses entirely:
-    #   rank ≥ 0.45 → HOF_MIX = 0.10 (baseline, doing fine)
-    #   rank ≤ 0.10 → HOF_MIX = 0.40 (catastrophic — always-last territory)
-    #   linear between
-    # Wider ramp than before so mid-rank tenzen (~0.27) doesn't get
-    # smothered by HOF snapshots — current model needs room to actually
-    # train against opponents instead of being replaced by HOF half the time.
-    # Written to hof_mix.txt; workers rsync this file and read it before
-    # each collect call.
-    if [ -n "$FOCUS_RANK" ]; then
-      ADAPTIVE_MIX=$(awk -v r="$FOCUS_RANK" 'BEGIN {
-        if (r >= 0.45) { mix = 0.10 }
-        else if (r <= 0.10) { mix = 0.40 }
-        else { mix = 0.10 + (0.45 - r) * (0.30 / 0.35) }
-        printf "%.2f", mix
-      }')
-      echo "$ADAPTIVE_MIX" > "$DATA_DIR/hof_mix.txt"
-      echo "[hof_mix] rank=${FOCUS_RANK} → hof_mix=${ADAPTIVE_MIX}" | tee -a "$LOG_FILE"
-    fi
-  fi
+  done
+  [ "$TRAIN_OK" -ne 1 ] && continue
 
   # 3d. Move processed inbox files to archive (so we don't double-train)
   mv "$INBOX"/*.jsonl "$ARCHIVE"/

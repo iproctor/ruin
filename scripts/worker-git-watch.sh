@@ -16,13 +16,10 @@ SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
 WORKERS=${WORKERS:-7}
-# League training: non-zero LEAGUE_SIZE pulls the last N snapshots from the
-# coordinator before each batch and passes them to collect:parallel as an
-# opponent pool.
-LEAGUE_SIZE=${LEAGUE_SIZE:-0}
-LEAGUE_MIX=${LEAGUE_MIX:-0.5}
-FOCUS_POWER=tenzen
-# Tenzen cutoff shift ∈ [0,1] — passed through to collect:parallel.
+# Co-training era: no FOCUS_POWER, no LEAGUE_SIZE. See coordinator script
+# for rationale.
+LEAGUE_SIZE=0
+LEAGUE_MIX=0
 TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
 HOF_MIX=0.1
@@ -126,11 +123,9 @@ while true; do
   echo "[$(date +%H:%M:%S)] batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})"
   cd "$ROOT"
   rm -f "${DATA_DIR}/training.jsonl"
-  FOCUS_ARG=""
-  [ -n "$FOCUS_POWER" ] && FOCUS_ARG="--focus-power $FOCUS_POWER"
   if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" --epsilon 0 \
-      --league-size "$LEAGUE_SIZE" --league-mix "$LEAGUE_MIX" $FOCUS_ARG \
+      --league-size 0 \
       --hof-mix "$HOF_MIX" \
       --dirichlet-weight 0.25 \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
