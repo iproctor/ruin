@@ -105,20 +105,21 @@ function makeRootPriorsFromRaw(
     }
   }
 
-  // 4. Heuristic floors (per action).
-  const FREE_CARD_PRIOR_FLOOR = 0.06;
-  const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
-  for (let i = 0; i < N; i++) {
-    const a = rootActions[i]!;
-    /*
-    if (isZeroCostCardPlay(state, a)) {
-      actionPriors[i] = Math.max(actionPriors[i]!, FREE_CARD_PRIOR_FLOOR);
-    }
-    */
-    if (forPower !== 'xarm' && isUrgentRetreatFromXarm(state, a)) {
-      actionPriors[i] = Math.max(actionPriors[i]!, URGENT_RETREAT_PRIOR_FLOOR);
-    }
-  }
+  // 4. Heuristic floors (per action) — both disabled. The free-card floor was
+  // causing indiscriminate region picks for tenzen's 0-cost cards (every region
+  // looked equally good). The urgent-retreat floor was causing weird forced-
+  // retreat play. Let policy head decide unaided.
+  // const FREE_CARD_PRIOR_FLOOR = 0.06;
+  // const URGENT_RETREAT_PRIOR_FLOOR = 0.25;
+  // for (let i = 0; i < N; i++) {
+  //   const a = rootActions[i]!;
+  //   if (isZeroCostCardPlay(state, a)) {
+  //     actionPriors[i] = Math.max(actionPriors[i]!, FREE_CARD_PRIOR_FLOOR);
+  //   }
+  //   if (forPower !== 'xarm' && isUrgentRetreatFromXarm(state, a)) {
+  //     actionPriors[i] = Math.max(actionPriors[i]!, URGENT_RETREAT_PRIOR_FLOOR);
+  //   }
+  // }
 
   // 5. Renormalise after floors so total mass = 1. Without this, PUCT's
   // effective exploration constant becomes state-dependent (lots of
