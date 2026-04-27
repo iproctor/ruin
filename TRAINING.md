@@ -792,3 +792,150 @@ Tenzen
     hof/<power>/manifest.json + hof/<power>/model_hof_<iter>.json.
     Lasha HOF starts empty; populates once lasha clears 0.10
     floor.
+
+  Apr 26         Round-robin cycles 4-8: lasha collapse + recovery
+    Cycle 4 lasha breakthrough: lasha freq 0.217 → 0.394 in one
+    iter (1515 → 1516), xarm freq 0.517 → 0.122 same iter. Bench
+    1518 confirms VP-meta shift: xarm 2.4%, gormen 47.6%, lasha
+    35.7%, tenzen 14.3%. xarm play metrics still healthy (DAC
+    56%, double-tick 17%, war_cry preventing 12.3 events/game) —
+    xarm just runs out of clock in long games.
+
+    Diagnosis: lasha learned a shallow exploit, xarm's frozen
+    weights couldn't defend. Rotation to xarm-focus (model_lasha.json
+    locked at iter 1516, post-collapse) recovered fast — xarm
+    rank 0.367 → 0.775 in 4 iters as policy head learned the
+    counter. The cycle is the diagnostic: each frozen power
+    becomes a "training dummy" until rotation makes it the focus.
+
+    Cycle 5-8 settled into stable cadence (4 iters each):
+      xarm    rank 0.755 → 0.788 (cycle 5 → 7)
+      gormen  rank 0.613 → 0.642
+      lasha   rank 0.522 → 0.552
+      tenzen  rank 0.20-0.24, never crossed 0.30 floor
+
+  Apr 26         Tenzen plateau analysis
+    Tenzen freq stuck 0.04-0.07 in collection across cycles 4-7.
+    Replay probe of game fbf82b31 (a clean 5-round threat-dial win)
+    revealed the structural issue:
+
+    1. AI tunnel-visions on one region with the cultist stack
+       instead of spreading early-round + committing late.
+    2. AI plays 0-cost utility cards (Changer of Fate, Fate Shield)
+       indiscriminately across regions — value head Q spread is
+       0.118-0.152 across 9 regions, no signal.
+    3. AI never finds the chaos-stone migration chain (Apprentices
+       upgrade → cultists carry stones → consolidate in ruin target).
+    4. Reading opponent commitment ("Gormen has 4 plaguecarriers
+       in Normagne, ruin is happening here") not in feature set.
+
+    Search-depth probe at the first cultist decision: paranoid
+    MCTS with c=√2 caps maxDepth at 11 regardless of iter budget
+    (tested up to 500k iters). Lower c reaches deeper trees:
+      c=1.4: depth 11, picks norrsund (no chaos stone)
+      c=0.7: depth 19, picks volensk (chaos stone)
+      c=0.5: depth 24, picks the_barrens
+      c=0.3: depth 29, over-exploits, picks talvimaa (worse)
+
+    Replay round-4 with each c value confirmed: c=0.7+rollout
+    finds 2 DAC + dial+2 (matches human dial gain), default
+    c=1.4 gets 1 DAC + dial+0. But tenzen never finds the
+    cooperative ruin line — diagnosis pointed to paranoid model.
+
+  Apr 26         Truncation rate 0.3 → 0.5
+    Bench 1518 + collection logs: avgRounds 6.6, win conditions
+    31 vp / 11 dial / 6 exhaustion. Domination VP per round
+    accumulates with game length; ruination is a one-time payoff
+    nobody is incentivized to trigger. Truncation forces value
+    head to value early-round standings harder.
+
+    Note: gormen + lasha can't be expected to rush ruin (their
+    payoffs are sustained domination, not bursts). Pushing tempo
+    is structurally tenzen's job — its specialty payoff
+    (chaos-stone DAC + ruination first-place VP) requires fast
+    games. Truncation is a nudge for the meta to allow space
+    for tenzen-style play.
+
+    Tenzen rank in collection bumped 0.185 → 0.225 over the
+    next 3 iters, freq 0.039 → 0.056. Small, reproducible.
+
+  Apr 26         Heuristic prior floors removed
+    Two floors disabled in makeRootPriorsFromRaw:
+      FREE_CARD_PRIOR_FLOOR (0.06) — boosted 0-cost card plays.
+        Probe showed it caused indiscriminate region picks for
+        tenzen's 0-cost cards (every region looked equally good
+        because every Changer-of-Fate placement got the floor).
+      URGENT_RETREAT_PRIOR_FLOOR (0.25) — boosted retreats from
+        xarm-targeted regions for non-xarm. Caused weird forced
+        retreats even when the figure was the only domination
+        piece.
+
+    Both ran heuristic-style biasing on top of the policy head's
+    actual outputs. Disabling them lets the per-power policy
+    decide unaltered. auto-play.ts also deleted — getAutoPlay /
+    forceZeroCostFlush were already no-op returns; bestTenzenUpgrade
+    no longer wired in (Apprentices-first priority dropped Apr 26
+    earlier, didn't change tenzen rank either way, so the
+    priority list was operationally dead).
+
+  Apr 26         Per-power HOF floor: tenzen 0.18 (others 0.30)
+    Tenzen never crossing the global 0.30 floor means
+    model_tenzen.json never promotes — tenzen frozen forever
+    while xarm/gormen/lasha iterate. Each cycle the meta drifts
+    further from tenzen's static reference point. Lower floor
+    lets tenzen drift even if not climbing relative.
+
+    Per-power-aware in scripts/distributed-coordinator.sh:
+      HOF_FLOOR=0.3 default
+      HOF_FLOOR=0.18 when FOCUS_POWER=tenzen
+
+  Apr 26         search.ts: refactor runMcts/runMctsWithStats/probeMctsSearch
+    All three shared ~150 lines of duplicated setup (legal
+    actions, filter, root build, rollout-depth resolve, search
+    loop). Extracted runMctsCore returning a discriminated
+    MctsRunResult: forced-action shortcut OR populated tree
+    + meta. Wrappers thin out to extracting the subset they
+    return.
+
+    Behavior change: runMctsWithStats now respects
+    options.rolloutDepth override (matching runMcts). Was
+    silently using the default ladder.
+
+    Net: -245 lines, +95 lines, all 305 tests pass.
+
+  Apr 26         MCTS: paranoid → MaxN
+    The big one. CitOW is a 4-player non-zero-sum game with
+    cooperative moments — multiple powers piling corruption
+    into a region they all want ruined, each scoring rank-based
+    VP from the ruination. Paranoid MCTS models opponents as
+    zero-sum vs the searching power, so opponent moves are
+    selected by argmin(my_score). In cooperative-ruin scenarios
+    that flips the wrong way: real Gormen has its own incentive
+    to commit to Normagne (DAC + 2nd-place ruin VP) but
+    paranoid Gormen avoids it because committing helps Tenzen.
+
+    Replay probe: human game round 4 was just "summon 6
+    Apprentices to Normagne." AI Tenzen across all c-values
+    and iter-budgets picked Talvimaa instead. The signal the
+    human used to choose Normagne — Gormen's 4 Plaguecarriers
+    already committed there — is exactly what paranoid can't
+    represent. Search trees with paranoid Gormen never include
+    Gormen flocking to Normagne, so the cooperative-ruin line
+    is invisible.
+
+    Refactor:
+      MctsNode.totalScore (number) → totalScores (Record<Power, number>)
+      rollout() returns Record<Power, number> via evaluateAllPowers()
+      backpropagate() updates all 4 totals per visit
+      ucb1/puct: actingPowerForChild(child) selects which slot
+        of totalScores to use; no more (1 - exploitation) flip
+
+    auto-play.ts deleted in same change set.
+
+    Caveat: per-power value heads were trained on paranoid-
+    collected data. Expect a few iters of relearning before MaxN
+    dynamics surface fully — value head still has "this state
+    is good" calibrations from games where opponents played
+    zero-sum. Cycle 8 onward starts collecting MaxN-style.
+
+    All 305 engine tests pass.
