@@ -8,7 +8,6 @@ import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
-import { getAutoPlay, forceZeroCostFlush } from './auto-play.js';
 import { policyForState, modelForPowerLoaded } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
@@ -200,22 +199,40 @@ const ROLLOUT_AGGRESSION = 1.0;
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Run Paranoid MCTS and return the best action for `forPower`.
+ * Internal: run Paranoid MCTS and return the root tree node + meta. Shared by
+ * runMcts / runMctsWithStats / probeMctsSearch — the wrappers extract whatever
+ * subset they need.
  *
  * Paranoid strategy: the AI maximises its own score; every other player is
  * treated as a single adversary minimising the AI's score.
  *
- * @throws if the state has no pending action for `forPower`.
+ * Two return shapes:
+ *   - `forced: true` when filterPointlessActions reduces the root to one legal
+ *     action — no search runs, the wrapper returns that action directly.
+ *   - `forced: false` when the search executed; `root` is the populated tree.
  */
-export function runMcts(
+type MctsRunResult =
+  | { forced: true; action: Action }
+  | {
+      forced: false;
+      root: MctsNode;
+      legalRoot: Action[];
+      priors: ((a: Action) => number) | null;
+      usePuct: boolean;
+      iteration: number;
+      elapsed: number;
+      hitTimeCap: boolean;
+      hitIterCap: boolean;
+      sumLeafDepth: number;
+      leafCount: number;
+      maxDepth: number;
+    };
+
+function runMctsCore(
   state: GameState,
   forPower: Power,
   options?: MctsOptions,
-): Action {
-  // Obviously-good plays that don't need search
-  const auto = getAutoPlay(state, forPower);
-  if (auto) return auto;
-
+): MctsRunResult {
   const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
   const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
   const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
@@ -234,22 +251,21 @@ export function runMcts(
     throw new Error(`runMcts: no legal actions for ${forPower}`);
   }
 
-  // Strip out card plays whose preconditions can't fire (Hollow Pact in empty
+  // Strip card plays whose preconditions can't fire (Hollow Pact in empty
   // region, Ritual Death without own figures, etc). Always keeps at least pass
   // and any non-card actions.
-  let legalRoot = filterPointlessActions(state, legalRootRaw);
-
-  // Tenzen: force 0-cost card plays when PP is low to cycle the hand
-  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
+  const legalRoot = filterPointlessActions(state, legalRootRaw);
 
   if (legalRoot.length === 1) {
-    return legalRoot[0]!;
+    return { forced: true, action: legalRoot[0]! };
   }
 
   // Policy head guides PUCT to focus search across the full legal-action space.
   const rawPolicy = policyForState(state, forPower);
   const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
+  const priors = rawPolicy !== null
+    ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise)
+    : null;
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -260,30 +276,72 @@ export function runMcts(
   const rolloutDepth = options?.rolloutDepth ?? (
     modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
   );
-  const deadline = Date.now() + maxTimeMs;
+  const t0 = Date.now();
+  const deadline = t0 + maxTimeMs;
   let iteration = 0;
+  let sumLeafDepth = 0;
+  let leafCount = 0;
+  let maxDepth = 0;
 
   while (iteration < maxIterations && Date.now() < deadline) {
     const selected = select(root, explorationC, usePuct);
     const expanded = expand(selected, forPower);
+    // Track depth so probeMctsSearch can report tree shape. Cheap (one
+    // pointer walk per iter); always-on rather than conditional.
+    let depth = 0;
+    let n: MctsNode | null = expanded;
+    while (n && n.parent !== null) { depth += 1; n = n.parent; }
+    sumLeafDepth += depth;
+    leafCount += 1;
+    if (depth > maxDepth) maxDepth = depth;
+
     const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
     backpropagate(expanded, score);
     iteration += 1;
   }
+  const elapsed = Date.now() - t0;
 
-  const hitTimeCap = iteration < maxIterations;
+  return {
+    forced: false,
+    root,
+    legalRoot,
+    priors,
+    usePuct,
+    iteration,
+    elapsed,
+    hitTimeCap: iteration < maxIterations,
+    hitIterCap: iteration >= maxIterations,
+    sumLeafDepth,
+    leafCount,
+    maxDepth,
+  };
+}
+
+/**
+ * Run Paranoid MCTS and return the best action for `forPower`.
+ *
+ * @throws if the state has no pending action for `forPower`.
+ */
+export function runMcts(
+  state: GameState,
+  forPower: Power,
+  options?: MctsOptions,
+): Action {
+  const res = runMctsCore(state, forPower, options);
+  if (res.forced) return res.action;
+
   _mctsStats.total++;
-  _mctsStats.iters += iteration;
-  if (hitTimeCap) _mctsStats.timeCapped++;
+  _mctsStats.iters += res.iteration;
+  if (res.hitTimeCap) _mctsStats.timeCapped++;
 
   // Visit margin: how decisive was this search?
-  const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
+  const sorted = [...res.root.children].sort((a, b) => b.visits - a.visits);
   if (sorted.length >= 2) {
     const margin = sorted[0]!.visits / Math.max(sorted[1]!.visits, 1);
     _mctsStats.margins.push(margin);
   }
 
-  return bestAction(root);
+  return bestAction(res.root);
 }
 
 // Temporary instrumentation — call reportMctsStats() to print
@@ -313,58 +371,17 @@ export function runMctsWithStats(
   forPower: Power,
   options?: MctsOptions,
 ): MctsStats {
-  // Obviously-good plays that don't need search
-  const auto = getAutoPlay(state, forPower);
-  if (auto) return { action: auto, visitCounts: [{ action: auto, visits: 1 }] };
-
-  const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
-  const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
-  const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
-
-  let legalRootRaw: Action[];
-  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
-    legalRootRaw = enumerateKillActions(state, forPower);
-  } else {
-    legalRootRaw = getLegalActions(state, forPower);
+  const res = runMctsCore(state, forPower, options);
+  if (res.forced) {
+    return { action: res.action, visitCounts: [{ action: res.action, visits: 1 }] };
   }
-  if (legalRootRaw.length === 0) {
-    throw new Error(`runMctsWithStats: no legal actions for ${forPower}`);
-  }
-  let legalRoot = filterPointlessActions(state, legalRootRaw);
-  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
-  if (legalRoot.length === 1) {
-    return {
-      action: legalRoot[0]!,
-      visitCounts: [{ action: legalRoot[0]!, visits: 1 }],
-    };
-  }
-
-  const rawPolicy = policyForState(state, forPower);
-  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
-  root.childPriors = priors;
-  const usePuct = priors !== null;
-
-  const rolloutDepth = modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round);
-  const deadline = Date.now() + maxTimeMs;
-  let iteration = 0;
-
-  while (iteration < maxIterations && Date.now() < deadline) {
-    const selected = select(root, explorationC, usePuct);
-    const expanded = expand(selected, forPower);
-    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
-    backpropagate(expanded, score);
-    iteration += 1;
-  }
-
-  // Walk root children to collect (action, visits) pairs.
   const visitCounts: Array<{ action: Action; visits: number }> = [];
-  for (const child of root.children) {
+  for (const child of res.root.children) {
     if (child.action !== null) {
       visitCounts.push({ action: child.action, visits: child.visits });
     }
   }
-  return { action: bestAction(root), visitCounts };
+  return { action: bestAction(res.root), visitCounts };
 }
 
 // ─── Diagnostic probe ────────────────────────────────────────────────────────
@@ -409,33 +426,19 @@ export interface TreeProbeStats {
 }
 
 /**
- * Run MCTS and return detailed tree statistics for diagnosis. Does the same
- * setup as runMctsWithStats but inspects the resulting tree before discarding.
+ * Run MCTS and return detailed tree statistics for diagnosis.
  */
 export function probeMctsSearch(
   state: GameState,
   forPower: Power,
   options?: MctsOptions,
 ): TreeProbeStats {
-  const maxIterations = options?.iterations ?? DEFAULT_ITERATIONS;
-  const maxTimeMs = options?.timeMs ?? DEFAULT_TIME_MS;
-  const explorationC = options?.explorationC ?? DEFAULT_EXPLORATION_C;
+  const res = runMctsCore(state, forPower, options);
 
-  let legalRootRaw: Action[];
-  if (state.pendingAction?.actionKind === 'battle_hit_assignment') {
-    legalRootRaw = enumerateKillActions(state, forPower);
-  } else {
-    legalRootRaw = getLegalActions(state, forPower);
-  }
-  if (legalRootRaw.length === 0) throw new Error(`probeMctsSearch: no legal actions for ${forPower}`);
-
-  let legalRoot = filterPointlessActions(state, legalRootRaw);
-  legalRoot = forceZeroCostFlush(state, forPower, legalRoot);
-
-  // Short-circuit: if only one legal action, return it with minimal stats.
-  if (legalRoot.length === 1) {
+  // Short-circuit: forced single action, return minimal stats.
+  if (res.forced) {
     return {
-      action: legalRoot[0]!,
+      action: res.action,
       iterations: 0,
       timeMs: 0,
       hitTimeCap: false,
@@ -447,8 +450,8 @@ export function probeMctsSearch(
       rootUntriedRemaining: 1,
       usedPuct: false,
       azStyle: modelForPowerLoaded(forPower),
-      rootActions: [{ actionKind: legalRoot[0]!.kind, slotIdx: canonicalActionIndex(legalRoot[0]!, state), visits: 0, prior: NaN, q: NaN }],
-      topVisitKind: legalRoot[0]!.kind,
+      rootActions: [{ actionKind: res.action.kind, slotIdx: canonicalActionIndex(res.action, state), visits: 0, prior: NaN, q: NaN }],
+      topVisitKind: res.action.kind,
       topPriorKind: null,
       priorVisitAgree: false,
       visitEntropy: 0,
@@ -457,38 +460,7 @@ export function probeMctsSearch(
     };
   }
 
-  const rawPolicy = policyForState(state, forPower);
-  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise) : null;
-  root.childPriors = priors;
-  const usePuct = priors !== null;
-
-  const rolloutDepth = options?.rolloutDepth ?? (
-    modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
-  );
-  const t0 = Date.now();
-  const deadline = t0 + maxTimeMs;
-  let iteration = 0;
-  let sumLeafDepth = 0;
-  let leafCount = 0;
-  let maxDepth = 0;
-
-  while (iteration < maxIterations && Date.now() < deadline) {
-    const selected = select(root, explorationC, usePuct);
-    const expanded = expand(selected, forPower);
-    // Depth of the newly expanded node (edges from root).
-    let depth = 0;
-    let n: MctsNode | null = expanded;
-    while (n && n.parent !== null) { depth += 1; n = n.parent; }
-    sumLeafDepth += depth;
-    leafCount += 1;
-    if (depth > maxDepth) maxDepth = depth;
-
-    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
-    backpropagate(expanded, score);
-    iteration += 1;
-  }
-  const elapsed = Date.now() - t0;
+  const { root, legalRoot, priors, usePuct, iteration, elapsed, hitTimeCap, hitIterCap, sumLeafDepth, leafCount, maxDepth } = res;
 
   const rootActions: Array<{ actionKind: string; slotIdx: number; visits: number; prior: number; q: number }> = [];
   let totalVisits = 0;
@@ -560,8 +532,8 @@ export function probeMctsSearch(
     action: chosenAction,
     iterations: iteration,
     timeMs: elapsed,
-    hitTimeCap: iteration < maxIterations,
-    hitIterCap: iteration >= maxIterations,
+    hitTimeCap,
+    hitIterCap,
     maxDepth,
     avgLeafDepth: leafCount > 0 ? sumLeafDepth / leafCount : 0,
     rootLegalActions: legalRoot.length,
