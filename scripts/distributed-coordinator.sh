@@ -221,7 +221,11 @@ while true; do
       | cut -d: -f2)
     if [ -n "$POWER_RANK" ] && [ -f "$DATA_DIR/model_${POWER}_iter_${DATA_GEN_ITER}.json" ]; then
       HOF_FLOOR="0.3"
-      [ "$POWER" = "tenzen" ] && HOF_FLOOR="0.18"
+      # Tenzen uses VP/50 target (not rank target like the others), so
+      # absolute values are different. ~7 VP avg = 0.14, ~10 VP = 0.20.
+      # Floor 0.10 (= 5 VP avg) lets HOF fill steadily while still
+      # discriminating utterly stuck snapshots.
+      [ "$POWER" = "tenzen" ] && HOF_FLOOR="0.10"
       python3 "$ROOT/scripts/hof-promote.py" \
         --iter "$DATA_GEN_ITER" --rank "$POWER_RANK" --power "$POWER" \
         --min-rank "$HOF_FLOOR" \
