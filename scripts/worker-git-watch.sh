@@ -14,7 +14,7 @@ COORD_USER=${COORD_USER:-iain}
 COORD_PATH=${COORD_PATH:-/home/iain/code/chaos}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-50}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-25}
 WORKERS=${WORKERS:-7}
 # Co-training era: no FOCUS_POWER, no LEAGUE_SIZE. See coordinator script
 # for rationale.
