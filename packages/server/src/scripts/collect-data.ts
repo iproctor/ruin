@@ -197,17 +197,14 @@ interface GameResult {
 
 function computeRankTarget(state: import('@ruin/engine').GameState, winners: Power[] | null): number[] {
   // Rank by projected rounds-to-win at current pace, via the closer of VP or
-  // dial path. Captures trajectory, not just static state — a power with low
-  // VP but fast gain rate ranks above a stalled higher-VP power.
+  // dial path. Captures trajectory — a power with low VP but fast gain rate
+  // ranks above a stalled higher-VP power. Linear decay: top → 1.0, last → 0.0.
   //
-  // For non-winners:
-  //   vp_rate = current VP / rounds_played
-  //   threat_rate = current threatValue / rounds_played
-  //   rounds_to_win = min((50 − vp)/vp_rate, (35 − threat)/threat_rate)
-  // Lower rounds_to_win = better placement.
-  //
-  // Winners always rank top regardless. Linear-decay value by position:
-  // top → 1.0, last → 0.0.
+  // EXCEPTION: tenzen uses raw VP / 50 (capped at 1.0). Tenzen has plateaued
+  // at the bottom of the rank distribution for many cycles, so rank-target
+  // collapses to 0.0 every game — no gradient between "lost with 35 VP" and
+  // "lost with 5 VP." Raw VP gives the value head a continuous signal across
+  // losing trajectories.
   const target = new Array(POWERS.length).fill(0);
   const N = POWERS.length;
   const winnerSet = new Set(winners ?? []);
@@ -229,6 +226,12 @@ function computeRankTarget(state: import('@ruin/engine').GameState, winners: Pow
   });
   for (let i = 0; i < ranked.length; i++) {
     target[POWERS.indexOf(ranked[i]!)] = (N - 1 - i) / (N - 1);
+  }
+  // Override tenzen's slot with VP-fraction (continuous signal for stuck-at-bottom).
+  const tenzenIdx = POWERS.indexOf('tenzen');
+  if (tenzenIdx >= 0) {
+    const tenzenVP = state.powers['tenzen'].victoryPoints;
+    target[tenzenIdx] = Math.min(tenzenVP / VP_TARGET, 1.0);
   }
   return target;
 }
