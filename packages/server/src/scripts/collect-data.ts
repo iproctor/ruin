@@ -330,17 +330,12 @@ function runGame(seed: number): GameResult {
     for (const p of ALL_POWERS) currentModelPowers.add(p);
   }
 
-  // Truncation: with some probability, cap the game at an early round so the
-  // AI sees training signal where round-3-ish standings ARE the outcome.
-  // Pushes the model to play strong early — it doesn't know whether a given
-  // game will run full length or end short. computeRankTarget handles
-  // winners=null via VP+threat ranking, so no formal winner needed.
-  // Truncation rate bumped 0.3 → 0.5: bench shows games drift to 6-7 rounds
-  // with high domination VP because no power is incentivized to push ruination
-  // (ruin = one-time payoff vs domination = per-round). Training signal needs
-  // to reward "close out the game" harder so value head learns tempo cost.
-  const truncateProb = 0.5;
-  const maxRoundCap = rand() < truncateProb ? 3 + Math.floor(rand() * 3) : 999; // 3-5 or no cap
+  // Truncation disabled. Originally added to push fast play; under MaxN +
+  // VP target for tenzen, truncated games unfairly cap VP accumulation
+  // (game ends round 3-5 before tenzen can build up), pulling the value
+  // target downward even when play was fine. Bench data shows truncation
+  // wasn't shifting the meta toward shorter games anyway — letting it run.
+  const maxRoundCap = 999;
 
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) break;
