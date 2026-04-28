@@ -32,19 +32,24 @@ const iter = getArg('--iter', '');
 const iterOpp = getArg('--iter-opp', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
 
-// Slice the seed space across workers.
-const perWorker = Math.ceil(gameCount / workerCount);
+// Slice the seed space across workers. Use floor + distribute remainder so
+// all `workerCount` workers get a slice rather than packing games into the
+// first ~ceil(g/w) workers and leaving the rest idle.
+const effectiveWorkers = Math.min(workerCount, gameCount);
+const baseShare = Math.floor(gameCount / effectiveWorkers);
+const extras = gameCount % effectiveWorkers; // first `extras` workers get +1
 const slices: Array<{ start: number; count: number; out: string }> = [];
-for (let w = 0; w < workerCount; w++) {
-  const start = baseSeed + w * perWorker;
-  const count = Math.min(perWorker, gameCount - w * perWorker);
-  if (count <= 0) break;
+let cursor = baseSeed;
+for (let w = 0; w < effectiveWorkers; w++) {
+  const count = baseShare + (w < extras ? 1 : 0);
   slices.push({
-    start,
+    start: cursor,
     count,
     out: path.resolve(`packages/ai/data/training_w${w}.jsonl`),
   });
+  cursor += count;
 }
+const perWorker = baseShare + (extras > 0 ? 1 : 0);
 
 console.log(`\n=== Parallel collection ===`);
 console.log(`games: ${gameCount}  workers: ${slices.length}  per-worker: ~${perWorker}  epsilon: ${epsilon}`);
