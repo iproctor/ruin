@@ -30,7 +30,7 @@ REMOTE_PATH=${COORD_PATH:-/home/iain/code/chaos}
 SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 WORKER_ID=${WORKER_ID:?WORKER_ID env var required (unique small int per worker)}
 
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-25}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-32}
 WORKERS=${WORKERS:-7}
 IDLE_SECONDS=${IDLE_SECONDS:-30}
 # Co-training era: no FOCUS_POWER, no LEAGUE_SIZE. Every game uses all

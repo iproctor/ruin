@@ -32,11 +32,11 @@
 set -uo pipefail
 
 WORKER_ID=${WORKER_ID:-0}
-# Smaller batches reduce inbox overshoot. With 6 producers (coordinator +
-# 5 workers) each finishing simultaneously, large batches mean inbox jumps
-# from 11→17 in seconds. Halving batch size + doubling threshold gives the
-# same total samples per train but finer granularity.
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-25}
+# Batch size = 2 × WORKERS so every worker process does exactly 2 games per
+# batch (no idle workers, no fractional distribution). Coordinator has 16
+# workers → 32 games. Worker boxes have 7 workers but use the same 32 (so
+# each does ~4-5 games sequentially — fine, just slower wall clock).
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-32}
 WORKERS=${WORKERS:-16}
 # Co-training: under MaxN MCTS every game already exercises all 4 power
 # value heads (each leaf eval uses all 4 perspectives, each opponent node
@@ -51,8 +51,8 @@ TENZEN_CUTOFF_SHIFT=1.0
 # executing a known-strong policy.
 HOF_MIX=0.1
 export TENZEN_CUTOFF_SHIFT
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-24}
-TRAIN_WINDOW=${TRAIN_WINDOW:-36}
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
+TRAIN_WINDOW=${TRAIN_WINDOW:-30}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
