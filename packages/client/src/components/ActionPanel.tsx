@@ -433,6 +433,13 @@ function TenzenDiscardPanel({
 // Card IDs that ask for N different regions. The value is the required count.
 const WORLD_MULTI_REGION_CARDS: Record<string, number> = {
   chaos_storm: 3,
+  diplomatic_envoy: 3,
+};
+
+// Cards that need three groups of N region picks (Grand Muster: 2 each for
+// peasants, heroes, nobles). Picks must all be distinct across all groups.
+const WORLD_GROUPED_REGION_CARDS: Record<string, { peasants: number; heroes: number; nobles: number }> = {
+  grand_muster: { peasants: 2, heroes: 2, nobles: 2 },
 };
 
 // Cards where the player picks between two fixed region pairs (A or B).
@@ -454,13 +461,25 @@ function WorldChoicePanel({
 }) {
   const [selectedRegion, setSelectedRegion] = useState<RegionId | null>(null);
   const [selectedRegions, setSelectedRegions] = useState<RegionId[]>([]);
+  const [groupPicks, setGroupPicks] = useState<{ peasants: RegionId[]; heroes: RegionId[]; nobles: RegionId[] }>({
+    peasants: [], heroes: [], nobles: [],
+  });
   const cardId = (context['cardId'] as string | undefined) ?? '';
 
   const cardDef = cardId ? WORLD_CARD_BY_ID[cardId] : undefined;
   const allowedRegions = cardId ? getWorldChoiceRegions(state, cardId) : undefined;
   const multiRegionCount = WORLD_MULTI_REGION_CARDS[cardId];
   const isMultiRegion = multiRegionCount !== undefined;
+  const groupedSpec = WORLD_GROUPED_REGION_CARDS[cardId];
+  const isGrouped = groupedSpec !== undefined;
   const pairChoice = WORLD_PAIR_CHOICES[cardId];
+
+  // For multi-region cards the requirement is exactly N — but if fewer than N
+  // valid regions remain (ruination has eaten the board), the engine accepts
+  // min(N, available). Mirror that here so UI and engine agree.
+  const requiredCount = isMultiRegion
+    ? Math.min(multiRegionCount, (allowedRegions?.length ?? multiRegionCount))
+    : 0;
 
   function toggleRegion(r: RegionId) {
     setSelectedRegions(prev => {
@@ -470,9 +489,37 @@ function WorldChoicePanel({
     });
   }
 
+  function toggleGroupRegion(group: 'peasants' | 'heroes' | 'nobles', r: RegionId) {
+    setGroupPicks(prev => {
+      const cur = prev[group];
+      if (cur.includes(r)) {
+        return { ...prev, [group]: cur.filter(x => x !== r) };
+      }
+      // Reject if already picked in another group (engine rejects overlap).
+      const otherGroups = (['peasants', 'heroes', 'nobles'] as const).filter(g => g !== group);
+      if (otherGroups.some(g => prev[g].includes(r))) return prev;
+      // Cap at the group size.
+      if (groupedSpec && cur.length >= groupedSpec[group]) return prev;
+      return { ...prev, [group]: [...cur, r] };
+    });
+  }
+
   function handleSubmit() {
-    if (isMultiRegion) {
-      if (selectedRegions.length === 0) return;
+    if (isGrouped) {
+      if (!groupedSpec) return;
+      if (groupPicks.peasants.length !== groupedSpec.peasants ||
+          groupPicks.heroes.length   !== groupedSpec.heroes   ||
+          groupPicks.nobles.length   !== groupedSpec.nobles) return;
+      onAction({
+        kind: 'world_choice', power: myPower, cardId,
+        choices: {
+          peasantRegions: groupPicks.peasants,
+          heroRegions:    groupPicks.heroes,
+          nobleRegions:   groupPicks.nobles,
+        },
+      });
+    } else if (isMultiRegion) {
+      if (selectedRegions.length !== requiredCount) return;
       onAction({ kind: 'world_choice', power: myPower, cardId, choices: { regions: selectedRegions } });
     } else {
       if (!selectedRegion) return;
@@ -529,11 +576,61 @@ function WorldChoicePanel({
             })}
           </div>
         </>
+      ) : isGrouped && groupedSpec ? (
+        <>
+          {(['peasants', 'heroes', 'nobles'] as const).map(group => {
+            const need = groupedSpec[group];
+            const cur = groupPicks[group];
+            const otherUsed = (['peasants', 'heroes', 'nobles'] as const)
+              .filter(g => g !== group)
+              .flatMap(g => groupPicks[g]);
+            return (
+              <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>
+                  {group[0]!.toUpperCase() + group.slice(1)} — choose {need} ({cur.length}/{need} selected):
+                </div>
+                <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                  {regions.map(r => {
+                    const sel = cur.includes(r);
+                    const usedElsewhere = otherUsed.includes(r);
+                    const disabled = (!sel && cur.length >= need) || usedElsewhere;
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => toggleGroupRegion(group, r)}
+                        disabled={disabled}
+                        style={{
+                          background: sel ? CARD_FACE_HI : CARD_FACE,
+                          border: `2px solid ${sel ? BRASS_HOT : CARD_EDGE}`,
+                          borderRadius: 5,
+                          padding: '0.3rem 0.5rem',
+                          color: sel ? PAPER : disabled ? PAPER_FADE : PAPER,
+                          fontSize: '0.8rem',
+                          cursor: disabled ? 'default' : 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        {REGION_LABELS[r]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {groupPicks.peasants.length === groupedSpec.peasants &&
+           groupPicks.heroes.length   === groupedSpec.heroes   &&
+           groupPicks.nobles.length   === groupedSpec.nobles && (
+            <button className="primary" onClick={handleSubmit}>
+              Confirm placements
+            </button>
+          )}
+        </>
       ) : (
       <>
       {isMultiRegion && (
         <div style={{ fontSize: '0.8rem', color: PAPER_DIM, marginTop: '0.25rem' }}>
-          Choose up to {multiRegionCount} regions:
+          Choose {requiredCount} region{requiredCount === 1 ? '' : 's'} ({selectedRegions.length}/{requiredCount} selected):
         </div>
       )}
       {isMultiRegion ? (
@@ -565,7 +662,7 @@ function WorldChoicePanel({
       ) : (
         <RegionPicker selectedRegion={selectedRegion} onSelect={setSelectedRegion} allowedRegions={allowedRegions} />
       )}
-      {(isMultiRegion ? selectedRegions.length > 0 : selectedRegion) && (
+      {(isMultiRegion ? selectedRegions.length === requiredCount : selectedRegion) && (
         <button className="primary" onClick={handleSubmit}>
           Confirm{isMultiRegion
             ? `: ${selectedRegions.map(r => REGION_LABELS[r]).join(', ')}`
