@@ -70,12 +70,12 @@ const dirichletNoise = dirichletWeight > 0
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
 // games) — default 0. Kept available via --epsilon for back-compat.
 const epsilon = parseFloat(getArg('--epsilon', '0'));
-// Per-power PUCT exploration constant. Tenzen plateaued at ~30 VP; lower c
-// shifts MCTS toward exploitation so the value-head signal (even noisy) can
-// drive deeper commit to the trunk it likes. Other powers keep √2.
-const cTenzen = parseFloat(getArg('--c-tenzen', '0.7'));
-const cDefault = parseFloat(getArg('--c-default', String(Math.SQRT2)));
-const explorationCFor = (p: Power): number => p === 'tenzen' ? cTenzen : cDefault;
+// Per-power MCTS iter budget. Tenzen plateaued at ~30 VP; bank-then-burst
+// strategy needs depth 12+ to be visible, so give tenzen extra iters when
+// it's acting. Other powers keep --iter (3k by default).
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '4000'), 10);
+const iterBudgetFor = (p: Power, base: number): number =>
+  p === 'tenzen' ? mctsTenzenIterations : base;
 // League training: with --league-size K, the K most recent snapshot models
 // are loaded into a pool. Per game, one power is the "learner" (rotated by
 // seed) and uses the current model; each other power, with probability
@@ -374,9 +374,8 @@ function runGame(seed: number): GameResult {
           ? mctsIterations
           : mctsOpponentIterations;
         const stats = runMctsWithStats(state, pending.waitingFor, {
-          iterations: iterBudget,
+          iterations: iterBudgetFor(pending.waitingFor, iterBudget),
           timeMs: mctsTimeMs,
-          explorationC: explorationCFor(pending.waitingFor),
           ...(dirichletNoise ? { dirichletNoise } : {}),
         });
         action = stats.action;
@@ -407,9 +406,8 @@ function runGame(seed: number): GameResult {
           : mctsOpponentIterations;
         action = useMcts
           ? runMcts(state, pending.waitingFor, {
-              iterations: subIterBudget,
+              iterations: iterBudgetFor(pending.waitingFor, subIterBudget),
               timeMs: mctsTimeMs,
-              explorationC: explorationCFor(pending.waitingFor),
               ...(dirichletNoise ? { dirichletNoise } : {}),
             })
           : greedyAction(state, pending.waitingFor);
