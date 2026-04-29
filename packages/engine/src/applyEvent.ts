@@ -587,9 +587,10 @@ function applyCardEffect(
       for (const p of event.stolenFrom) {
         s2 = patchPower(s2, p, { powerPoints: s2.powers[p]!.powerPoints - 1 });
       }
-      if (event.stolenFrom.length > 0) {
-        s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
-      }
+      // Tenzen always gains 1 PP from playing Siphon, regardless of whether
+      // any opponent had a cultist to drain. The card text's two clauses are
+      // independent.
+      s2 = patchPower(s2, 'tenzen', { powerPoints: s2.powers['tenzen']!.powerPoints + 1 });
       return s2;
     }
     case 'depraved_infiltration':
