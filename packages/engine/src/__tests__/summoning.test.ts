@@ -230,6 +230,43 @@ describe('Tenzen Arcane Siphon (PP transfer)', () => {
     expect(state.powers.gormen!.powerPoints).toBe(2); // 3 - 1
     expect(state.powers.tenzen!.powerPoints).toBe(beforeTenzen - 0 + 1); // free card (cost 0) + gain 1
   });
+
+  test('Tenzen still gains 1 PP when no opponent has a cultist in the region', () => {
+    let s = giveCards(makeState(), 'tenzen', ['tenzen_siphon_power']);
+    const beforeTenzen = s.powers.tenzen!.powerPoints;
+    const { state } = applyPlayCard(s, {
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_siphon_power',
+      toRegion: 'norrsund', slotIndex: 0,
+    });
+    expect(state.powers.tenzen!.powerPoints).toBe(beforeTenzen + 1);
+  });
+
+  test('Tenzen gains 1 PP even when an opponent has a cultist but 0 PP to drain', () => {
+    let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
+    s = giveCards(s, 'tenzen', ['tenzen_siphon_power']);
+    s = setPP(s, 'gormen', 0);
+    const beforeTenzen = s.powers.tenzen!.powerPoints;
+    const { state } = applyPlayCard(s, {
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_siphon_power',
+      toRegion: 'norrsund', slotIndex: 0,
+    });
+    expect(state.powers.gormen!.powerPoints).toBe(0); // no negatives
+    expect(state.powers.tenzen!.powerPoints).toBe(beforeTenzen + 1);
+  });
+
+  test('Tenzen only gains 1 PP regardless of how many opponents are drained', () => {
+    let s = placeFollower(makeState(), 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm',   'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha',  'cultist', 'norrsund');
+    s = giveCards(s, 'tenzen', ['tenzen_siphon_power']);
+    const beforeTenzen = s.powers.tenzen!.powerPoints;
+    const { state } = applyPlayCard(s, {
+      kind: 'summoning_play_card', power: 'tenzen', cardId: 'tenzen_siphon_power',
+      toRegion: 'norrsund', slotIndex: 0,
+    });
+    // Three opponents each lose 1, but Tenzen gains exactly 1 — not 3.
+    expect(state.powers.tenzen!.powerPoints).toBe(beforeTenzen + 1);
+  });
 });
 
 // ─── On-play: Lasha Silent Taint ─────────────────────────────────────────────

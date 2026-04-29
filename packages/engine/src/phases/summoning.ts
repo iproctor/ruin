@@ -380,6 +380,8 @@ function applyOnPlayEffect(
       // placement, before ruination check) — handled in resolveCorruption.
       break;
     case 'tenzen_siphon_power': {
+      // Tenzen ALWAYS gains 1 PP — the +1 clause is unconditional per card
+      // text. Opponents with a cultist here AND nonzero PP each lose 1.
       const stolenFrom: Power[] = [];
       for (const p of s.activePowers) {
         if (p === power) continue;
@@ -389,9 +391,7 @@ function applyOnPlayEffect(
           }
         }
       }
-      if (stolenFrom.length > 0) {
-        s = log.apply(s, { type: 'card_effect', subtype: 'siphon_power', power, regionId, stolenFrom });
-      }
+      s = log.apply(s, { type: 'card_effect', subtype: 'siphon_power', power, regionId, stolenFrom });
       break;
     }
     case 'lasha_depraved_infiltration': {
