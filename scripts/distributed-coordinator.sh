@@ -197,11 +197,17 @@ while true; do
     TRAIN_OUT="$DATA_DIR/model_${POWER}.json"
     WARM_SRC="$DATA_DIR/model_${POWER}.json"
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
+    # Tenzen runs on a wider trunk (1024/256) — bigger brain, after a
+    # production warm-start basin proved to inflate value-head MAE by 33%
+    # vs fresh init on the same data.
+    HIDDEN_ARGS=()
+    [ "$POWER" = "tenzen" ] && HIDDEN_ARGS=(--hidden1 1024 --hidden2 256)
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$WARM_SRC" \
         --scalar-value --lr 5e-4 \
-        --epochs "$TRAIN_EPOCHS" --batch 512 2>&1 \
+        --epochs "$TRAIN_EPOCHS" --batch 512 \
+        "${HIDDEN_ARGS[@]}" 2>&1 \
         | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|avg target|--power|warm-)" \
         | tee -a "$LOG_FILE"; then
       echo "  ! training failed for $POWER" | tee -a "$LOG_FILE"

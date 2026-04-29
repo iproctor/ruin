@@ -566,6 +566,7 @@ def main() -> int:
             old = old["models"][args.power]
         if old.get("version") == 3:
             old_feature_dim = int(old.get("featureDim", 0))
+            trunk_mismatch = False
             for li, lj in enumerate(old["layers"][:2]):
                 W = np.array(lj["W"], dtype=np.float32)
                 b = np.array(lj["b"], dtype=np.float32)
@@ -574,8 +575,18 @@ def main() -> int:
                     pad = np.zeros((d - W.shape[0], W.shape[1]), dtype=np.float32)
                     W = np.vstack([W, pad])
                     print(f"[warm-start] padded W1 from {old_feature_dim} → {d} input rows (zeros)")
+                cur_W = getattr(model, f"W{li+1}")
+                cur_b = getattr(model, f"b{li+1}")
+                if W.shape != cur_W.shape or b.shape != cur_b.shape:
+                    print(f"[warm-start] trunk W{li+1} shape {W.shape} ≠ current {cur_W.shape} — fresh init for trunk")
+                    trunk_mismatch = True
+                    break
                 setattr(model, f"W{li+1}", W)
                 setattr(model, f"b{li+1}", b)
+            if trunk_mismatch:
+                # Re-init trunk randomly; the value/policy head logic below will
+                # see size mismatches and also fall through to fresh init.
+                pass
             vl = old["layers"][2]
             old_Wv = np.array(vl["W"], dtype=np.float32)
             old_bv = np.array(vl["b"], dtype=np.float32)
