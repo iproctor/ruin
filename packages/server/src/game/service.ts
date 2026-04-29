@@ -301,7 +301,12 @@ export async function createGame(
     });
   }
 
-  await maybeRunAiTurns(gameId, state, initialSeq);
+  // Always run AI turns in the background — the response returns the gameId
+  // immediately and the client picks up live events via SSE (and back-fills
+  // any gap from /games/:id/history on mount). Awaiting here would block the
+  // POST through every AI action up to the first human turn, and indefinitely
+  // for all-AI games.
+  continueInBackground(gameId, state, initialSeq);
   return gameId;
 }
 
@@ -944,7 +949,8 @@ export async function startMultiplayerGame(
   // Game leaves the public lobby pool
   void broadcastGamesUpdate();
 
-  await maybeRunAiTurns(gameId, state, initialSeq);
+  // Run AI turns in the background — same rationale as createGame.
+  continueInBackground(gameId, state, initialSeq);
 }
 
 /** A player leaves an in-progress game. Their power is taken over by AI. If

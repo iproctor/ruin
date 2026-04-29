@@ -2,10 +2,11 @@
  * World phase tests — resolveWorldPhase (immediate card effects) and
  * applyWorldChoice (interactive choice resolution).
  */
+import type { GameState } from '../types.js';
 import { resolveWorldPhase, applyWorldChoice } from '../phases/world.js';
 import { autoAdvance } from '../reducers.js';
 import {
-  makeState, placeFollower, addToken, addCorruption, setThreat,
+  makeState, placeFollower, addToken, addCorruption, setThreat, ruinRegion,
 } from './helpers.js';
 
 // ─── resolveWorldPhase: empty deck ───────────────────────────────────────────
@@ -395,7 +396,11 @@ describe('applyWorldChoice: diplomatic_envoy', () => {
 
 describe('applyWorldChoice: forward_scouts', () => {
   test('places Ratmen in chosen region', () => {
-    const s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'forward_scouts' } } });
+    // forward_scouts requires the target region (or one adjacent) to hold a
+    // chaos stone — without it, getWorldChoiceRegions returns [] and the
+    // engine would have auto-skipped instead of pausing for choice.
+    let s = makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId: 'forward_scouts' } } });
+    s = addToken(s, 'norrsund', 'chaos_stone');
     const { state } = applyWorldChoice(s, {
       kind: 'world_choice', power: 'xarm', cardId: 'forward_scouts',
       choices: { regionId: 'norrsund' },
@@ -412,5 +417,145 @@ describe('applyWorldChoice: great_exorcism', () => {
       choices: { regionId: 'toscavar' },
     });
     expect(state.regions.toscavar!.tokens).toContain('event');
+  });
+});
+
+// ─── World choice validation ─────────────────────────────────────────────────
+// Per-card semantics enforcement. A submitted action must satisfy the card's
+// required count / shape; the engine refuses partial input rather than
+// silently doing as much as possible (which would let a buggy or malicious
+// client place 1 chaos stone instead of 3 for chaos_storm).
+
+describe('applyWorldChoice: validation', () => {
+  function pendingFor(cardId: string): GameState {
+    return makeState({ pendingAction: { waitingFor: 'xarm', actionKind: 'world_choice', context: { cardId } } });
+  }
+
+  test('chaos_storm rejects fewer than 3 regions', () => {
+    const s = pendingFor('chaos_storm');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
+      choices: { regions: ['norrsund', 'talvimaa'] },
+    })).toThrow(/exactly 3/);
+  });
+
+  test('chaos_storm rejects more than 3 regions', () => {
+    const s = pendingFor('chaos_storm');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
+      choices: { regions: ['norrsund', 'talvimaa', 'volensk', 'mittelreich'] },
+    })).toThrow(/exactly 3/);
+  });
+
+  test('chaos_storm rejects duplicate regions', () => {
+    const s = pendingFor('chaos_storm');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
+      choices: { regions: ['norrsund', 'norrsund', 'volensk'] },
+    })).toThrow(/distinct/);
+  });
+
+  test('chaos_storm rejects ruined region', () => {
+    let s = pendingFor('chaos_storm');
+    s = ruinRegion(s, 'norrsund');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
+      choices: { regions: ['norrsund', 'talvimaa', 'volensk'] },
+    })).toThrow(/invalid region "norrsund"/);
+  });
+
+  test('chaos_storm accepts exactly 3 distinct non-ruined regions', () => {
+    const s = pendingFor('chaos_storm');
+    const { state } = applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'chaos_storm',
+      choices: { regions: ['norrsund', 'talvimaa', 'volensk'] },
+    });
+    expect(state.regions.norrsund!.tokens).toContain('chaos_stone');
+    expect(state.regions.talvimaa!.tokens).toContain('chaos_stone');
+    expect(state.regions.volensk!.tokens).toContain('chaos_stone');
+  });
+
+  test('diplomatic_envoy rejects fewer than 3 regions', () => {
+    const s = pendingFor('diplomatic_envoy');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'diplomatic_envoy',
+      choices: { regions: ['mittelreich'] },
+    })).toThrow(/exactly 3/);
+  });
+
+  test('diplomatic_envoy rejects non-populous region', () => {
+    const s = pendingFor('diplomatic_envoy');
+    // norrsund is non-populous → not in allowed
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'diplomatic_envoy',
+      choices: { regions: ['norrsund', 'mittelreich', 'almerida'] },
+    })).toThrow(/invalid region "norrsund"/);
+  });
+
+  test('diplomatic_envoy accepts 3 distinct populous regions', () => {
+    const s = pendingFor('diplomatic_envoy');
+    const { state } = applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'diplomatic_envoy',
+      choices: { regions: ['mittelreich', 'volensk', 'almerida'] },
+    });
+    expect(state.regions.mittelreich!.tokens).toContain('hero');
+    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.almerida!.tokens).toContain('hero');
+  });
+
+  test('grand_muster rejects when a group is short', () => {
+    const s = pendingFor('grand_muster');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'grand_muster',
+      choices: {
+        peasantRegions: ['norrsund'],          // need 2
+        heroRegions:    ['volensk', 'mittelreich'],
+        nobleRegions:   ['toscavar', 'pelascos'],
+      },
+    })).toThrow(/peasantRegions.*exactly 2/);
+  });
+
+  test('grand_muster rejects overlap across groups', () => {
+    const s = pendingFor('grand_muster');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'grand_muster',
+      choices: {
+        peasantRegions: ['norrsund', 'talvimaa'],
+        heroRegions:    ['norrsund', 'mittelreich'], // norrsund repeated
+        nobleRegions:   ['toscavar', 'pelascos'],
+      },
+    })).toThrow(/all be distinct/);
+  });
+
+  test('grand_muster accepts 2+2+2 distinct regions', () => {
+    const s = pendingFor('grand_muster');
+    const { state } = applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'grand_muster',
+      choices: {
+        peasantRegions: ['norrsund', 'talvimaa'],
+        heroRegions:    ['volensk', 'mittelreich'],
+        nobleRegions:   ['toscavar', 'pelascos'],
+      },
+    });
+    expect(state.regions.norrsund!.tokens).toContain('peasant');
+    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.toscavar!.tokens).toContain('noble');
+  });
+
+  test('northern_heir rejects bad pair', () => {
+    const s = pendingFor('northern_heir');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'northern_heir',
+      choices: { pair: 'xx' },
+    })).toThrow(/"pair"/);
+  });
+
+  test('great_exorcism rejects ruined region', () => {
+    let s = pendingFor('great_exorcism');
+    s = ruinRegion(s, 'mittelreich');
+    expect(() => applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'great_exorcism',
+      choices: { regionId: 'mittelreich' },
+    })).toThrow(/regionId.*must be one of/);
   });
 });

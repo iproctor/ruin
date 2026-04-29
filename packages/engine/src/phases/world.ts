@@ -190,12 +190,98 @@ export function applyWorldChoice(state: GameState, action: WorldChoiceAction): {
   let s: GameState = { ...state, pendingAction: null };
   const { cardId, choices } = action;
 
+  validateWorldChoice(state, cardId, choices);
+
   const result = applyWorldCardChoice(s, cardId, choices, log);
   s = result.state;
 
   s = placeOnTrackOrDiscard(s, cardId, log);
   s = advanceToDrawPhase(s);
   return { state: s, log };
+}
+
+/**
+ * Throw with a clear message if the submitted choices don't satisfy the
+ * card's requirements. The wire-level zod schema only validates shape; this
+ * enforces per-card semantics (required counts, distinct regions, allowed
+ * region set). UI MUST gather all picks before submitting — the engine will
+ * NOT silently accept partial input.
+ */
+function validateWorldChoice(state: GameState, cardId: string, choices: Record<string, unknown>): void {
+  const allowed = new Set(getWorldChoiceRegions(state, cardId));
+  const need = (n: number, available: number) => Math.min(n, available); // matches the legalActions fallback
+
+  const requireRegionsArray = (key: string, expected: number): RegionId[] => {
+    const raw = choices[key];
+    if (!Array.isArray(raw)) {
+      throw new Error(`world_choice/${cardId}: missing "${key}" array`);
+    }
+    const want = need(expected, allowed.size);
+    if (raw.length !== want) {
+      throw new Error(`world_choice/${cardId}: "${key}" must contain exactly ${want} region(s) (got ${raw.length})`);
+    }
+    if (new Set(raw).size !== raw.length) {
+      throw new Error(`world_choice/${cardId}: "${key}" must contain distinct regions`);
+    }
+    for (const r of raw) {
+      if (typeof r !== 'string' || !allowed.has(r as RegionId)) {
+        throw new Error(`world_choice/${cardId}: "${key}" contains invalid region "${r}"`);
+      }
+    }
+    return raw as RegionId[];
+  };
+
+  const requireRegionId = (key: string): RegionId => {
+    const raw = choices[key];
+    if (typeof raw !== 'string' || !allowed.has(raw as RegionId)) {
+      throw new Error(`world_choice/${cardId}: "${key}" must be one of ${[...allowed].join(', ')}`);
+    }
+    return raw as RegionId;
+  };
+
+  switch (cardId) {
+    case 'chaos_storm':
+      requireRegionsArray('regions', 3);
+      return;
+
+    case 'diplomatic_envoy':
+      requireRegionsArray('regions', 3);
+      return;
+
+    case 'grand_muster': {
+      const peasants = requireRegionsArray('peasantRegions', 2);
+      const heroes   = requireRegionsArray('heroRegions',    2);
+      const nobles   = requireRegionsArray('nobleRegions',   2);
+      // Across-group distinctness: no region appears in more than one bucket.
+      const all = [...peasants, ...heroes, ...nobles];
+      if (new Set(all).size !== all.length) {
+        throw new Error(`world_choice/${cardId}: peasant/hero/noble regions must all be distinct`);
+      }
+      return;
+    }
+
+    case 'northern_heir':
+    case 'ratmens_price': {
+      const pair = choices['pair'];
+      if (pair !== 'ab' && pair !== 'cd') {
+        throw new Error(`world_choice/${cardId}: "pair" must be "ab" or "cd"`);
+      }
+      return;
+    }
+
+    case 'normagne_heir':
+    case 'mittelreich_diplomacy':
+    case 'great_exorcism':
+    case 'cleansing_wave':
+    case 'forward_scouts':
+    case 'the_exchange':
+      requireRegionId('regionId');
+      return;
+
+    default:
+      // No validation defined — fall through (no-op cards or future additions).
+      return;
+  }
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

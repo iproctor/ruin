@@ -42,10 +42,10 @@ export const ADJACENCY: Record<RegionId, RegionId[]> = {
   talvimaa:    ['norrsund', 'volensk'],
   volensk:     ['talvimaa', 'mittelreich'],
   mittelreich: ['volensk', 'normagne', 'pelascos'],
-  normagne:    ['mittelreich', 'almerida', 'toscavar'],
+  normagne:    ['mittelreich', 'almerida', 'toscavar', 'pelascos'],
   almerida:    ['normagne', 'toscavar'],
   toscavar:    ['normagne', 'almerida', 'pelascos'],
-  pelascos:    ['mittelreich', 'toscavar', 'the_barrens'],
+  pelascos:    ['mittelreich', 'normagne', 'toscavar', 'the_barrens'],
   the_barrens: ['pelascos'],
 };
 
