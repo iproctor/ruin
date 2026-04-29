@@ -24,6 +24,9 @@ function getArg(flag: string, def: string): string {
 
 const seed = parseInt(getArg('--seed', String(Date.now() & 0xffffffff)), 10);
 const iters = parseInt(getArg('--iter', '3000'), 10);
+const timeMs = parseInt(getArg('--time', '300'), 10);
+const noRollout = process.argv.includes('--no-rollout');
+const explorationC = parseFloat(getArg('--c', '1.414'));
 
 loadLearnedModelIfPresent();
 
@@ -130,10 +133,15 @@ while (state.winners === null && state.phase !== 'completed' && state.round === 
         console.log(`  ${rid.padEnd(13)} tokens=[${toks}]${figStr}`);
       }
       console.log();
-      const stats = probeMctsSearch(state, 'tenzen', { iterations: iters });
+      const stats = probeMctsSearch(state, 'tenzen', {
+        iterations: iters,
+        timeMs,
+        explorationC,
+        ...(noRollout ? { rolloutDepth: -1 } : {}),
+      });
       const sorted = [...stats.rootActions].sort((a, b) => b.visits - a.visits);
       const totalVisits = sorted.reduce((acc, x) => acc + x.visits, 0);
-      console.log(`MCTS: ${stats.iterations} iters, ${stats.timeMs}ms, root=${stats.rootLegalActions} actions`);
+      console.log(`MCTS: ${stats.iterations} iters, ${stats.timeMs}ms, root=${stats.rootLegalActions} actions, maxDepth=${stats.maxDepth}, avgLeafDepth=${stats.avgLeafDepth.toFixed(1)}${noRollout ? ' [no-rollout]' : ''}`);
       console.log(`Top 15 by visits (chosen: ${stats.topVisitKind}, top prior: ${stats.topPriorKind}):`);
       console.log('rank  visits  pct%   prior%   actionKind            slotIdx');
       for (let i = 0; i < Math.min(15, sorted.length); i++) {
