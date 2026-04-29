@@ -660,12 +660,19 @@ def main() -> int:
             # Scalar mode: mean + std of predicted probability. Std distinguishes
             # a model that's learned to discriminate (wide spread) from one that
             # has collapsed to the base rate (std near 0 → uninformative to MCTS).
-            # Scalar mode: mean + std of predicted probability. Std distinguishes
-            # a model that's learned to discriminate (wide spread) from one that
-            # has collapsed to the base rate (std near 0 → uninformative to MCTS).
-            v_mean = float(v_probs_val.mean())
-            v_std = float(v_probs_val.std())
-            dist_str = f"p̄({args.power}):{v_mean:.3f} σ:{v_std:.3f}"
+            # MAE in VP units and Pearson r measure within-range discrimination —
+            # v-agree (binary above/below 0.5) misses gradient quality inside the
+            # working range, which is exactly what MCTS needs to climb.
+            v_pred = v_probs_val.reshape(-1)
+            v_truth = Tv_val.reshape(-1)
+            v_mean = float(v_pred.mean())
+            v_std = float(v_pred.std())
+            v_mae_vp = float(np.abs(v_pred - v_truth).mean()) * 50
+            if v_pred.std() > 1e-6 and v_truth.std() > 1e-6:
+                v_r = float(np.corrcoef(v_pred, v_truth)[0, 1])
+            else:
+                v_r = 0.0
+            dist_str = f"p̄({args.power}):{v_mean:.3f} σ:{v_std:.3f} MAE:{v_mae_vp:.1f}VP r:{v_r:.2f}"
         else:
             dist = per_class_pred_dist(v_probs_val, 4)
             dist_str = " ".join(f"{names[c]}:{dist[c]:.2f}" for c in range(4))
