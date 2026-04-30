@@ -16,10 +16,10 @@ import { db } from '../db/client.js';
 import { gameEvents, games, gamePlayers } from '../db/schema.js';
 import { eq, asc, desc } from 'drizzle-orm';
 import {
-  applyEvent, createInitialState, GameLog,
-  type GameState, type GameEvent, type Power, type PlayerType,
+  applyEvent, createInitialState,
+  type GameState, type GameEvent, type Power, type PlayerType, type Action,
 } from '@ruin/engine';
-import { extractFeatures, POWERS, powerIndex } from '@ruin/ai';
+import { extractFeatures, POWERS, powerIndex, canonicalActionIndex, ACTION_DIM } from '@ruin/ai';
 
 function getArg(flag: string, def = ''): string {
   const a = process.argv.slice(2);
@@ -33,9 +33,6 @@ const outPath = getArg('--out', `/tmp/demos_${targetPower}.jsonl`);
 const VP_TARGET = 50;
 
 function computeRankTarget(state: GameState, winners: Power[] | null): number[] {
-  // Mirrors collect-data.ts:computeRankTarget — same shape so the demo data
-  // joins seamlessly with self-play training. Tenzen slot is overridden with
-  // VP/50 (continuous signal); other slots use linear rank-decay.
   const target = new Array(POWERS.length).fill(0);
   const winnerSet = new Set(winners ?? []);
   const ranking = [...POWERS].sort((a, b) => {
@@ -49,7 +46,6 @@ function computeRankTarget(state: GameState, winners: Power[] | null): number[] 
     const power = ranking[i]!;
     target[POWERS.indexOf(power)] = (N - 1 - i) / (N - 1);
   }
-  // Override tenzen with VP/50.
   const tenzenIdx = POWERS.indexOf('tenzen');
   if (tenzenIdx >= 0) {
     target[tenzenIdx] = Math.min(state.powers['tenzen'].victoryPoints / VP_TARGET, 1.0);
@@ -60,10 +56,38 @@ function computeRankTarget(state: GameState, winners: Power[] | null): number[] 
 interface Sample {
   x: number[];
   p: number;
+  visits?: Record<string, number>;
+}
+
+/**
+ * Reconstruct a summoning Action from the event that resolves the player's
+ * choice. Returns null for events that don't represent a summoning_action
+ * outcome (e.g., side-effect events like card_effect).
+ */
+function actionFromEvent(ev: GameEvent, state: GameState): Action | null {
+  if (ev.type === 'summoning_pass') {
+    return { kind: 'summoning_pass', power: ev.power };
+  }
+  if (ev.type === 'summon_figure') {
+    return {
+      kind: 'summoning_summon_figure',
+      power: ev.power,
+      followerId: ev.followerId,
+      toRegion: ev.toRegion,
+    };
+  }
+  if (ev.type === 'play_card') {
+    return {
+      kind: 'summoning_play_card',
+      power: ev.power,
+      cardId: ev.cardId,
+      toRegion: ev.toRegion,
+    };
+  }
+  return null;
 }
 
 async function main() {
-  // Find candidate games: most-recent completed first.
   const candidateRows = await db.select({ id: games.id, state: games.state, updatedAt: games.updatedAt })
     .from(games)
     .where(eq(games.isComplete, true))
@@ -87,6 +111,7 @@ async function main() {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const out = fs.openSync(outPath, 'w');
   let totalSamples = 0;
+  let totalWithPolicy = 0;
 
   for (const m of matches) {
     const playerRows = await db.select().from(gamePlayers).where(eq(gamePlayers.gameId, m.id));
@@ -109,20 +134,38 @@ async function main() {
       gameId: m.id, activePowers, playerTypes, seed: m.state.rngSeed,
     });
     const samples: Sample[] = [];
+    // Pending demo: we sampled features but haven't yet seen the action
+    // that resolved the summoning_action. Filled on the next matching event.
+    let pendingDemo: { sampleIdx: number; expectedPower: Power; stateAtDecision: GameState } | null = null;
 
     for (const r of eventRows) {
       const ev = r.event as GameEvent;
-      // Sample at the moment a power is being asked for a summoning_action,
-      // matching collect-data.ts exactly. We detect this by inspecting the
-      // pending action AFTER applying the event (the event preceding the
-      // decision sets up pendingAction).
-      if (state.pendingAction?.actionKind === 'summoning_action') {
+
+      // Resolve a pending demo: if this event is the action taken by the
+      // power we were waiting on, record its canonical slot as visits.
+      if (pendingDemo) {
+        const action = actionFromEvent(ev, state);
+        if (action && action.power === pendingDemo.expectedPower) {
+          const slotIdx = canonicalActionIndex(action, pendingDemo.stateAtDecision);
+          if (slotIdx >= 0 && slotIdx < ACTION_DIM) {
+            samples[pendingDemo.sampleIdx]!.visits = { [String(slotIdx)]: 1 };
+            totalWithPolicy++;
+          }
+          pendingDemo = null;
+        }
+      }
+
+      // Take a sample at the moment a power is being asked for a summoning_action.
+      if (!pendingDemo && state.pendingAction?.actionKind === 'summoning_action') {
         const waiter = state.pendingAction.waitingFor;
+        const sampleIdx = samples.length;
         samples.push({
           x: Array.from(extractFeatures(state, waiter)),
           p: powerIndex(waiter),
         });
+        pendingDemo = { sampleIdx, expectedPower: waiter, stateAtDecision: state };
       }
+
       try {
         state = applyEvent(state, ev);
       } catch (err) {
@@ -133,15 +176,20 @@ async function main() {
 
     const target = computeRankTarget(state, state.winners);
     for (const s of samples) {
-      fs.writeSync(out, JSON.stringify({ x: s.x, t: target, p: s.p }) + '\n');
+      const row: { x: number[]; t: number[]; p: number; visits?: Record<string, number> } = {
+        x: s.x, t: target, p: s.p,
+      };
+      if (s.visits) row.visits = s.visits;
+      fs.writeSync(out, JSON.stringify(row) + '\n');
     }
     totalSamples += samples.length;
     const tVP = state.powers[targetPower].victoryPoints;
-    console.log(`  ${m.id}: ${state.winners?.join('+') ?? '-'} | ${targetPower} ${tVP}VP | ${samples.length} samples`);
+    const withPolicy = samples.filter(s => s.visits).length;
+    console.log(`  ${m.id}: ${state.winners?.join('+') ?? '-'} | ${targetPower} ${tVP}VP | ${samples.length} samples (${withPolicy} w/policy)`);
   }
 
   fs.closeSync(out);
-  console.log(`\nWrote ${totalSamples} samples → ${outPath}`);
+  console.log(`\nWrote ${totalSamples} samples (${totalWithPolicy} with policy targets) → ${outPath}`);
   process.exit(0);
 }
 
