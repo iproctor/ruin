@@ -507,6 +507,9 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const r = REGION_ORDER[ri]!;
     const region = state.regions[r];
     if (!region || region.ruinationCardIndex !== null) { out[i++] = 0; continue; }
+    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+    const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+    if (warCry && !changer) { out[i++] = 0; continue; }
     const corrTokens = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
     const fatespinnerBonus =
