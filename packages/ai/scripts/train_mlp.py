@@ -517,15 +517,12 @@ def main() -> int:
     inv_freq = np.minimum(inv_freq, args.reweight_cap)
 
     # Focus-power mode: we ONLY care about improving the focus power's play.
-    # Amplifying gormen-win or lasha-win samples (when they happen to be rare
-    # for unrelated reasons) skews the value head away from calibration against
-    # the dominant xarm, without helping tenzen's leaf evals. Keep the focus
-    # power's reweight; reset the rest to 1.0 (neutral).
+    # Reweight is disabled — all classes get uniform weight 1.0. With heavily
+    # replicated demonstration data, the focus power's class freq looks
+    # inflated, and inverse-freq would DOWN-weight exactly the samples we
+    # injected on purpose. Disable the calibration entirely in focus mode.
     if args.power:
-        pi_focus = POWER_NAMES.index(args.power)
-        for i in range(4):
-            if i != pi_focus:
-                inv_freq[i] = 1.0
+        inv_freq[:] = 1.0
 
     sample_weights = inv_freq[winner_class].astype(np.float32)
     # Split into train/val (same permutation as above)
