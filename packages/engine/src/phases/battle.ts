@@ -412,17 +412,19 @@ function resolveRegionAfterRapture(
   );
   const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
   const hasWarFrenzy = regionCardActive(s, regionId, 'xarm_war_frenzy');
+  // Ecstasy: "No figures roll battle dice in this region this round." This
+  // suppresses every dice-rolling step — War Frenzy, normal battle, and
+  // Undying Fury (gated below). Computed up-front so the War Frenzy block
+  // can also check it.
+  const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
 
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
-  if (!changerOfFateActive && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
+  if (!changerOfFateActive && !euphoricHaze && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
     const wfResult = runWarFrenzy(s, regionId, log);
     s = wfResult.state;
     log = wfResult.log;
     if (s.pendingAction !== null) return { state: s, log };
   }
-
-  // ── Euphoric Haze: no dice rolled ────────────────────────────────────────
-  const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
 
   // ── Normal battle dice ────────────────────────────────────────────────────
   if (!euphoricHaze) {
