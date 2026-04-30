@@ -184,18 +184,22 @@ while true; do
       echo "  · padded with ${OLD_USED} archive batches (window ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
     fi
   fi
-  # Demonstration data: high-VP tenzen wins extracted from human play.
-  # Always concatenated when present — these samples carry above-plateau
-  # outcomes the self-play distribution never produces, which is the only
-  # external signal that can push the value head past its current basin.
-  DEMO_FILE="$DATA_DIR/demos.jsonl"
-  if [ -f "$DEMO_FILE" ]; then
-    cat "$DEMO_FILE" >> "$RECENT_FILE"
-    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
-    echo "  · added ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
-  fi
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
+
+  # Demonstration data: high-VP tenzen wins extracted from human play. Used
+  # ONLY for tenzen training (see per-power loop below). These samples carry
+  # above-plateau outcomes self-play never produces — applying them to other
+  # powers would make their value heads pessimistic on demo states.
+  DEMO_FILE="$DATA_DIR/demos.jsonl"
+  TENZEN_RECENT="$DATA_DIR/training_recent_tenzen.jsonl"
+  if [ -f "$DEMO_FILE" ]; then
+    cat "$RECENT_FILE" "$DEMO_FILE" > "$TENZEN_RECENT"
+    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
+    echo "  · tenzen-only: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
+  else
+    rm -f "$TENZEN_RECENT"
+  fi
 
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
   # invocation filters samples to that power and updates only its own
@@ -212,8 +216,11 @@ while true; do
     # vs fresh init on the same data.
     HIDDEN_ARGS=()
     [ "$POWER" = "tenzen" ] && HIDDEN_ARGS=(--hidden1 1024 --hidden2 256)
+    # Tenzen-only training file (self-play + demos) when present.
+    TRAIN_IN="$RECENT_FILE"
+    [ "$POWER" = "tenzen" ] && [ -f "$TENZEN_RECENT" ] && TRAIN_IN="$TENZEN_RECENT"
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$RECENT_FILE" --out "$TRAIN_OUT" \
+        --in "$TRAIN_IN" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$WARM_SRC" \
         --scalar-value --lr 5e-4 \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
