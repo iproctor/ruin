@@ -3,7 +3,7 @@
  * dial advancement, ruination, and all persistent card effects active during
  * the corruption phase.
  */
-import { resolveCorruptionPhase, previewDialAdvancementEarners } from '../phases/corruption.js';
+import { resolveCorruptionPhase, previewDialAdvancementEarners, projectedCorruptionPlacement } from '../phases/corruption.js';
 import { applyActionForPreview } from '../reducers.js';
 import {
   makeState, placeFollower, placeCard, addCorruption, addToken,
@@ -230,6 +230,32 @@ describe("Gormen Death's Perfume (+2 corruption on win)", () => {
     //  but card cost still counts toward domination)
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
   });
+
+  test("Death's Perfume suppressed by War Cry (no corruption placed)", () => {
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeCard(s, 'gormen_deaths_perfume', 'gormen', 'norrsund', 0); // cost 3
+    s = placeCard(s, 'xarm_war_cry',          'xarm',   'norrsund', 1); // cost 1
+    // Domination = 1 figure + (3 + 1) card costs = 5 > resistance 1 → Gormen wins.
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state, log } = resolveCorruptionPhase(s);
+    expect(log.entries.some(l => l.includes('Gormen dominates'))).toBe(true);
+    // War Cry blocks both the per-cultist placement (no cultists here anyway)
+    // AND Death's Perfume's bonus.
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
+  });
+
+  test("Death's Perfume fires (with War Cry NOT in region) — control case", () => {
+    // Mirror of the War Cry test but without War Cry, to confirm the
+    // suppression is specifically attributable to War Cry.
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeCard(s, 'gormen_deaths_perfume', 'gormen', 'norrsund', 0);
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state, log } = resolveCorruptionPhase(s);
+    expect(log.entries.some(l => l.includes('Gormen dominates'))).toBe(true);
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore + 2);
+  });
 });
 
 // ─── Corruption placement ─────────────────────────────────────────────────────
@@ -250,6 +276,52 @@ describe('corruption token placement', () => {
     const corrBefore = s.regions.norrsund!.corruptionTokens.xarm;
     const { state } = resolveCorruptionPhase(s);
     expect(state.regions.norrsund!.corruptionTokens.xarm).toBe(corrBefore);
+  });
+});
+
+// ─── Vile Consumption × War Cry ──────────────────────────────────────────────
+
+describe("Gormen Vile Consumption × War Cry", () => {
+  test('control: Vile Consumption removes Gormen figures and places floor(N/2) tokens', () => {
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeCard(s, 'gormen_vile_consumption', 'gormen', 'norrsund');
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state } = resolveCorruptionPhase(s);
+    // 2 figures removed → 1 corruption token placed.
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore + 1);
+    // Both warriors are off the board.
+    const figs = state.powers.gormen!.followers.filter(f => f.regionId === 'norrsund' && f.class === 'warrior');
+    expect(figs).toHaveLength(0);
+  });
+
+  test('War Cry suppresses the token half but figures are STILL removed', () => {
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeCard(s, 'gormen_vile_consumption', 'gormen', 'norrsund', 0);
+    s = placeCard(s, 'xarm_war_cry',            'xarm',   'norrsund', 1);
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state } = resolveCorruptionPhase(s);
+    // No corruption placed under War Cry.
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
+    // Figure removal half of Vile Consumption still happens.
+    const figs = state.powers.gormen!.followers.filter(f => f.regionId === 'norrsund' && f.class === 'warrior');
+    expect(figs).toHaveLength(0);
+  });
+
+  test('Changer of Fate cancels Vile Consumption entirely (no removal, no tokens)', () => {
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeCard(s, 'gormen_vile_consumption', 'gormen', 'norrsund', 0);
+    s = placeCard(s, 'tenzen_changer_of_fate',  'tenzen', 'norrsund', 1);
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state } = resolveCorruptionPhase(s);
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
+    const figs = state.powers.gormen!.followers.filter(f => f.regionId === 'norrsund' && f.class === 'warrior');
+    expect(figs).toHaveLength(2);
   });
 });
 
@@ -484,6 +556,31 @@ describe('previewDialAdvancementEarners', () => {
     s = placeFollower(s, 'gormen', 'cultist', 'normagne');
     s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'normagne');
     expect(previewDialAdvancementEarners(s, 'normagne')).toEqual([]);
+  });
+
+  test('projectedCorruptionPlacement reflects Shimmer for opponents but not Tenzen', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'tenzen', 'cultist', 'normagne');
+    s = placeFollower(s, 'tenzen', 'cultist', 'normagne');
+    // Without Shimmer: gormen=2, tenzen=2.
+    expect(projectedCorruptionPlacement(s, 'normagne', 'gormen')).toBe(2);
+    expect(projectedCorruptionPlacement(s, 'normagne', 'tenzen')).toBe(2);
+    // With Shimmer: gormen reduced by 1, tenzen unaffected.
+    s = placeCard(s, 'tenzen_shimmer', 'tenzen', 'normagne');
+    expect(projectedCorruptionPlacement(s, 'normagne', 'gormen')).toBe(1);
+    expect(projectedCorruptionPlacement(s, 'normagne', 'tenzen')).toBe(2);
+  });
+
+  test('projectedCorruptionPlacement: Changer of Fate cancels Shimmer', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = placeCard(s, 'tenzen_shimmer',         'tenzen', 'normagne', 0);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'normagne', 1);
+    // Shimmer's text is cancelled → both gormen cultists count.
+    expect(projectedCorruptionPlacement(s, 'normagne', 'gormen')).toBe(2);
   });
 
   test('War Cry blocks everything in the region', () => {

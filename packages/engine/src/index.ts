@@ -25,7 +25,7 @@ export { maskEvent, maskEvents } from './maskEvent.js';
 export { GameLog, renderText } from './gameLog.js';
 
 export { getLegalActions, enumerateBattleHitStrategies, sampleLegalSummoningAction } from './legalActions.js';
-export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination, previewDialAdvancementEarners } from './phases/corruption.js';
+export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination, previewDialAdvancementEarners, projectedCorruptionPlacement } from './phases/corruption.js';
 export { effectiveDefense } from './phases/battle.js';
 export { followersInRegion } from './helpers.js';
 export { getWorldChoiceRegions } from './phases/world.js';

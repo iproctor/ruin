@@ -255,6 +255,15 @@ async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: num
 // Public API
 // ---------------------------------------------------------------------------
 
+/** Resume a game that's stuck on an AI turn (e.g. server crashed mid-AI move).
+ *  Idempotent — does nothing if the pending action is for a human or the game
+ *  is over. Otherwise drives the AI loop until it lands on a human turn or
+ *  the game completes. */
+export async function kickGame(gameId: string): Promise<GameState> {
+  const { state, seq } = await loadGameWithSeq(gameId);
+  return maybeRunAiTurns(gameId, state, seq);
+}
+
 export async function createGame(
   createdBy: string,
   powers: Power[],

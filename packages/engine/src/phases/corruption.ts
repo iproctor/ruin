@@ -205,8 +205,12 @@ function resolveDomination(
       const conquestValue = calcConquestValue(s, regionId);
       s = log.apply(s, { type: 'domination_result', regionId, power: winner, value: maxDom, resistance, conquered: true, vp: conquestValue });
 
-      // Gormen Death's Perfume: place 2 corruption tokens on domination
-      if (!changerOfFateActive && winner === 'gormen' &&
+      // Gormen Death's Perfume: place 2 corruption tokens on domination.
+      // War Cry's "no corruption tokens may be placed in this region this
+      // round" suppresses the placement, unless Changer of Fate has already
+      // cancelled War Cry's text.
+      const warCryActive = !changerOfFateActive && regionCardActive(s, regionId, 'xarm_war_cry');
+      if (!changerOfFateActive && !warCryActive && winner === 'gormen' &&
           regionCardActive(s, regionId, 'gormen_deaths_perfume')) {
         s = log.apply(s, { type: 'deaths_perfume', regionId, tokens: 2 });
       }
@@ -350,29 +354,34 @@ function resolveCorruption(
     if (isRuined(region)) continue;
 
     const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
-    // Changer of Fate cancels the text of every other card in the region —
-    // when present, War Cry's no-corruption-placement clause is suppressed.
-    if (!changerOfFateActive && regionCardActive(s, regionId, 'xarm_war_cry')) {
+    // War Cry: "No corruption tokens may be placed in this region this round."
+    // Suppresses every TOKEN source (cultist placement, Vile Consumption's
+    // bonus tokens) but does NOT skip token-free side effects like Vile
+    // Consumption's figure removal. Cancelled by Changer of Fate.
+    const warCryActive = !changerOfFateActive && regionCardActive(s, regionId, 'xarm_war_cry');
+    if (warCryActive) {
       log.emit({ type: 'war_cry_block', regionId });
-      continue;
     }
 
-    for (const power of s.activePowers) {
-      const tokensToPlace = corruptionTokensToPlace(s, regionId, power, changerOfFateActive);
-      if (tokensToPlace === 0) continue;
+    if (!warCryActive) {
+      for (const power of s.activePowers) {
+        const tokensToPlace = corruptionTokensToPlace(s, regionId, power, changerOfFateActive);
+        if (tokensToPlace === 0) continue;
 
-      s = log.apply(s, { type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
+        s = log.apply(s, { type: 'corruption_placement', regionId, power, tokens: tokensToPlace });
 
-      // Dial advancement counters
-      s = checkDialAdvancement(s, regionId, power, tokensToPlace, changerOfFateActive, log);
+        // Dial advancement counters
+        s = checkDialAdvancement(s, regionId, power, tokensToPlace, changerOfFateActive, log);
+      }
     }
 
     // Gormen Plague Bloom: after corruption placement, remove Gormen figures and
     // place 1 corruption token per 2 figures removed (before ruination check).
+    // War Cry zeroes the token half; the figure removal half still fires.
     if (!changerOfFateActive && regionCardActive(s, regionId, 'gormen_vile_consumption')) {
       const gormenFigures = followersInRegion(s, regionId).filter(f => f.power === 'gormen');
       if (gormenFigures.length > 0) {
-        const tokensToPlace = Math.floor(gormenFigures.length / 2);
+        const tokensToPlace = warCryActive ? 0 : Math.floor(gormenFigures.length / 2);
         s = log.apply(s, { type: 'vile_consumption', regionId, figuresRemoved: gormenFigures.length, tokensPlaced: tokensToPlace });
       }
     }
@@ -394,6 +403,18 @@ function resolveCorruption(
   }
 
   return { state: s, log };
+}
+
+/** Public projection of how many corruption tokens `power` would place in
+ *  `regionId` if the corruption phase resolved right now. Accounts for Shimmer
+ *  reduction (cancelled by Changer of Fate) and the Lasha Ravers upgrade. */
+export function projectedCorruptionPlacement(
+  state: GameState,
+  regionId: RegionId,
+  power: Power,
+): number {
+  const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  return corruptionTokensToPlace(state, regionId, power, changerOfFateActive);
 }
 
 /** Number of corruption tokens a power places in a region this corruption step. */

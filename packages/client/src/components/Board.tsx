@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useDroppable, useDraggable } from '@dnd-kit/core';
 import type { GameState, RegionId, Power, TokenType, FollowerInstance, Action } from '@ruin/engine';
-import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion, previewDialAdvancementEarners } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID, REGIONS, getRegionDomination, getRegionResistance, getPowerDomination, ADJACENCY, followersInRegion, previewDialAdvancementEarners, projectedCorruptionPlacement } from '@ruin/engine';
 import { POWER_COLORS, shortCardName } from '../lib/display.js';
 import { INK, SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_HOT, CARD_FACE, CARD_INK, MAGIC, HIGHLIGHT, RUINED, RUINED_TEXT, PENDING, ERROR } from '../lib/gameColors.js';
 import CardTooltip from './CardTooltip.js';
@@ -535,19 +535,18 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         const corruptionTotal =
           (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
           (tokenCounts.get('chaos_stone') ?? 0);
-        const regionFollowers = followersInRegion(state, regionId);
-        const lashaRavers = state.powers.lasha!.upgradesInPlay.includes('lasha_ravers_up');
-        const placesCorruption = (f: FollowerInstance) =>
-          f.class === 'cultist' ||
-          (lashaRavers && f.class === 'warrior' && ((f.controlledBy ?? f.power) as Power) === 'lasha');
-        const cultCount = regionFollowers.filter(placesCorruption).length;
+        // Per-power projected placement comes from the engine, so it accounts
+        // for Shimmer (one cultist per opponent doesn't count) and the Ravers
+        // upgrade — and Changer of Fate's cancellation of Shimmer.
+        const allPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+        const projectedByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+        for (const pw of allPowers) projectedByPower[pw] = projectedCorruptionPlacement(state, regionId, pw);
+        const cultCount = (Object.values(projectedByPower) as number[]).reduce((a, b) => a + b, 0);
         const danger = corruptionTotal + cultCount >= 12;
-        // Leading ruiner: most (corruption tokens + corruption placers) in region
+        // Leading ruiner: existing corruption tokens + projected placement.
         const ruinerScore: Partial<Record<Power, number>> = { ...region.corruptionTokens };
-        for (const f of regionFollowers) {
-          if (!placesCorruption(f)) continue;
-          const pw = (f.controlledBy ?? f.power) as Power;
-          ruinerScore[pw] = (ruinerScore[pw] ?? 0) + 1;
+        for (const pw of allPowers) {
+          ruinerScore[pw] = (ruinerScore[pw] ?? 0) + projectedByPower[pw];
         }
         let topRuiner: Power | null = null;
         let topCount = 0;
@@ -787,11 +786,12 @@ function RegionInfoTooltip({ state, regionId, x, y }: {
     (Object.values(region.corruptionTokens) as number[]).reduce((a, b) => a + b, 0) +
     (tokenCounts.get('chaos_stone') ?? 0);
   const tooltipFollowers = followersInRegion(state, regionId);
-  const lashaRavers = state.powers.lasha!.upgradesInPlay.includes('lasha_ravers_up');
-  const cultCount = tooltipFollowers.filter(f =>
-    f.class === 'cultist' ||
-    (lashaRavers && f.class === 'warrior' && ((f.controlledBy ?? f.power) as Power) === 'lasha'),
-  ).length;
+  // Per-power projected corruption placement (Shimmer / Ravers / Changer of
+  // Fate aware) — sum across powers for the tooltip's incoming-corruption hint.
+  const tooltipPowers: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+  const cultCount = tooltipPowers
+    .map(pw => projectedCorruptionPlacement(state, regionId, pw))
+    .reduce((a, b) => a + b, 0);
   const willRuin = corruptionTotal + cultCount >= 12;
   const resistance = getRegionResistance(state, regionId);
   const vp = region.conquestValue + (tokenCounts.get('noble') ?? 0);
