@@ -607,7 +607,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
         const step = (w / 2) / parts.length;
         // Render DAC in the right half of the stats row so it never overlaps
         // the variable-width C-label. Keep POP aligned to the far right.
-        const dacX = x + w / 2 + 12;
+        const dacX = x + w / 2 + 17;
         return (
           <g>
             {parts.map((p, i) => (

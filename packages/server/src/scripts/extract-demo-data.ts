@@ -64,7 +64,7 @@ interface Sample {
  * choice. Returns null for events that don't represent a summoning_action
  * outcome (e.g., side-effect events like card_effect).
  */
-function actionFromEvent(ev: GameEvent, state: GameState): Action | null {
+function actionFromEvent(ev: GameEvent): Action | null {
   if (ev.type === 'summoning_pass') {
     return { kind: 'summoning_pass', power: ev.power };
   }
@@ -82,6 +82,7 @@ function actionFromEvent(ev: GameEvent, state: GameState): Action | null {
       power: ev.power,
       cardId: ev.cardId,
       toRegion: ev.toRegion,
+      slotIndex: ev.slotIndex,
     };
   }
   return null;
@@ -144,7 +145,7 @@ async function main() {
       // Resolve a pending demo: if this event is the action taken by the
       // power we were waiting on, record its canonical slot as visits.
       if (pendingDemo) {
-        const action = actionFromEvent(ev, state);
+        const action = actionFromEvent(ev);
         if (action && action.power === pendingDemo.expectedPower) {
           const slotIdx = canonicalActionIndex(action, pendingDemo.stateAtDecision);
           if (slotIdx >= 0 && slotIdx < ACTION_DIM) {
