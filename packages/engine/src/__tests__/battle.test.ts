@@ -266,6 +266,28 @@ describe('Euphoric Haze (no dice)', () => {
     const hitLogs = log.entries.filter(l => l.includes('→') && l.includes('hit'));
     expect(hitLogs).toHaveLength(0);
   });
+
+  test('Ecstasy also blocks War Frenzy pre-rolls', () => {
+    // Per card text: "No figures roll battle dice in this region this round."
+    // War Frenzy is a battle-die roll, so it must be suppressed.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeCard(s, 'xarm_war_frenzy', 'xarm',  'norrsund');
+    s = placeCard(s, 'lasha_ecstasy',   'lasha', 'norrsund', 1);
+    const { log } = autoResolveBattle(resolveBattlePhase(s));
+    expect(log.entries.some(l => l.includes('War Frenzy'))).toBe(false);
+    // No kills happened either — gormen cultist still on the board.
+    const { state } = autoResolveBattle(resolveBattlePhase(s));
+    expect(followersInRegion(state, 'norrsund', 'gormen')).toHaveLength(1);
+  });
+
+  test('without Ecstasy, War Frenzy fires (control)', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+    const { log } = autoResolveBattle(resolveBattlePhase(s));
+    expect(log.entries.some(l => l.includes('War Frenzy'))).toBe(true);
+  });
 });
 
 // ─── War Zone: no battles in event regions ────────────────────────────────────
