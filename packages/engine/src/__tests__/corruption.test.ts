@@ -171,6 +171,36 @@ describe('Xarm War Cry (no corruption tokens in region)', () => {
     expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore);
     expect(log.entries.some(l => l.includes('War Cry'))).toBe(true);
   });
+
+  test('Changer of Fate cancels War Cry → corruption is placed', () => {
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
+    s = placeCard(s, 'xarm_war_cry',           'xarm',   'norrsund', 0);
+    s = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'norrsund', 1);
+    const corrBefore = s.regions.norrsund!.corruptionTokens.gormen;
+    const { state, log } = resolveCorruptionPhase(s);
+    expect(state.regions.norrsund!.corruptionTokens.gormen).toBe(corrBefore + 2);
+    // No War Cry block log line — its text was cancelled.
+    expect(log.entries.some(l => l.includes('no corruption tokens placed'))).toBe(false);
+  });
+
+  test('previewDialAdvancementEarners ignores War Cry under Changer of Fate', () => {
+    // Build a region where Gormen would earn a DAC (2+ corruption in a
+    // populous region) — without Changer of Fate, War Cry suppresses the
+    // entire prediction; with it, Gormen should appear as an earner.
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = placeFollower(s, 'gormen', 'cultist', 'mittelreich');
+    s = placeFollower(s, 'gormen', 'cultist', 'mittelreich');
+    s = placeCard(s, 'xarm_war_cry',           'xarm',   'mittelreich', 0);
+
+    // War Cry alone → no earners.
+    expect(previewDialAdvancementEarners(s, 'mittelreich')).not.toContain('gormen');
+
+    // + Changer of Fate → War Cry suppressed → Gormen earns.
+    const sCancel = placeCard(s, 'tenzen_changer_of_fate', 'tenzen', 'mittelreich', 1);
+    expect(previewDialAdvancementEarners(sCancel, 'mittelreich')).toContain('gormen');
+  });
 });
 
 // ─── Death's Perfume: +2 corruption on domination win ────────────────────────

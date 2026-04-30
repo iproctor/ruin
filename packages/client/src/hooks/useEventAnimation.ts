@@ -207,6 +207,20 @@ export function useEventAnimation(
         break;
       case 'corruption_placement': {
         setActiveRegion(lastEvent.regionId);
+        // The streamed event already mutated serverState.corruptionTokens via
+        // applyEvent in useGameStream. Without compensation, displayed count
+        // = state + override would briefly equal (post-event) + (post-event)
+        // = doubled. Instead, subtract `tokens` immediately so the rendered
+        // count holds at its pre-event value while the fly animates, then
+        // add `tokens` back when the fly lands so the display catches up to
+        // state. Net override over the lifetime of one event is 0.
+        setCorruptionOverrides(prev => {
+          const next = new Map(prev);
+          const regionMap = { ...(next.get(lastEvent.regionId) ?? {}) };
+          regionMap[lastEvent.power] = (regionMap[lastEvent.power] ?? 0) - lastEvent.tokens;
+          next.set(lastEvent.regionId, regionMap);
+          return next;
+        });
         const flyId = ++flyIdRef.current;
         setCorruptionFlies(prev => [...prev, {
           id: flyId,

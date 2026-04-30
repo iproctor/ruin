@@ -60,9 +60,12 @@ export function previewDialAdvancementEarners(
 ): Power[] {
   const region = state.regions[regionId]!;
   if (isRuined(region)) return [];
-  if (regionCardActive(state, regionId, 'xarm_war_cry')) return [];
 
   const changerOfFateActive = regionCardActive(state, regionId, 'tenzen_changer_of_fate');
+  // War Cry blocks corruption (and therefore DAC earning), but Changer of
+  // Fate cancels the text of every other card in the region — including
+  // War Cry. Only honor War Cry when Changer of Fate is absent.
+  if (!changerOfFateActive && regionCardActive(state, regionId, 'xarm_war_cry')) return [];
 
   const earners: Power[] = [];
   for (const power of POWER_ORDER) {
@@ -345,12 +348,14 @@ function resolveCorruption(
 
     // Ruined or scorched regions skip corruption placement
     if (isRuined(region)) continue;
-    if (regionCardActive(s, regionId, 'xarm_war_cry')) {
+
+    const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+    // Changer of Fate cancels the text of every other card in the region —
+    // when present, War Cry's no-corruption-placement clause is suppressed.
+    if (!changerOfFateActive && regionCardActive(s, regionId, 'xarm_war_cry')) {
       log.emit({ type: 'war_cry_block', regionId });
       continue;
     }
-
-    const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
     for (const power of s.activePowers) {
       const tokensToPlace = corruptionTokensToPlace(s, regionId, power, changerOfFateActive);
