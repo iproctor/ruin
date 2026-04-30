@@ -619,8 +619,13 @@ def main() -> int:
                     print(f"[warm-start] policy hidden width mismatch — fresh policy head")
             elif "policyHead" in old and args.policy_hidden == 0:
                 ph = old["policyHead"]
-                model.Wp = np.array(ph["W"], dtype=np.float32)
-                model.bp = np.array(ph["b"], dtype=np.float32)
+                old_Wp = np.array(ph["W"], dtype=np.float32)
+                old_bp = np.array(ph["b"], dtype=np.float32)
+                if old_Wp.shape == model.Wp.shape and old_bp.shape == model.bp.shape:
+                    model.Wp = old_Wp
+                    model.bp = old_bp
+                else:
+                    print(f"[warm-start] policy head shape {old_Wp.shape} ≠ current {model.Wp.shape} — fresh policy head")
             else:
                 print(f"[warm-start] policy architecture changed — fresh policy head, trunk + value reused")
             for name in model._adam:
