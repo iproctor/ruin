@@ -939,3 +939,158 @@ Tenzen
     zero-sum. Cycle 8 onward starts collecting MaxN-style.
 
     All 305 engine tests pass.
+
+  Apr 27-28      Co-training: drop focus rotation, train all 4 per iter
+    Round-robin focus had each cycle freezing 3 powers while training
+    one. Slow and lossy — the frozen powers' weights drift relative
+    to the meta. Switched to co-training: every iter trains all 4
+    power heads from the same batch. Each train_mlp.py invocation
+    filters samples by --power for policy targets but uses all
+    samples for value-head gradient.
+
+    Side effects:
+    - FOCUS_POWER hardcoded empty in all scripts; --iter-opp dead
+      path (used only when focusPower is set)
+    - Dropped LEAGUE_SIZE/LEAGUE_MIX (also focus-related)
+    - All 4 powers have model_<power>.json updating each iter
+
+  Apr 28         Tenzen value target: rank → VP/50
+    Rank target collapses to ~0.0 for tenzen most games (rare
+    winner). Continuous gradient gone. Swapped tenzen's slot in
+    computeRankTarget to min(VP/50, 1.0) so the value head sees
+    "lost with 35 VP" as 0.7, "lost with 5 VP" as 0.1 — gradient
+    across losing trajectories.
+
+    Other 3 powers still use rank.
+
+  Apr 28         Drop game truncation (maxRoundCap 999)
+    Truncation was capping VP accumulation (game ended round 3-5
+    before tenzen could build), pulling target distribution down.
+    With VP target this is now a direct bias. Removed the cap.
+
+  Apr 28         Reset model_tenzen.json from truncation contamination
+    Local model_tenzen.json from the truncated era was still warm-
+    starting tenzen training. Replaced with the saved snapshot from
+    coord. (Coord workers always pull from coord, so worker boxes
+    didn't need updating.)
+
+  Apr 29         Asymmetric MCTS budget per power
+    Tenzen plateau analysis: depth 12+ search needed for bank-
+    then-burst pattern; current 3k iters at branching ~12 gives
+    effective depth 3-4. Bumped tenzen-only budget to 4k iters
+    when tenzen is acting (--iter-tenzen 4000); others stay at
+    --iter (3k). Tenzen actions ~33% slower; total game ~25%
+    slower since tenzen is ~25% of acting decisions.
+
+  Apr 29         Bigger trunk for tenzen: 1024/256 (was 512/128)
+    Diagnosed warm-start basin drift: production model_tenzen.json
+    had MAE 5.7 VP, r=0.71 on its own training data. Fresh init
+    on the same data at 512/128 hit MAE 3.8 VP, r=0.88. At
+    1024/256: MAE 3.0 VP, r=0.92. Production was parked in a bad
+    basin — fresh init found a 33% better basin just by re-
+    initializing.
+
+    Wider trunk on top: another ~20% MAE reduction.
+
+    Deployment: edited coord script to pass --hidden1 1024 --hidden2
+    256 for tenzen specifically. Uploaded the fresh-init 1024/256
+    model directly so first warm-start has matching shapes.
+
+    Added safety patch in train_mlp.py: trunk/value/policy heads
+    all fall back to fresh init on shape mismatch instead of
+    crashing during forward pass. Lets the size bump roll out
+    without perfectly-timed model+script swaps.
+
+    Result: tenzen avg VP per game broke 30 plateau → ~34 VP.
+    Bench tenzen win rate 4% → 6% (variance ±2%).
+
+  Apr 29         New training metric: MAE-in-VP + Pearson r
+    v-agree (binary above/below 0.5) was barely better than the
+    constant predictor when ~80% of tenzen samples land above
+    25 VP. Added MAE * 50 (VP units) and Pearson r between
+    predicted and target probabilities to per-epoch training log.
+    Measures within-range discrimination — exactly what MCTS
+    needs to climb.
+
+    For non-tenzen (rank target): MAE * 50 has no real-world
+    unit interpretation; raw [0,1] target scale.
+
+  Apr 29-30      Demonstration data injection
+    Tenzen self-play distribution exhausted what it could teach
+    its own value head — co-drift between value head and policy
+    means each iter learns ~0.005 nats and converges to current
+    play distribution. Plateau at ~30 VP / 4% wins is structural,
+    not a tweak-the-knob problem.
+
+    Solution: feed value head outcomes from above-plateau states
+    via human-played winning games. extract-demo-data.ts pulls
+    N most recent completed games where the target power won,
+    replays via event log, emits training rows in collect-data
+    format (x/t/p/visits) — value AND policy targets so MCTS gets
+    both "this state is high-VP" signal and "play this action"
+    imitation gradient.
+
+    First version was value-only (no visits). Updated value head
+    correctly but policy didn't change → MCTS kept generating
+    same self-play states. Added action-slot reconstruction from
+    the events that resolve summoning_action (summon_figure /
+    play_card / summoning_pass) to populate visits = {slot: 1}.
+
+    Coordinator change: separate training_recent_tenzen.jsonl
+    that includes demos for tenzen training only; xarm/gormen/
+    lasha keep training on demo-free data (otherwise demo states
+    teach those heads pessimism on demo-like positions).
+
+    push-hetzner gotcha: demos.jsonl wasn't in --exclude list,
+    so first deploy after upload silently rsync-deleted it.
+    Added exclude rule.
+
+  Apr 30         Tenzen breakout: 10% self-play wins
+    Demo set grew over the day from 5 → 9 games (54-66 VP wins).
+    Replication ramped 50x → 25x → 50x as demo fraction of
+    training set tuned. With 30% demo weight + 1024/256 trunk
+    + 4k iters + policy-target demos, tenzen self-play class
+    counts:
+                    wins   %
+      iter 1633     8706   7.5%
+      iter 1634     7216   6.3%
+      iter 1635    12279   10.4%   ← breakout
+      iter 1636    11289   9.7%
+
+    50%+ above the 4-7% range that held for the prior 1500 iters.
+    Avg tenzen VP up to ~34 from 30.
+
+  Apr 30         Strategy mismatch: AI plays gormen-style, not bank-burst
+    User observation watching the AI play tenzen: it's turtling
+    in one region with cultists until ruination, gormen-style.
+    The demos teach bank-then-burst (hold PP, deploy late) but
+    AI converged on a different working strategy.
+
+    Hypotheses:
+    1. Policy head matches demos at p-top1=63% on EXACT demo
+       states; in self-play distribution drift, the policy
+       degrades and value head's "lots of cultists in region
+       → high VP" signal dominates (true for both strategies).
+    2. Demos contain some turtle-like moments; same action
+       slots can't differentiate "build for burst" from "build
+       to dominate."
+    3. Self-play around demo prior + Dirichlet noise finds
+       turtle works, value head reinforces it.
+
+    User: tenzen lacks gormen's tools (corruption-attack
+    arsenal) so turtle is structurally weaker. The demos remain
+    the path to the better strategy; need higher demo fraction.
+
+  Apr 30         Demo fresh-start (in-flight)
+    Raised demo replication 25x → 50x to put demo fraction at
+    ~30% of tenzen training set. Then deleted model_tenzen.json
+    on coord to force fresh init under the heavier demo signal,
+    rather than warm-starting from the turtle-biased model.
+
+    Bug surfaced: train_mlp.py's safety patch handled trunk +
+    value head shape mismatches but blindly overwrote the policy
+    head, crashing the next forward pass. Iter 1637 spun in a
+    retry loop (xarm/gormen succeed, tenzen fail, restart).
+    Patch extended to shape-check policy head too.
+
+    Awaiting iter 1637+ post-fix to see fresh-init metrics.
