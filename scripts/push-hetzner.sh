@@ -55,6 +55,8 @@ RSYNC_EXCLUDES=(
   --exclude='packages/ai/data/training_smoke.jsonl'
   --exclude='packages/ai/data/training_padded.jsonl'
   --exclude='packages/ai/data/training_test.jsonl'
+  --exclude='packages/ai/data/training_recent_tenzen.jsonl'
+  --exclude='packages/ai/data/demos.jsonl'
   --exclude='packages/ai/data/model_box_latest.json'
   --exclude='/tmp'
 )
