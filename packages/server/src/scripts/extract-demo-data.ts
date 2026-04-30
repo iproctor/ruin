@@ -29,6 +29,7 @@ function getArg(flag: string, def = ''): string {
 
 const targetPower = getArg('--power', 'tenzen') as Power;
 const gameCount = parseInt(getArg('--games', '5'), 10);
+const extraGameIds = getArg('--game-ids', '').split(',').map(s => s.trim()).filter(Boolean);
 const outPath = getArg('--out', `/tmp/demos_${targetPower}.jsonl`);
 const VP_TARGET = 50;
 
@@ -96,11 +97,24 @@ async function main() {
     .limit(50);
 
   const matches: { id: string; state: GameState }[] = [];
+  const seen = new Set<string>();
+  // Explicit game IDs first (in order given), then top-N most-recent wins.
+  for (const id of extraGameIds) {
+    const row = candidateRows.find(r => r.id === id);
+    if (!row) {
+      console.warn(`--game-ids ${id}: not found among recent completed games`);
+      continue;
+    }
+    matches.push({ id: row.id, state: row.state as GameState });
+    seen.add(row.id);
+  }
   for (const r of candidateRows) {
+    if (seen.has(r.id)) continue;
     const s = r.state as GameState;
     if (s.winners && s.winners.includes(targetPower)) {
       matches.push({ id: r.id, state: s });
-      if (matches.length >= gameCount) break;
+      seen.add(r.id);
+      if (matches.length - extraGameIds.length >= gameCount) break;
     }
   }
 
