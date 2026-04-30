@@ -218,6 +218,63 @@ describe('card_on_play_choice', () => {
     )).toBe(true);
   });
 
+  test('forced_discard enumerates 2-card combinations (Meddling of Rats path)', () => {
+    let s = giveCards(makeState(), 'gormen', ['gormen_pandemic', 'gormen_decay', 'gormen_rain_of_bile']);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'gormen',
+        actionKind: 'forced_discard',
+        context: { count: 2, returnTo: 'tenzen' },
+      },
+    };
+    const actions = getLegalActions(s, 'gormen').filter(a => a.kind === 'forced_discard') as Array<import('../types.js').ForcedDiscardAction>;
+    // Every legal action must contain exactly 2 card ids — picking one
+    // leaves the AI submitting a single-card discard, which was the bug.
+    expect(actions.length).toBeGreaterThan(0);
+    for (const a of actions) {
+      expect(a.cardIds).toHaveLength(2);
+    }
+    // C(3, 2) = 3 distinct combinations of 3 unique cards.
+    const keys = new Set(actions.map(a => [...a.cardIds].sort().join('|')));
+    expect(keys.size).toBe(3);
+  });
+
+  test('forced_discard with duplicate cards in hand allows discarding both copies', () => {
+    let s = giveCards(makeState(), 'gormen', ['gormen_pandemic', 'gormen_pandemic', 'gormen_decay']);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'gormen',
+        actionKind: 'forced_discard',
+        context: { count: 2, returnTo: 'tenzen' },
+      },
+    };
+    const actions = getLegalActions(s, 'gormen').filter(a => a.kind === 'forced_discard') as Array<import('../types.js').ForcedDiscardAction>;
+    const keys = new Set(actions.map(a => [...a.cardIds].sort().join('|')));
+    // Multisets of 2 from {pandemic:2, decay:1}: {pandemic,pandemic}, {pandemic,decay}.
+    expect(keys.has('gormen_pandemic|gormen_pandemic')).toBe(true);
+    expect(keys.has('gormen_decay|gormen_pandemic')).toBe(true);
+    expect(keys.size).toBe(2);
+    for (const a of actions) expect(a.cardIds).toHaveLength(2);
+  });
+
+  test('forced_discard with hand smaller than required count discards everything', () => {
+    let s = giveCards(makeState(), 'gormen', ['gormen_decay']);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'gormen',
+        actionKind: 'forced_discard',
+        context: { count: 2, returnTo: 'tenzen' },
+      },
+    };
+    const actions = getLegalActions(s, 'gormen').filter(a => a.kind === 'forced_discard') as Array<import('../types.js').ForcedDiscardAction>;
+    // Required clamps to hand.length=1.
+    expect(actions).toHaveLength(1);
+    expect(actions[0]!.cardIds).toEqual(['gormen_decay']);
+  });
+
   test("Fate's Aegis returns own figures in region", () => {
     let s = placeFollower(makeState(), 'tenzen', 'warrior', 'norrsund');
     s = {

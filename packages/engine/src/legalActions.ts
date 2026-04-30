@@ -49,12 +49,36 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
     case 'forced_discard': {
       const ps = state.powers[power]!;
       const required = Math.min((state.pendingAction?.context['count'] as number) ?? 2, ps.hand.length);
-      const hand = [...new Set(ps.hand.filter(c => c !== '?'))];
-      // Return one canonical action per card as a selection hint; client enforces count
-      return hand.map(cardId => ({
+      // Enumerate every distinct multiset of `required` cards drawn from the
+      // hand. Earlier this returned single-card actions and relied on the
+      // client to enforce the count — but bots pick one legal action and
+      // submit it directly, so they only ever discarded one card. (Bug
+      // observed against Meddling of Rats: AI discarded only 1 of the 2.)
+      const counts = new Map<string, number>();
+      for (const c of ps.hand) {
+        if (c === '?') continue;
+        counts.set(c, (counts.get(c) ?? 0) + 1);
+      }
+      const unique = [...counts.entries()].map(([id, available]) => ({ id, available }));
+
+      const combos: string[][] = [];
+      const recurse = (startIdx: number, picked: string[], remaining: number): void => {
+        if (remaining === 0) { combos.push(picked); return; }
+        for (let i = startIdx; i < unique.length; i++) {
+          const u = unique[i]!;
+          const already = picked.filter(p => p === u.id).length;
+          if (already < u.available) {
+            recurse(i, [...picked, u.id], remaining - 1);
+          }
+        }
+      };
+      if (required > 0) recurse(0, [], required);
+      else combos.push([]); // nothing in hand → submit empty
+
+      return combos.map(cardIds => ({
         kind: 'forced_discard' as const,
         power,
-        cardIds: [cardId],
+        cardIds,
       }));
     }
 
