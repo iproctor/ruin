@@ -184,6 +184,16 @@ while true; do
       echo "  · padded with ${OLD_USED} archive batches (window ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
     fi
   fi
+  # Demonstration data: high-VP tenzen wins extracted from human play.
+  # Always concatenated when present — these samples carry above-plateau
+  # outcomes the self-play distribution never produces, which is the only
+  # external signal that can push the value head past its current basin.
+  DEMO_FILE="$DATA_DIR/demos.jsonl"
+  if [ -f "$DEMO_FILE" ]; then
+    cat "$DEMO_FILE" >> "$RECENT_FILE"
+    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
+    echo "  · added ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
+  fi
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
