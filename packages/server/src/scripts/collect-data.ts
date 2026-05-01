@@ -70,13 +70,13 @@ const dirichletNoise = dirichletWeight > 0
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
 // games) — default 0. Kept available via --epsilon for back-compat.
 const epsilon = parseFloat(getArg('--epsilon', '0'));
-// Per-power MCTS iter budget. Tenzen runs at 10k iters with rollout=0:
-// the demo-trained value head's per-state prediction is good enough that
-// random rollouts dilute the signal. Skipping rollout per-iter is much
-// cheaper, freeing budget for deeper search. Fork experiment: 3k+rollout
-// → avg 52.6 VP, 1/5 wins; 10k+r0 → avg 55.8 VP, 3/5 wins.
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '10000'), 10);
-const tenzenRolloutZero = !process.argv.includes('--no-tenzen-rollout-zero');
+// Per-power MCTS iter budget. Tenzen at 4k (33% more than the 3k baseline)
+// because bank-then-burst needs depth visibility. Rollout=0 was tried at
+// 10k but hurt: tenzen self-play wins fell 7.6% → 3.6% over 2 iters. The
+// fork experiment's 3/5-wins result was a small-sample fluke; rollouts
+// remain load-bearing for grounding mid-round value-head predictions.
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '4000'), 10);
+const tenzenRolloutZero = process.argv.includes('--tenzen-rollout-zero');
 const iterBudgetFor = (p: Power, base: number): number =>
   p === 'tenzen' ? mctsTenzenIterations : base;
 const rolloutDepthFor = (p: Power): number | undefined =>
