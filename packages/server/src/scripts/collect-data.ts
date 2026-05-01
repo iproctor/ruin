@@ -72,10 +72,9 @@ const dirichletNoise = dirichletWeight > 0
 const epsilon = parseFloat(getArg('--epsilon', '0'));
 // All-r0 trial: every power evaluates leaves directly via its value head;
 // no rollouts. All 4 power models adapt together to the r0-MCTS state
-// distribution, avoiding the asymmetric-calibration problem that broke
-// tenzen-only r0. Iter budget bumped uniformly to 10k since per-iter
-// cost is much lower without rollout walks.
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '10000'), 10);
+// distribution. 5k iters uniform — keeps cycle cadence reasonable while
+// still getting deeper search than the 3k+rollout default.
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '5000'), 10);
 const allRolloutZero = !process.argv.includes('--no-rollout-zero');
 const iterBudgetFor = (p: Power, base: number): number =>
   p === 'tenzen' ? mctsTenzenIterations : (allRolloutZero ? mctsTenzenIterations : base);
