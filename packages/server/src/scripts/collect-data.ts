@@ -70,17 +70,17 @@ const dirichletNoise = dirichletWeight > 0
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
 // games) — default 0. Kept available via --epsilon for back-compat.
 const epsilon = parseFloat(getArg('--epsilon', '0'));
-// Per-power MCTS iter budget. Tenzen at 10k iters with rollout=0 — the
-// demo-trained value head's per-state predictions are sharp (r=0.95 MAE
-// 2.1 VP on training distribution). Random rollouts smear that signal.
-// Multi-iter trial: needs 5+ iters before the value head re-calibrates
-// to r0-MCTS's state distribution. Don't revert on a 1-iter dip.
+// All-r0 trial: every power evaluates leaves directly via its value head;
+// no rollouts. All 4 power models adapt together to the r0-MCTS state
+// distribution, avoiding the asymmetric-calibration problem that broke
+// tenzen-only r0. Iter budget bumped uniformly to 10k since per-iter
+// cost is much lower without rollout walks.
 const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '10000'), 10);
-const tenzenRolloutZero = !process.argv.includes('--no-tenzen-rollout-zero');
+const allRolloutZero = !process.argv.includes('--no-rollout-zero');
 const iterBudgetFor = (p: Power, base: number): number =>
-  p === 'tenzen' ? mctsTenzenIterations : base;
-const rolloutDepthFor = (p: Power): number | undefined =>
-  p === 'tenzen' && tenzenRolloutZero ? -1 : undefined;
+  p === 'tenzen' ? mctsTenzenIterations : (allRolloutZero ? mctsTenzenIterations : base);
+const rolloutDepthFor = (_p: Power): number | undefined =>
+  allRolloutZero ? -1 : undefined;
 // League training: with --league-size K, the K most recent snapshot models
 // are loaded into a pool. Per game, one power is the "learner" (rotated by
 // seed) and uses the current model; each other power, with probability
