@@ -70,12 +70,13 @@ const dirichletNoise = dirichletWeight > 0
 // by Dirichlet noise on root priors (cleaner exploration that doesn't sabotage
 // games) — default 0. Kept available via --epsilon for back-compat.
 const epsilon = parseFloat(getArg('--epsilon', '0'));
-// Per-power MCTS iter budget. Tenzen at 5k iters (vs 3k baseline for
-// others) with normal rollout. Tried 10k+r0 — too slow per iter and the
-// "rollouts smear demo signal" hypothesis didn't pan out cleanly. Trade
-// per-action quality for more total iters per unit time.
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '5000'), 10);
-const tenzenRolloutZero = process.argv.includes('--tenzen-rollout-zero');
+// Per-power MCTS iter budget. Tenzen at 10k iters with rollout=0 — the
+// demo-trained value head's per-state predictions are sharp (r=0.95 MAE
+// 2.1 VP on training distribution). Random rollouts smear that signal.
+// Multi-iter trial: needs 5+ iters before the value head re-calibrates
+// to r0-MCTS's state distribution. Don't revert on a 1-iter dip.
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '10000'), 10);
+const tenzenRolloutZero = !process.argv.includes('--no-tenzen-rollout-zero');
 const iterBudgetFor = (p: Power, base: number): number =>
   p === 'tenzen' ? mctsTenzenIterations : base;
 const rolloutDepthFor = (p: Power): number | undefined =>
