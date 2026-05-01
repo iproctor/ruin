@@ -51,12 +51,8 @@ const tenzenRolloutZero = process.argv.includes('--tenzen-rollout-zero');
 const VP_TARGET = 50;
 if (!gameId) { console.error('--game required'); process.exit(1); }
 
-const iterBudgetFor = (p: Power): number => {
-  if (p === 'tenzen') {
-    return tenzenRolloutZero ? mctsTenzenIterations * 5 : mctsTenzenIterations;
-  }
-  return mctsIterations;
-};
+const iterBudgetFor = (p: Power): number =>
+  p === 'tenzen' ? mctsTenzenIterations : mctsIterations;
 const rolloutDepthFor = (p: Power): number | undefined =>
   p === 'tenzen' && tenzenRolloutZero ? -1 : undefined;
 
