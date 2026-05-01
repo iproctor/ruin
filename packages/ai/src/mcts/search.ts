@@ -23,6 +23,16 @@ export interface MctsOptions {
   /** Override rollout depth. 0 = pure value head at leaf (no rollout). */
   rolloutDepth?: number;
   /**
+   * Whether rollouts should sample summoning actions from the policy head
+   * instead of biased-random. Modes:
+   *   'off' (default): biased-random via sampleLegalSummoningAction
+   *   'all': every acting power uses its policy head
+   *   'tenzen': only when tenzen is acting
+   *   'except-tenzen': only when non-tenzen powers are acting
+   * Falls back to biased-random if the policy head isn't loaded.
+   */
+  rolloutPolicy?: 'off' | 'all' | 'tenzen' | 'except-tenzen';
+  /**
    * Dirichlet noise on root priors (AlphaZero-style training exploration).
    * Blends (1-weight)·P(a) + weight·Dir(alpha) per root, so MCTS still picks
    * sensible actions but is encouraged to explore non-top-prior lines.
@@ -295,7 +305,7 @@ function runMctsCore(
     leafCount += 1;
     if (depth > maxDepth) maxDepth = depth;
 
-    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth);
+    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
     backpropagate(expanded, score);
     iteration += 1;
   }
@@ -736,7 +746,41 @@ function evaluateAllPowers(state: GameState): Record<Power, number> {
   };
 }
 
-function rollout(state: GameState, _forPower: Power, seed: number, minDepth: number): Record<Power, number> {
+/**
+ * Sample a summoning action from the policy head's distribution. Returns
+ * null if no policy head is loaded for the acting power (caller falls back
+ * to biased-random). Skips filterPointlessActions per AI CLAUDE.md invariant.
+ */
+function samplePolicyAction(state: GameState, waitingFor: Power, rng: () => number): Action | undefined {
+  const raw = policyForState(state, waitingFor);
+  if (raw === null) return undefined;
+  const legal = getLegalActions(state, waitingFor);
+  if (legal.length === 0) return undefined;
+  const probs: number[] = new Array(legal.length);
+  let total = 0;
+  for (let i = 0; i < legal.length; i++) {
+    const idx = canonicalActionIndex(legal[i]!, state);
+    const p = idx >= 0 ? raw[idx]! : 0;
+    probs[i] = p;
+    total += p;
+  }
+  if (total <= 0) return legal[Math.floor(rng() * legal.length)];
+  const r = rng() * total;
+  let cum = 0;
+  for (let i = 0; i < legal.length; i++) {
+    cum += probs[i]!;
+    if (r <= cum) return legal[i];
+  }
+  return legal[legal.length - 1];
+}
+
+function rollout(
+  state: GameState,
+  _forPower: Power,
+  seed: number,
+  minDepth: number,
+  rolloutPolicy: 'off' | 'all' | 'tenzen' | 'except-tenzen' = 'off',
+): Record<Power, number> {
   // NOTE: a minDepth===0 short-circuit was retried on Apr 20 at 10k iters
   // (the hypothesis: more leaves backprop'd to root would wash out mid-round
   // value-head noise). It didn't — tenzen freq halved 0.205 → 0.109 at the
@@ -757,7 +801,13 @@ function rollout(state: GameState, _forPower: Power, seed: number, minDepth: num
     const waitingFor = current.pendingAction.waitingFor;
     let action: Action | undefined;
     if (current.pendingAction.actionKind === 'summoning_action') {
-      action = sampleLegalSummoningAction(current, waitingFor, rng, ROLLOUT_AGGRESSION);
+      const usePolicy =
+        rolloutPolicy === 'all' ||
+        (rolloutPolicy === 'tenzen' && waitingFor === 'tenzen') ||
+        (rolloutPolicy === 'except-tenzen' && waitingFor !== 'tenzen');
+      action = usePolicy
+        ? samplePolicyAction(current, waitingFor, rng) ?? sampleLegalSummoningAction(current, waitingFor, rng, ROLLOUT_AGGRESSION)
+        : sampleLegalSummoningAction(current, waitingFor, rng, ROLLOUT_AGGRESSION);
     } else {
       const actions = current.pendingAction.actionKind === 'battle_hit_assignment'
         ? enumerateBattleHitStrategies(current, waitingFor)

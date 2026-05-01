@@ -74,8 +74,16 @@ const epsilon = parseFloat(getArg('--epsilon', '0'));
 // strategy needs depth 12+ to be visible, so give tenzen extra iters when
 // it's acting. Other powers keep --iter (3k by default).
 const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '4000'), 10);
-const iterBudgetFor = (p: Power, base: number): number =>
-  p === 'tenzen' ? mctsTenzenIterations : base;
+// Tenzen rollout=0 + 5x iters: skip rollouts on tenzen leaves so the
+// demo-trained value head's prediction stands, use saved compute on deeper
+// search. Fork experiment showed avg VP 52.6 → 55.8, tenzen wins 1/5 → 3/5.
+const tenzenRolloutZero = !process.argv.includes('--no-tenzen-rollout-zero');
+const iterBudgetFor = (p: Power, base: number): number => {
+  if (p === 'tenzen') return mctsTenzenIterations * (tenzenRolloutZero ? 5 : 1);
+  return base;
+};
+const rolloutDepthFor = (p: Power): number | undefined =>
+  p === 'tenzen' && tenzenRolloutZero ? -1 : undefined;
 // League training: with --league-size K, the K most recent snapshot models
 // are loaded into a pool. Per game, one power is the "learner" (rotated by
 // seed) and uses the current model; each other power, with probability
@@ -373,9 +381,11 @@ function runGame(seed: number): GameResult {
         const iterBudget = !focusPower || pending.waitingFor === focusPower
           ? mctsIterations
           : mctsOpponentIterations;
+        const rd = rolloutDepthFor(pending.waitingFor);
         const stats = runMctsWithStats(state, pending.waitingFor, {
           iterations: iterBudgetFor(pending.waitingFor, iterBudget),
           timeMs: mctsTimeMs,
+          ...(rd !== undefined ? { rolloutDepth: rd } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
         });
         action = stats.action;
@@ -404,10 +414,12 @@ function runGame(seed: number): GameResult {
         const subIterBudget = !focusPower || pending.waitingFor === focusPower
           ? mctsIterations
           : mctsOpponentIterations;
+        const rd2 = rolloutDepthFor(pending.waitingFor);
         action = useMcts
           ? runMcts(state, pending.waitingFor, {
               iterations: iterBudgetFor(pending.waitingFor, subIterBudget),
               timeMs: mctsTimeMs,
+              ...(rd2 !== undefined ? { rolloutDepth: rd2 } : {}),
               ...(dirichletNoise ? { dirichletNoise } : {}),
             })
           : greedyAction(state, pending.waitingFor);
