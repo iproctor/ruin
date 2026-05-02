@@ -1,4 +1,5 @@
 import { FEATURE_DIM, POWERS } from './features.js';
+import { loadNativeMlp, type NativeMlpForward } from './native-mlp.js';
 
 /**
  * MLP inference (pure TS, single-example forward pass).
@@ -132,6 +133,12 @@ export class Mlp {
   private scratchB: Float32Array;
   private scratchC: Float32Array;
   private scratchD: Float32Array;
+  // Native fast path. When loaded, applies only to the canonical 3-trunk +
+  // shared policyChain shape (1 layer), which is what train_mlp.py emits.
+  // Other shapes (perPowerPolicyHeads, policyChain length != 1) fall through
+  // to the JS path. The native function is cached at module load.
+  private native: NativeMlpForward | null;
+  private nativeOk: boolean;
 
   constructor(
     layers: CompiledLayer[],
@@ -151,10 +158,41 @@ export class Mlp {
     this.scratchB = new Float32Array(maxDim);
     this.scratchC = new Float32Array(maxDim);
     this.scratchD = new Float32Array(maxDim);
+    // Native is usable only for the canonical shape: 3-layer trunk
+    // (in→h1→h2→value) + one-layer policy head from h2. That covers
+    // every model train_mlp.py currently emits.
+    this.native = loadNativeMlp();
+    this.nativeOk = (
+      this.native !== null
+      && this.layers.length === 3
+      && this.policyChain.length <= 1
+      && (this.perPowerPolicyHeads === null || this.perPowerPolicyHeads.size === 0)
+    );
   }
 
   /** Value-only forward pass. Returns the final-layer (softmax) output. */
   forward(x: Float32Array): Float32Array {
+    // Native path: dummy policy outputs are discarded. Slight waste vs a
+    // dedicated value-only native call, but the trunk dominates so it's <5%.
+    if (this.nativeOk && this.policyChain.length === 1) {
+      const W1Layer = this.layers[0]!;
+      const W2Layer = this.layers[1]!;
+      const Wv = this.layers[2]!;
+      const Wp = this.policyChain[0]!;
+      const valueResult = new Float32Array(Wv.outDim);
+      const policyDummy = this.scratchC.subarray(0, Wp.outDim);
+      this.native!(
+        W1Layer.W, W1Layer.b,
+        W2Layer.W, W2Layer.b,
+        Wv.W, Wv.b,
+        Wp.W, Wp.b,
+        x,
+        this.scratchA, this.scratchB,
+        valueResult, policyDummy,
+        W1Layer.inDim, W1Layer.outDim, W2Layer.outDim, Wv.outDim, Wp.outDim,
+      );
+      return valueResult;
+    }
     let input = x;
     let scratchIdx = 0;
     const scratches = [this.scratchA, this.scratchB];
@@ -187,6 +225,27 @@ export class Mlp {
     const useChain = perPower === undefined && this.policyChain.length > 0;
     if (perPower === undefined && this.policyChain.length === 0) {
       throw new Error('Mlp.forwardWithPolicy: no policy head loaded');
+    }
+    // Native fast path: shared trunk + single policy-head layer. ~9× faster
+    // per call than the JS implementation.
+    if (this.nativeOk && useChain && this.policyChain.length === 1) {
+      const W1Layer = this.layers[0]!;
+      const W2Layer = this.layers[1]!;
+      const Wv = this.layers[2]!;
+      const Wp = this.policyChain[0]!;
+      const valueResult = new Float32Array(Wv.outDim);
+      const policyResult = new Float32Array(Wp.outDim);
+      this.native!(
+        W1Layer.W, W1Layer.b,
+        W2Layer.W, W2Layer.b,
+        Wv.W, Wv.b,
+        Wp.W, Wp.b,
+        x,
+        this.scratchA, this.scratchB,
+        valueResult, policyResult,
+        W1Layer.inDim, W1Layer.outDim, W2Layer.outDim, Wv.outDim, Wp.outDim,
+      );
+      return { value: valueResult, policy: policyResult };
     }
     // Run trunk: all layers EXCEPT the last (which is the value head).
     let input = x;
