@@ -47,6 +47,15 @@ const RUINATION_THRESHOLD = 12;
 // Corruption level at which a region is "ripe" for lasha to sneak into
 const LASHA_SNEAK_THRESHOLD = 7;
 
+// Per-game cutoff rounds for handmade evaluators. process.env access is a
+// JS-Proxy → C++ hop and was eating ~60% of evaluateState self-time when
+// MCTS calls it tens of thousands of times per move. Cache at module load
+// + expose setters; collect-data calls setTenzenCutoff() per game start.
+let tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '2', 10);
+let gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '0', 10);
+export function setTenzenCutoff(n: number): void { tenzenCutoff = n; }
+export function setGormenCutoff(n: number): void { gormenCutoff = n; }
+
 /**
  * Evaluate the game state from `power`'s perspective.
  * Returns a score in [0, 1] where 1 is best for `power`.
@@ -58,12 +67,9 @@ export function evaluateState(state: GameState, power: Power): number {
 
   // Power-specific handmade evaluators for early game. The learned model's
   // evaluation is too flat to guide MCTS effectively.
-  // Env vars control cutoff rounds (0 = disabled).
-  const tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '2', 10);
   if (power === 'tenzen' && tenzenCutoff > 0 && state.round <= tenzenCutoff) {
     return evaluateTenzen(state);
   }
-  const gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '0', 10);
   if (power === 'gormen' && gormenCutoff > 0 && state.round <= gormenCutoff) {
     return evaluateGormenHandmade(state);
   }

@@ -16,6 +16,7 @@ import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS, powerIndex,
   canonicalActionIndex, ACTION_DIM,
   loadModelForPower, clearPerPowerModels, type ModelJson,
+  setTenzenCutoff,
 } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -277,7 +278,6 @@ function runGame(seed: number): GameResult {
   //   - At shift=1, always cutoff=0. Learned head runs the whole game.
   //   - At intermediate shift, linearly mix: P(0) = shift, and the rest
   //     of the mass (1 − shift) follows the (1,2,3,4) shape.
-  const savedTenzenCutoff = process.env['TENZEN_EVAL_CUTOFF'];
   const shift = Math.min(1, Math.max(0,
     parseFloat(process.env['TENZEN_CUTOFF_SHIFT'] ?? '0')));
   let sampledCutoff: number;
@@ -287,7 +287,7 @@ function runGame(seed: number): GameResult {
     const r = rand() * 10;
     sampledCutoff = r < 1 ? 1 : r < 3 ? 2 : r < 6 ? 3 : 4;
   }
-  process.env['TENZEN_EVAL_CUTOFF'] = String(sampledCutoff);
+  setTenzenCutoff(sampledCutoff);
 
   // League assignment. Two modes:
   //  - focus mode: only the focus power uses its dedicated model (current
@@ -472,9 +472,6 @@ function runGame(seed: number): GameResult {
   }
 
   if (leagueActive) clearPerPowerModels();
-  // Restore Tenzen cutoff after per-game randomization
-  if (savedTenzenCutoff !== undefined) process.env['TENZEN_EVAL_CUTOFF'] = savedTenzenCutoff;
-  else delete process.env['TENZEN_EVAL_CUTOFF'];
 
   const winners = state.winners;
   // Rank-based target — works for winner, no-winner exhaustion, AND truncated

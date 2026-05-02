@@ -1,5 +1,5 @@
 export { runMcts, runMctsWithStats, probeMctsSearch, type MctsStats, type TreeProbeStats, reportMctsStats } from './mcts/search.js';
-export { evaluateState } from './evaluate.js';
+export { evaluateState, setTenzenCutoff, setGormenCutoff } from './evaluate.js';
 export { greedyAction } from './greedy.js';
 export type { MctsNode } from './mcts/node.js';
 
