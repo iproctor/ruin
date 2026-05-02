@@ -34,14 +34,14 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
-// MCTS budget. Convergence test (probe-iter-agreement) showed 3k iters picks
-// the same action as 10k in 100% of states. Tenzen gets a bigger budget
-// because its plateaued strategy needs deeper search to surface above the
-// value head's narrow local optimum.
-const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '5000'), 10);
-// Wall-clock safety net. Iter cap is the real budget.
-const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
+// MCTS budget. Time cap governs in practice — per-iter cost grows ~3-8× as
+// the tree fills out (late iters are deep-tree walks), so iter-capping at
+// 3k+ pays for the slow tail without action-quality gains (probe-iter-
+// agreement: 3k matches 10k in 100% of states). Letting MCTS bail at the
+// time cap stops at the natural cliff. 300ms matches in-app gameplay.
+const mctsIterations = parseInt(getArg('--iter', '10000'), 10);
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '10000'), 10);
+const mctsTimeMs = parseInt(getArg('--time', '300'), 10);
 
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
 // the leaf eval. All 4 power models adapt together to the resulting state
