@@ -44,13 +44,11 @@ WORKERS=${WORKERS:-16}
 # heads each iter from the same self-play batch — no FOCUS_POWER, no
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
-TENZEN_CUTOFF_SHIFT=1.0
 # Hall of Fame mix: fraction of games where any given power uses a random
 # snapshot from its hof/<power>/ pool instead of the live model. Guards
 # against training-data collapse by guaranteeing some games show each power
 # executing a known-strong policy.
 HOF_MIX=0.1
-export TENZEN_CUTOFF_SHIFT
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
 TRAIN_WINDOW=${TRAIN_WINDOW:-30}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}

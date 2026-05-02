@@ -16,7 +16,6 @@ import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS, powerIndex,
   canonicalActionIndex, ACTION_DIM,
   loadModelForPower, clearPerPowerModels, type ModelJson,
-  setTenzenCutoff,
 } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -266,28 +265,6 @@ function runGame(seed: number): GameResult {
     rngState = (rngState * 1664525 + 1013904223) >>> 0;
     return rngState / 0xffffffff;
   };
-
-  // Per-game Tenzen cutoff sampled from a schedule controlled by
-  // TENZEN_CUTOFF_SHIFT ∈ [0, 1]:
-  //
-  //   - At shift=0, draw cutoff from {1,2,3,4} with weights (1,2,3,4)/10 —
-  //     distribution weighted toward HIGH cutoffs (handmade for more rounds).
-  //     Canary (2026-04-21) showed pure-learned (shift=1) → tenzen 0% wins,
-  //     handmade-active → tenzen 16.5%. So bias collection toward handmade-
-  //     heavier games. cutoff=0 never sampled at shift=0.
-  //   - At shift=1, always cutoff=0. Learned head runs the whole game.
-  //   - At intermediate shift, linearly mix: P(0) = shift, and the rest
-  //     of the mass (1 − shift) follows the (1,2,3,4) shape.
-  const shift = Math.min(1, Math.max(0,
-    parseFloat(process.env['TENZEN_CUTOFF_SHIFT'] ?? '0')));
-  let sampledCutoff: number;
-  if (rand() < shift) {
-    sampledCutoff = 0;
-  } else {
-    const r = rand() * 10;
-    sampledCutoff = r < 1 ? 1 : r < 3 ? 2 : r < 6 ? 3 : 4;
-  }
-  setTenzenCutoff(sampledCutoff);
 
   // League assignment. Two modes:
   //  - focus mode: only the focus power uses its dedicated model (current
