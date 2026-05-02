@@ -279,12 +279,12 @@ function runMctsCore(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  // Per-power-trained powers: drop the rollout min-depth floor. Rollouts
-  // still run but can exit at the first round change or terminal state — no
-  // guaranteed N plies. Preserves grounded end-of-round evaluation; lets
-  // rollouts abort sooner in short rounds → more MCTS iterations.
+  // Default to r0 (-1, skip rollout) when a per-power model is loaded —
+  // matches the all-r0 training regime that produced the tenzen breakout.
+  // Without a model, fall back to biased-random rollout with the adaptive
+  // min-depth floor. Caller can override via options.rolloutDepth.
   const rolloutDepth = options?.rolloutDepth ?? (
-    modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
+    modelForPowerLoaded(forPower) ? -1 : rolloutDepthForRound(state.round)
   );
   const t0 = Date.now();
   const deadline = t0 + maxTimeMs;
