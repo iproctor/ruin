@@ -51,7 +51,8 @@ const LASHA_SNEAK_THRESHOLD = 7;
 // JS-Proxy → C++ hop and was eating ~60% of evaluateState self-time when
 // MCTS calls it tens of thousands of times per move. Cache at module load
 // + expose setters; collect-data calls setTenzenCutoff() per game start.
-let tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '2', 10);
+// Default 0 = pure learned eval (no handmade fallback).
+let tenzenCutoff = parseInt(process.env['TENZEN_EVAL_CUTOFF'] ?? '0', 10);
 let gormenCutoff = parseInt(process.env['GORMEN_EVAL_CUTOFF'] ?? '0', 10);
 export function setTenzenCutoff(n: number): void { tenzenCutoff = n; }
 export function setGormenCutoff(n: number): void { gormenCutoff = n; }
