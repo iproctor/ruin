@@ -22,15 +22,11 @@ function getArg(flag: string, fallback: string): string {
 const gameCount = parseInt(getArg('--games', '200'), 10);
 const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().length - 1))), 10);
-const epsilon = getArg('--epsilon', '0.1');
-const leagueSize = getArg('--league-size', '0');
-const leagueMix = getArg('--league-mix', '0.5');
-const focusPower = getArg('--focus-power', '');
-const hofMix = getArg('--hof-mix', '0');
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 const iter = getArg('--iter', '');
-const iterOpp = getArg('--iter-opp', '');
+const iterTenzen = getArg('--iter-tenzen', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
+const noRolloutZero = process.argv.includes('--no-rollout-zero');
 
 // Slice the seed space across workers. Use floor + distribute remainder so
 // all `workerCount` workers get a slice rather than packing games into the
@@ -52,7 +48,7 @@ for (let w = 0; w < effectiveWorkers; w++) {
 const perWorker = baseShare + (extras > 0 ? 1 : 0);
 
 console.log(`\n=== Parallel collection ===`);
-console.log(`games: ${gameCount}  workers: ${slices.length}  per-worker: ~${perWorker}  epsilon: ${epsilon}`);
+console.log(`games: ${gameCount}  workers: ${slices.length}  per-worker: ~${perWorker}`);
 console.log(`out:    ${outPath}\n`);
 
 // Truncate per-worker files (collect script appends).
@@ -70,14 +66,10 @@ const processes = slices.map((s, w) =>
       'packages/server/src/scripts/collect-data.ts',
       '--games', String(s.count),
       '--seed', String(s.start),
-      '--epsilon', epsilon,
-      '--league-size', leagueSize,
-      '--league-mix', leagueMix,
-      ...(focusPower ? ['--focus-power', focusPower] : []),
-      '--hof-mix', hofMix,
       ...(iter ? ['--iter', iter] : []),
-      ...(iterOpp ? ['--iter-opp', iterOpp] : []),
+      ...(iterTenzen ? ['--iter-tenzen', iterTenzen] : []),
       ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
+      ...(noRolloutZero ? ['--no-rollout-zero'] : []),
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
 

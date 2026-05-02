@@ -16,12 +16,6 @@ SSH_KEY=${SSH_KEY:-$HOME/.ssh/id_ed25519_hetzner}
 
 GAMES_PER_BATCH=${GAMES_PER_BATCH:-32}
 WORKERS=${WORKERS:-7}
-# Co-training era: no FOCUS_POWER, no LEAGUE_SIZE. See coordinator script
-# for rationale.
-LEAGUE_SIZE=0
-LEAGUE_MIX=0
-HOF_MIX=0.1
-export HOF_MIX
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"
@@ -82,22 +76,6 @@ pull_hof() {
     "${DATA_DIR}/hof/" 2>/dev/null || true
 }
 
-pull_snapshots() {
-  # Pull the most recent LEAGUE_SIZE snapshot filenames from coordinator and
-  # replace local ones so the league pool stays fresh.
-  [ "$LEAGUE_SIZE" -gt 0 ] || return 0
-  local SNAPS
-  SNAPS=$(ssh ${SSH_OPTS} "${COORD_USER}@${COORD_HOST}" \
-    "cd ${COORD_PATH}/packages/ai/data && ls model_iter_*.json 2>/dev/null | sort | tail -${LEAGUE_SIZE}")
-  [ -z "$SNAPS" ] && return 0
-  rm -f "${DATA_DIR}"/model_iter_*.json
-  for snap in $SNAPS; do
-    rsync -az -e "ssh ${SSH_OPTS}" \
-      "${COORD_USER}@${COORD_HOST}:${COORD_PATH}/packages/ai/data/${snap}" \
-      "${DATA_DIR}/${snap}" 2>/dev/null || return 1
-  done
-}
-
 while true; do
   # Restart into the latest script if it's been updated on disk.
   NOW_MTIME=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0")
@@ -109,7 +87,6 @@ while true; do
   # Check git + pull model (+ snapshots if league is on)
   check_and_update && echo "  → updated from git"
   pull_model
-  pull_snapshots
   pull_hof
 
   # Collect a batch
@@ -122,9 +99,7 @@ while true; do
   cd "$ROOT"
   rm -f "${DATA_DIR}/training.jsonl"
   if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0 \
-      --league-size 0 \
-      --hof-mix "$HOF_MIX" \
+      --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
       --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
     mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"

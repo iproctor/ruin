@@ -44,11 +44,6 @@ WORKERS=${WORKERS:-16}
 # heads each iter from the same self-play batch — no FOCUS_POWER, no
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
-# Hall of Fame mix: fraction of games where any given power uses a random
-# snapshot from its hof/<power>/ pool instead of the live model. Guards
-# against training-data collapse by guaranteeing some games show each power
-# executing a known-strong policy.
-HOF_MIX=0.1
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
 TRAIN_WINDOW=${TRAIN_WINDOW:-30}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
@@ -56,11 +51,6 @@ TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
-# League snapshots are obsolete under co-training — opponents always come
-# from each power's own HOF (kept current by the per-iter promotion of all
-# four powers). Forced to 0.
-LEAGUE_SIZE=0
-LEAGUE_MIX=0
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -128,16 +118,11 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-  # Co-training: no --focus-power. All powers use their live per-power
-  # models (with HOF mix), and all powers' visit distributions are recorded
-  # for policy training.
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0 \
-      --league-size 0 \
-      --hof-mix "$HOF_MIX" \
+      --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\]|\[hof\])" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue
