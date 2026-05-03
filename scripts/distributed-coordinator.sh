@@ -246,23 +246,11 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
     T3=$(date +%s)
     cp "$TRAIN_OUT" "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json"
     echo "[iter $ITER] $POWER trained in $((T3 - T2))s → model_${POWER}.json" | tee -a "$LOG_FILE"
-
-    # HOF promotion per power. Promote the prior iter's snapshot (the model
-    # that GENERATED the data), not the freshly-trained one — training drift
-    # must not cause us to HOF the worse trainee.
-    POWER_RANK=$(grep "^avg rank:" "$LOG_FILE" \
-      | tail -1 \
-      | grep -oE "${POWER}:[0-9.]+" \
-      | cut -d: -f2)
-    if [ -n "$POWER_RANK" ] && [ -f "$DATA_DIR/model_${POWER}_iter_${DATA_GEN_ITER}.json" ]; then
-      # No floor (post-r0 rollback 2026-05-03): every iter promotes its prior
-      # snapshot if it beats the worst HOF member. Capacity still caps the
-      # pool, so weak iters age out naturally as stronger ones replace them.
-      python3 "$ROOT/scripts/hof-promote.py" \
-        --iter "$DATA_GEN_ITER" --rank "$POWER_RANK" --power "$POWER" \
-        --min-rank 0.0 \
-        --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
-    fi
+    # HOF promotion is no longer driven by avg-rank from training. The h2h
+    # phase below is the sole gate: a model joins the HOF for its power only
+    # when it beats the ref baseline by H2H_PROMOTE_DELTA. Avoids polluting
+    # the HOF with marginal/regressed iters that pass training metrics but
+    # fail head-to-head against the known-good ref set.
   done
   [ "$TRAIN_OK" -ne 1 ] && continue
 
@@ -431,6 +419,16 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
         echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
+
+        # HOF entry: only h2h-promoted models. Use the h2h win rate as the
+        # rank, --min-rank 0.0 so the gate is purely the h2h verdict above.
+        # Source snapshot is this iter's just-trained model_<P>_iter_NNNN.json.
+        if [ -f "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json" ]; then
+          python3 "$ROOT/scripts/hof-promote.py" \
+            --iter "$ITER" --rank "$CUR" --power "$POWER" \
+            --min-rank 0.0 \
+            --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
+        fi
       else
         echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA})" | tee -a "$LOG_FILE"
       fi
