@@ -232,6 +232,41 @@ while true; do
       rm -f "$OUT_FILE"
       ;;
 
+    bench_baseline)
+      # Same shape as bench_h2h, but --baseline (all 4 powers from ref).
+      # No current_power; results pool into bench_inbox_baseline/ on coord.
+      H2H_GAMES=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('games_per_box',16))" "$CONFIG_PATH" 2>/dev/null)
+      H2H_ITER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('mcts_iter',1000))" "$CONFIG_PATH" 2>/dev/null)
+      OUT_FILE="${DATA_DIR}/bench_baseline_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.json"
+      OUT_DIR="bench_inbox_baseline"
+      echo "[$(date +%H:%M:%S)] baseline batch ${BATCH_COUNTER} (${H2H_GAMES} games, seed ${SEED}, iter ${H2H_ITER})..."
+      T0=$(date +%s)
+      if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+          --baseline \
+          --games "$H2H_GAMES" --seed "$SEED" \
+          --iter "$H2H_ITER" --workers "$WORKERS" \
+          --ref-dir "${DATA_DIR}/ref" \
+          --out "$OUT_FILE" 2>&1; then
+        echo "  ! baseline batch failed, retrying"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      T1=$(date +%s)
+      echo "  ✓ baseline done in $((T1 - T0))s → $(basename "$OUT_FILE")"
+
+      echo "[$(date +%H:%M:%S)] uploading to ${OUT_DIR}..."
+      ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ${REMOTE_PATH}/packages/ai/data/${OUT_DIR}"
+      if ! rsync -az -e "${RSYNC_SSH}" \
+          "$OUT_FILE" \
+          "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/${OUT_DIR}/" 2>/dev/null; then
+        echo "  ! upload failed — keeping local for retry"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      echo "  ✓ uploaded"
+      rm -f "$OUT_FILE"
+      ;;
+
     idle)
       # Coord asks workers to pause (e.g., during training). Sleep then re-poll.
       sleep "$IDLE_SECONDS"

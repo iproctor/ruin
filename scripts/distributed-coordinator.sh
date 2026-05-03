@@ -290,25 +290,84 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ]; then
-    # 3f.0. Ensure baseline exists. Coord runs all-ref self-play once.
+    # 3f.0. Ensure baseline exists. Distributed: workers + coord all
+    # contribute to bench_inbox_baseline/, coord aggregates.
     if [ ! -f "$REF_BASELINE_FILE" ]; then
-      echo "[iter $ITER] h2h: baseline missing, calibrating (${H2H_TARGET_GAMES} all-ref games at iter=${H2H_ITER})..." | tee -a "$LOG_FILE"
-      BASELINE_SEED=$((900000 + ITER * 1000))
+      BL_INBOX="$DATA_DIR/bench_inbox_baseline"
+      rm -rf "$BL_INBOX"
+      mkdir -p "$BL_INBOX"
+
+      write_worker_config "bench_baseline" ""
       BL_T0=$(date +%s)
+      BL_SEED=$((900000 + ITER * 1000))
+      BL_OUT_LOCAL="${BL_INBOX}/coord_$(date +%s).json"
+      echo "[iter $ITER] baseline: coord ${H2H_GAMES_PER_BOX} games (seed ${BL_SEED}), waiting for ${H2H_TARGET_GAMES} total..." | tee -a "$LOG_FILE"
       if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
           --baseline \
-          --games "$H2H_TARGET_GAMES" --seed "$BASELINE_SEED" \
+          --games "$H2H_GAMES_PER_BOX" --seed "$BL_SEED" \
           --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
           --ref-dir "$REF_DIR" \
-          --out "$REF_BASELINE_FILE" 2>&1 \
+          --out "$BL_OUT_LOCAL" 2>&1 \
           | grep -E "^baseline|^  worker" \
           | tee -a "$LOG_FILE"; then
-        echo "  ! baseline calibration failed — h2h cycle skipped" | tee -a "$LOG_FILE"
-        rm -f "$REF_BASELINE_FILE"
-      else
-        BL_T1=$(date +%s)
-        echo "[iter $ITER] baseline calibrated in $((BL_T1 - BL_T0))s" | tee -a "$LOG_FILE"
+        echo "  ! coord baseline batch failed — continuing to wait for workers" | tee -a "$LOG_FILE"
       fi
+
+      # Wait for cluster to fill bench_inbox_baseline/ to target.
+      WAIT_T0=$(date +%s)
+      while true; do
+        TOTAL=$(python3 -c "
+import json, glob
+t = 0
+for f in glob.glob('${BL_INBOX}/*.json'):
+  try: t += json.load(open(f)).get('games', 0)
+  except: pass
+print(t)" 2>/dev/null || echo 0)
+        [ "$TOTAL" -ge "$H2H_TARGET_GAMES" ] && break
+        WAITED=$(($(date +%s) - WAIT_T0))
+        if [ "$WAITED" -gt "$H2H_WAIT_SECS" ]; then
+          echo "  ! baseline: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
+          break
+        fi
+        sleep 30
+      done
+
+      # Aggregate baseline shards → ref_baseline.json.
+      python3 -c "
+import json, glob, sys
+out = sys.argv[1]
+inbox = sys.argv[2]
+itr = int(sys.argv[3])
+agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
+       'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'rounds_w': 0, 'shards': []}
+for f in sorted(glob.glob(f'{inbox}/*.json')):
+    try:
+        d = json.load(open(f))
+        agg['games'] += d['games']
+        agg['completed'] += d['completed']
+        agg['no_winners'] += d['no_winners']
+        agg['co_wins'] += d['co_wins']
+        for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
+        for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        agg['rounds_w'] += d['avg_rounds'] * d['games']
+        agg['shards'].append(f.split('/')[-1])
+    except Exception as e:
+        print(f'shard {f}: {e}', file=sys.stderr)
+g = agg['games'] or 1
+agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
+agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['avg_rounds'] = agg['rounds_w'] / g
+del agg['vp_w']; del agg['rounds_w']
+agg['baseline'] = True
+agg['iter'] = itr
+open(out, 'w').write(json.dumps(agg, indent=2))
+print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*100:.1f}% gormen:{agg[\"win_rates\"][\"gormen\"]*100:.1f}% tenzen:{agg[\"win_rates\"][\"tenzen\"]*100:.1f}% lasha:{agg[\"win_rates\"][\"lasha\"]*100:.1f}% | rounds={agg[\"avg_rounds\"]:.2f} | {len(agg[\"shards\"])} shards')
+" "$REF_BASELINE_FILE" "$BL_INBOX" "$ITER" 2>&1 | tee -a "$LOG_FILE"
+
+      BL_T1=$(date +%s)
+      echo "[iter $ITER] baseline calibrated in $((BL_T1 - BL_T0))s" | tee -a "$LOG_FILE"
     fi
   fi
 
