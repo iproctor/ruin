@@ -299,22 +299,16 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
 
       write_worker_config "bench_baseline" ""
       BL_T0=$(date +%s)
-      BL_SEED=$((900000 + ITER * 1000))
-      BL_OUT_LOCAL="${BL_INBOX}/coord_$(date +%s).json"
-      echo "[iter $ITER] baseline: coord ${H2H_GAMES_PER_BOX} games (seed ${BL_SEED}), waiting for ${H2H_TARGET_GAMES} total..." | tee -a "$LOG_FILE"
-      if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
-          --baseline \
-          --games "$H2H_GAMES_PER_BOX" --seed "$BL_SEED" \
-          --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
-          --ref-dir "$REF_DIR" \
-          --out "$BL_OUT_LOCAL" 2>&1 \
-          | grep -E "^baseline|^  worker" \
-          | tee -a "$LOG_FILE"; then
-        echo "  ! coord baseline batch failed — continuing to wait for workers" | tee -a "$LOG_FILE"
-      fi
+      BL_SEED_BASE=$((900000 + ITER * 1000))
+      echo "[iter $ITER] baseline: contributing batches alongside workers, target ${H2H_TARGET_GAMES} games..." | tee -a "$LOG_FILE"
 
-      # Wait for cluster to fill bench_inbox_baseline/ to target.
+      # Coord keeps running its own bench batches while workers contribute,
+      # rather than running one batch and idling. Each coord batch = 16
+      # games / ~3 min with native MLP. Workers upload async to the same
+      # bench_inbox_baseline/. Loop ends when total games >= target or we
+      # exceed the wait timeout.
       WAIT_T0=$(date +%s)
+      BL_BATCH=0
       while true; do
         TOTAL=$(python3 -c "
 import json, glob
@@ -329,7 +323,20 @@ print(t)" 2>/dev/null || echo 0)
           echo "  ! baseline: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
           break
         fi
-        sleep 30
+        BL_BATCH=$((BL_BATCH + 1))
+        BL_SEED=$((BL_SEED_BASE + BL_BATCH * 100))
+        BL_OUT="${BL_INBOX}/coord_b$(printf '%03d' "$BL_BATCH")_$(date +%s).json"
+        if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+            --baseline \
+            --games "$H2H_GAMES_PER_BOX" --seed "$BL_SEED" \
+            --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
+            --ref-dir "$REF_DIR" \
+            --out "$BL_OUT" 2>&1 \
+            | grep -E "^baseline" \
+            | tee -a "$LOG_FILE"; then
+          echo "  ! coord baseline batch ${BL_BATCH} failed — sleeping" | tee -a "$LOG_FILE"
+          sleep 10
+        fi
       done
 
       # Aggregate baseline shards → ref_baseline.json.
@@ -380,24 +387,13 @@ print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*1
 
       write_worker_config "bench_h2h" "$POWER"
       H2H_T0=$(date +%s)
+      H2H_SEED_BASE=$((100000 + ITER * 1000))
+      echo "[iter $ITER] h2h ${POWER}: contributing batches alongside workers, target ${H2H_TARGET_GAMES} games..." | tee -a "$LOG_FILE"
 
-      H2H_SEED=$((100000 + ITER * 1000))
-      H2H_OUT_LOCAL="${BENCH_INBOX}/coord_$(date +%s).json"
-      echo "[iter $ITER] h2h ${POWER}: coord ${H2H_GAMES_PER_BOX} games (seed ${H2H_SEED})..." | tee -a "$LOG_FILE"
-      if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
-          --current-power "$POWER" \
-          --games "$H2H_GAMES_PER_BOX" --seed "$H2H_SEED" \
-          --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
-          --ref-dir "$REF_DIR" \
-          --out "$H2H_OUT_LOCAL" 2>&1 \
-          | grep -E "^(${POWER}:|^  worker)" \
-          | tee -a "$LOG_FILE"; then
-        echo "  ! coord h2h ${POWER} failed — continuing to wait for workers" | tee -a "$LOG_FILE"
-      fi
-
-      # Wait for workers to fill in the rest. Poll total games across all
-      # files in bench_inbox_<power>/.
+      # Same loop pattern as baseline: coord keeps producing 16-game batches
+      # while workers also upload, instead of running once and idling.
       WAIT_T0=$(date +%s)
+      H2H_BATCH=0
       while true; do
         TOTAL=$(python3 -c "
 import json, glob
@@ -412,7 +408,20 @@ print(t)" 2>/dev/null || echo 0)
           echo "  ! h2h ${POWER}: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
           break
         fi
-        sleep 30
+        H2H_BATCH=$((H2H_BATCH + 1))
+        H2H_SEED=$((H2H_SEED_BASE + H2H_BATCH * 100))
+        H2H_OUT="${BENCH_INBOX}/coord_b$(printf '%03d' "$H2H_BATCH")_$(date +%s).json"
+        if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+            --current-power "$POWER" \
+            --games "$H2H_GAMES_PER_BOX" --seed "$H2H_SEED" \
+            --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
+            --ref-dir "$REF_DIR" \
+            --out "$H2H_OUT" 2>&1 \
+            | grep -E "^${POWER}:" \
+            | tee -a "$LOG_FILE"; then
+          echo "  ! coord h2h ${POWER} batch ${H2H_BATCH} failed — sleeping" | tee -a "$LOG_FILE"
+          sleep 10
+        fi
       done
 
       # Aggregate.
