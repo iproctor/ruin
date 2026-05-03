@@ -83,7 +83,7 @@ push_one() {
 
   echo "[$host] building..."
   ssh ${SSH_OPTS} "${REMOTE_USER}@${host}" \
-    "cd ${REMOTE_PATH} && pnpm --filter engine build && pnpm --filter ai build && make -C packages/ai/native" 2>&1 \
+    "cd ${REMOTE_PATH} && pnpm install && pnpm --filter engine build && pnpm --filter ai build && make -C packages/ai/native" 2>&1 \
     | sed "s/^/[$host] /"
   echo "[$host] ✓ done"
 }
