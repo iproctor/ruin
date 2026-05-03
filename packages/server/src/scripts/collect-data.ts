@@ -34,10 +34,11 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
-// MCTS budget. Iter cap governs; time cap is a safety net. Tenzen gets a
-// bigger budget — bank-then-burst search needs the depth.
+// MCTS budget. Iter cap governs; time cap is a safety net. 3k uniform —
+// iter-compare showed 3k → 5k flips ~15% of decisions but doubles cycle
+// time. Worth the throughput.
 const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '5000'), 10);
+const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '3000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
