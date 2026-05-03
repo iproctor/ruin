@@ -4,11 +4,12 @@ import {
   sampleLegalSummoningAction,
 } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
-import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
-import { policyForState, modelForPowerLoaded } from '../learn/evaluator.js';
+import {
+  policyForState, modelForPowerLoaded, evaluateAllPowersLearned, hasModel,
+} from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -736,14 +737,16 @@ const HARD_ROLLOUT_CAP = 120;
 /** Per-power leaf evaluation: each power's value-head score for the state.
  *  Used for MaxN backup so each tree node tracks values for all four powers
  *  independently, letting opponent nodes pick actions that maximise the
- *  acting opponent's own value (not the AI's negated value). */
+ *  acting opponent's own value (not the AI's negated value).
+ *
+ *  Shares one feature-extraction across the four viewpoints — only the
+ *  hand-encoding block differs per viewpoint — instead of running the full
+ *  854-dim extractor four times. */
 function evaluateAllPowers(state: GameState): Record<Power, number> {
-  return {
-    xarm: evaluateState(state, 'xarm'),
-    gormen: evaluateState(state, 'gormen'),
-    tenzen: evaluateState(state, 'tenzen'),
-    lasha: evaluateState(state, 'lasha'),
-  };
+  if (!hasModel()) {
+    throw new Error('evaluateAllPowers called with no model loaded');
+  }
+  return evaluateAllPowersLearned(state);
 }
 
 /**
