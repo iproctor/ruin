@@ -34,6 +34,7 @@ function getArg(flag: string, fallback: string): string {
   return i !== -1 && args[i + 1] ? args[i + 1]! : fallback;
 }
 
+const baselineMode = process.argv.includes('--baseline');
 const currentPower = getArg('--current-power', '') as Power;
 const refDir = getArg('--ref-dir', path.resolve('packages/ai/data/ref'));
 const dataDir = getArg('--data-dir', path.resolve('packages/ai/data'));
@@ -49,8 +50,8 @@ const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
-if (!ALL_POWERS.includes(currentPower)) {
-  console.error(`--current-power must be one of ${ALL_POWERS.join('|')}`);
+if (!baselineMode && !ALL_POWERS.includes(currentPower)) {
+  console.error(`--current-power must be one of ${ALL_POWERS.join('|')}, or pass --baseline`);
   process.exit(1);
 }
 
@@ -64,7 +65,9 @@ const lineup: Record<Power, string> = {
   xarm: '', gormen: '', tenzen: '', lasha: '',
 };
 for (const p of ALL_POWERS) {
-  if (p === currentPower) {
+  // baseline mode: every power loads from ref/. h2h mode: current_power
+  // loads from data/, others from ref/.
+  if (!baselineMode && p === currentPower) {
     lineup[p] = path.join(dataDir, `model_${p}.json`);
   } else {
     lineup[p] = path.join(refDir, `model_${p}_ref.json`);
@@ -75,7 +78,8 @@ for (const p of ALL_POWERS) {
   }
   loadModelForPower(p, loadModel(lineup[p]));
 }
-console.log(`[h2h] lineup: ${ALL_POWERS.map(p => `${p}=${path.basename(lineup[p])}`).join(' ')}`);
+const tag = baselineMode ? '[baseline]' : '[h2h]';
+console.log(`${tag} lineup: ${ALL_POWERS.map(p => `${p}=${path.basename(lineup[p])}`).join(' ')}`);
 
 const MCTS_SUBACTION_KINDS = new Set<string>([
   'battle_hit_assignment', 'tenzen_discard', 'dial_place_token',
@@ -144,7 +148,11 @@ function runGame(seed: number): GameOutcome {
   };
 }
 
-console.log(`[h2h] ${currentPower} current vs others=ref | games=${gameCount} seed=${baseSeed} iter=${mctsIterations}`);
+if (baselineMode) {
+  console.log(`[baseline] all-ref | games=${gameCount} seed=${baseSeed} iter=${mctsIterations}`);
+} else {
+  console.log(`[h2h] ${currentPower} current vs others=ref | games=${gameCount} seed=${baseSeed} iter=${mctsIterations}`);
+}
 
 const t0 = Date.now();
 const wins: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
@@ -173,7 +181,8 @@ for (let i = 0; i < gameCount; i++) {
 const wallTimeS = (Date.now() - t0) / 1000;
 
 const result = {
-  current_power: currentPower,
+  current_power: baselineMode ? 'baseline' : currentPower,
+  baseline: baselineMode,
   games: gameCount,
   completed,
   no_winners: noWinners,
@@ -193,4 +202,8 @@ if (outPath) {
   console.log(`\n[h2h] wrote ${outPath}`);
 }
 
-console.log(`\n[h2h] ${currentPower}: ${(result.win_rates[currentPower] * 100).toFixed(1)}% win rate (${wins[currentPower]}/${gameCount}, ${wallTimeS.toFixed(0)}s)`);
+if (baselineMode) {
+  console.log(`\n[baseline] ${ALL_POWERS.map(p => `${p}:${(result.win_rates[p]*100).toFixed(1)}%`).join(' ')} (${gameCount} games, ${wallTimeS.toFixed(0)}s)`);
+} else {
+  console.log(`\n[h2h] ${currentPower}: ${(result.win_rates[currentPower] * 100).toFixed(1)}% win rate (${wins[currentPower]}/${gameCount}, ${wallTimeS.toFixed(0)}s)`);
+}

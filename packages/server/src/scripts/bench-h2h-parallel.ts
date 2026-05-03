@@ -22,6 +22,7 @@ function getArg(flag: string, fallback: string): string {
   return i !== -1 && args[i + 1] ? args[i + 1]! : fallback;
 }
 
+const baselineMode = process.argv.includes('--baseline');
 const currentPower = getArg('--current-power', '');
 const gameCount = parseInt(getArg('--games', '600'), 10);
 const baseSeed = parseInt(getArg('--seed', '100000'), 10);
@@ -30,10 +31,11 @@ const mctsIter = getArg('--iter', '1000');
 const refDir = getArg('--ref-dir', path.resolve('packages/ai/data/ref'));
 const outPath = getArg('--out', '');
 
-if (!currentPower) {
-  console.error('--current-power required');
+if (!baselineMode && !currentPower) {
+  console.error('--current-power required (or pass --baseline)');
   process.exit(1);
 }
+const matchTag = baselineMode ? 'baseline' : currentPower;
 
 const effectiveWorkers = Math.min(workerCount, gameCount);
 const baseShare = Math.floor(gameCount / effectiveWorkers);
@@ -45,12 +47,12 @@ for (let w = 0; w < effectiveWorkers; w++) {
   const count = baseShare + (w < extras ? 1 : 0);
   slices.push({
     start: cursor, count,
-    out: path.resolve(`/tmp/bench_h2h_${currentPower}_w${w}_${process.pid}.json`),
+    out: path.resolve(`/tmp/bench_h2h_${matchTag}_w${w}_${process.pid}.json`),
   });
   cursor += count;
 }
 
-console.log(`\n=== H2H bench: ${currentPower} ===`);
+console.log(`\n=== ${baselineMode ? 'Baseline' : 'H2H'} bench: ${matchTag} ===`);
 console.log(`games: ${gameCount}  workers: ${slices.length}  iter: ${mctsIter}\n`);
 
 interface ShardResult {
@@ -70,13 +72,14 @@ const procs = slices.map((s, w) => new Promise<ShardResult | null>((resolve) => 
   const childArgs = [
     'tsx',
     'packages/server/src/scripts/bench-h2h.ts',
-    '--current-power', currentPower,
     '--games', String(s.count),
     '--seed', String(s.start),
     '--iter', mctsIter,
     '--ref-dir', refDir,
     '--out', s.out,
   ];
+  if (baselineMode) childArgs.push('--baseline');
+  else childArgs.push('--current-power', currentPower);
   const proc = spawn('npx', childArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   let finished = 0;
@@ -131,7 +134,8 @@ for (const r of results) {
 }
 
 const aggregated = {
-  current_power: currentPower,
+  current_power: matchTag,
+  baseline: baselineMode,
   games: totalGames,
   completed: totalCompleted,
   no_winners: totalNoWinners,
@@ -151,7 +155,11 @@ if (outPath) {
   console.log(`\nwrote ${outPath}`);
 }
 
-const cp = currentPower as PowerKey;
-const cw = wins[cp];
-const cwRate = aggregated.win_rates[cp] ?? 0;
-console.log(`\n${currentPower}: ${(cwRate * 100).toFixed(1)}% (${cw}/${totalGames}) | rounds ${aggregated.avg_rounds.toFixed(2)} | ${aggregated.wall_time_s.toFixed(0)}s`);
+if (baselineMode) {
+  console.log(`\nbaseline (${totalGames} games): ${POWERS.map(p => `${p}:${(((aggregated.win_rates[p] ?? 0))*100).toFixed(1)}%`).join(' ')} | rounds ${aggregated.avg_rounds.toFixed(2)} | ${aggregated.wall_time_s.toFixed(0)}s`);
+} else {
+  const cp = currentPower as PowerKey;
+  const cw = wins[cp];
+  const cwRate = aggregated.win_rates[cp] ?? 0;
+  console.log(`\n${currentPower}: ${(cwRate * 100).toFixed(1)}% (${cw}/${totalGames}) | rounds ${aggregated.avg_rounds.toFixed(2)} | ${aggregated.wall_time_s.toFixed(0)}s`);
+}
