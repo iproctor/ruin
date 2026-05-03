@@ -61,6 +61,36 @@ LOG_FILE="$DATA_DIR/training_loop.log"
 
 mkdir -p "$INBOX" "$ARCHIVE"
 
+# H2H bench knobs.
+H2H_ENABLE=${H2H_ENABLE:-1}            # set 0 to skip h2h benches entirely
+H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-600}  # games per power per bench cycle
+H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-100}  # each worker batch contributes this many
+H2H_ITER=${H2H_ITER:-1000}             # MCTS iters per move during bench
+H2H_WAIT_SECS=${H2H_WAIT_SECS:-1800}   # max time to wait per power for workers
+ALL_POWERS=(xarm gormen tenzen lasha)
+REF_DIR="$DATA_DIR/ref"
+
+# Worker dispatch: coord writes worker_config.json; workers rsync it every batch
+# and dispatch on `task`. Default = collect.
+write_worker_config() {
+  local task="$1"
+  local current_power="$2"
+  python3 -c '
+import json, sys
+print(json.dumps({
+  "task": sys.argv[1],
+  "iter": int(sys.argv[2]),
+  "current_power": sys.argv[3],
+  "games_per_box": int(sys.argv[4]),
+  "mcts_iter": int(sys.argv[5]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" \
+    > "$DATA_DIR/worker_config.json"
+}
+
+# Initialize config so workers know to collect.
+write_worker_config "collect" ""
+
+
 # Find the latest existing iter snapshot to continue numbering. Includes both
 # the shared-model snapshots (model_iter_*.json) and per-power focus snapshots
 # (model_<power>_iter_*.json). Otherwise in focus-training mode the shared
@@ -263,6 +293,98 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
         --workers "$BENCH_WORKERS" --out "$BENCH_FILE" 2>&1 \
         | grep -E "^(  [a-z]+ +[0-9]|WIN|DAC|ROUNDS|VP|spread|AGGREGATED|ERRORS|Total wall)" \
         | tee -a "$LOG_FILE"
+  fi
+
+  # 3f. H2H bench cycle. For each power P, swap workers to bench_h2h mode,
+  # contribute coord's own batch, wait for cluster to reach target games,
+  # aggregate. Workers see the task switch via worker_config.json (rsynced
+  # at the top of their loop) and dispatch to bench-h2h-parallel.ts.
+  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ]; then
+    echo "[iter $ITER] h2h cycle (target=${H2H_TARGET_GAMES}/power, iter=${H2H_ITER})" | tee -a "$LOG_FILE"
+    for POWER in "${ALL_POWERS[@]}"; do
+      BENCH_INBOX="$DATA_DIR/bench_inbox_${POWER}"
+      rm -rf "$BENCH_INBOX"
+      mkdir -p "$BENCH_INBOX"
+
+      write_worker_config "bench_h2h" "$POWER"
+      H2H_T0=$(date +%s)
+
+      H2H_SEED=$((100000 + ITER * 1000))
+      H2H_OUT_LOCAL="${BENCH_INBOX}/coord_$(date +%s).json"
+      echo "[iter $ITER] h2h ${POWER}: coord ${H2H_GAMES_PER_BOX} games (seed ${H2H_SEED})..." | tee -a "$LOG_FILE"
+      if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+          --current-power "$POWER" \
+          --games "$H2H_GAMES_PER_BOX" --seed "$H2H_SEED" \
+          --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
+          --ref-dir "$REF_DIR" \
+          --out "$H2H_OUT_LOCAL" 2>&1 \
+          | grep -E "^(${POWER}:|^  worker)" \
+          | tee -a "$LOG_FILE"; then
+        echo "  ! coord h2h ${POWER} failed — continuing to wait for workers" | tee -a "$LOG_FILE"
+      fi
+
+      # Wait for workers to fill in the rest. Poll total games across all
+      # files in bench_inbox_<power>/.
+      WAIT_T0=$(date +%s)
+      while true; do
+        TOTAL=$(python3 -c "
+import json, glob
+t = 0
+for f in glob.glob('${BENCH_INBOX}/*.json'):
+  try: t += json.load(open(f)).get('games', 0)
+  except: pass
+print(t)" 2>/dev/null || echo 0)
+        [ "$TOTAL" -ge "$H2H_TARGET_GAMES" ] && break
+        WAITED=$(($(date +%s) - WAIT_T0))
+        if [ "$WAITED" -gt "$H2H_WAIT_SECS" ]; then
+          echo "  ! h2h ${POWER}: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
+          break
+        fi
+        sleep 30
+      done
+
+      # Aggregate.
+      AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
+      python3 -c "
+import json, glob, sys
+power = sys.argv[1]
+out = sys.argv[2]
+inbox = sys.argv[3]
+itr = int(sys.argv[4])
+agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
+       'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'rounds_w': 0, 'shards': []}
+for f in sorted(glob.glob(f'{inbox}/*.json')):
+    try:
+        d = json.load(open(f))
+        agg['games'] += d['games']
+        agg['completed'] += d['completed']
+        agg['no_winners'] += d['no_winners']
+        agg['co_wins'] += d['co_wins']
+        for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
+        for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        agg['rounds_w'] += d['avg_rounds'] * d['games']
+        agg['shards'].append(f.split('/')[-1])
+    except Exception as e:
+        print(f'shard {f}: {e}', file=sys.stderr)
+g = agg['games'] or 1
+agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
+agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['avg_rounds'] = agg['rounds_w'] / g
+del agg['vp_w']; del agg['rounds_w']
+agg['current_power'] = power
+agg['iter'] = itr
+open(out, 'w').write(json.dumps(agg, indent=2))
+print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][power]*100:.1f}% | rounds={agg[\"avg_rounds\"]:.2f} | {len(agg[\"shards\"])} shards')
+" "$POWER" "$AGG_OUT" "$BENCH_INBOX" "$ITER" 2>&1 | tee -a "$LOG_FILE"
+
+      H2H_T1=$(date +%s)
+      echo "[iter $ITER] h2h ${POWER}: $((H2H_T1 - H2H_T0))s total" | tee -a "$LOG_FILE"
+    done
+
+    # Return workers to collect mode.
+    write_worker_config "collect" ""
   fi
 
   ITER=$((ITER + 1))

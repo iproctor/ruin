@@ -82,13 +82,14 @@ while true; do
     exec "$0" "$@"
   fi
 
-  # 1. Pull the canonical model + any per-power models from the coordinator.
-  # Also pulls hof_mix.txt — coordinator writes an adaptive HOF mix after
-  # each training iter based on current class freq.
-  echo "[$(date +%H:%M:%S)] checking coordinator for new model..."
+  # 1. Pull canonical + per-power models, the worker_config, the HOF dir,
+  # and the reference (h2h baseline) dir. worker_config.json drives task
+  # dispatch below; coord rewrites it between phases.
+  echo "[$(date +%H:%M:%S)] syncing from coordinator..."
   if ! rsync -az -e "${RSYNC_SSH}" \
       --include='model.json' --include='model_xarm.json' --include='model_gormen.json' \
       --include='model_tenzen.json' --include='model_lasha.json' \
+      --include='worker_config.json' \
       --include='hof_mix.txt' --exclude='*' \
       "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
       "${DATA_DIR}/" 2>/dev/null; then
@@ -103,6 +104,24 @@ while true; do
   rsync -az --delete -e "${RSYNC_SSH}" \
     "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/hof/" \
     "${DATA_DIR}/hof/" 2>/dev/null || true
+
+  # 1a.1. Mirror the reference snapshot dir (frozen baseline for h2h benches).
+  mkdir -p "${DATA_DIR}/ref"
+  rsync -az --delete -e "${RSYNC_SSH}" \
+    "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/ref/" \
+    "${DATA_DIR}/ref/" 2>/dev/null || true
+
+  # 1b. Read worker_config.json. Falls back to a default "collect" task if
+  # the coord hasn't written one. Coord transitions task between collect and
+  # bench_h2h to drive worker behaviour without changing scripts.
+  CONFIG_PATH="${DATA_DIR}/worker_config.json"
+  if [ -f "$CONFIG_PATH" ]; then
+    TASK=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('task','collect'))" "$CONFIG_PATH" 2>/dev/null || echo collect)
+    CONFIG_ITER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('iter',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+  else
+    TASK="collect"
+    CONFIG_ITER=0
+  fi
 
   # 1b. If league training is on, pull the most recent LEAGUE_SIZE snapshots.
   # Ask the coordinator which filenames are the newest, wipe old local ones,
@@ -131,49 +150,96 @@ while true; do
     fi
   fi
 
-  # 2. Always collect — don't wait for model changes. Small batches + continuous
-  #    uploads maximize throughput. The coordinator trains when enough arrive.
-
-  # 3. Run a collection batch with a unique seed range.
+  # 2. Dispatch on task.
   BATCH_COUNTER=$((BATCH_COUNTER + 1))
   TS=$(date +%s)
   SEED=$((WORKER_ID * 100000000 + BATCH_COUNTER * 1000))
-  BATCH_FILE="${DATA_DIR}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
-  rm -f "${DATA_DIR}/training.jsonl"
 
-  echo "[$(date +%H:%M:%S)] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})..."
-  T0=$(date +%s)
-  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0 \
-      --league-size 0 \
-      --hof-mix "$HOF_MIX" \
-      --dirichlet-weight 0.25 \
-      --out "${DATA_DIR}/training.jsonl" 2>&1; then
-    echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
-    sleep "$IDLE_SECONDS"
-    continue
-  fi
-  if [ ! -s "${DATA_DIR}/training.jsonl" ]; then
-    echo "  ! collection produced no samples, retrying"
-    sleep "$IDLE_SECONDS"
-    continue
-  fi
-  mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
-  SAMPLES=$(wc -l < "$BATCH_FILE")
-  T1=$(date +%s)
-  echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")"
+  case "$TASK" in
+    collect)
+      BATCH_FILE="${DATA_DIR}/training_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.jsonl"
+      rm -f "${DATA_DIR}/training.jsonl"
+      echo "[$(date +%H:%M:%S)] collect batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED}, iter ${CONFIG_ITER})..."
+      T0=$(date +%s)
+      if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+          --workers "$WORKERS" --epsilon 0 \
+          --league-size 0 \
+          --hof-mix "$HOF_MIX" \
+          --dirichlet-weight 0.25 \
+          --out "${DATA_DIR}/training.jsonl" 2>&1; then
+        echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      if [ ! -s "${DATA_DIR}/training.jsonl" ]; then
+        echo "  ! no samples, retrying"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
+      SAMPLES=$(wc -l < "$BATCH_FILE")
+      T1=$(date +%s)
+      echo "  ✓ ${SAMPLES} samples in $((T1 - T0))s → $(basename "$BATCH_FILE")"
 
-  # 4. Upload to coordinator inbox.
-  echo "[$(date +%H:%M:%S)] uploading batch to coordinator inbox..."
-  if ! rsync -az -e "${RSYNC_SSH}" \
-      "$BATCH_FILE" \
-      "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/inbox/" 2>/dev/null; then
-    echo "  ! upload failed — keeping local file for next attempt"
-    sleep "$IDLE_SECONDS"
-    continue
-  fi
-  echo "  ✓ uploaded"
+      echo "[$(date +%H:%M:%S)] uploading to inbox..."
+      if ! rsync -az -e "${RSYNC_SSH}" \
+          "$BATCH_FILE" \
+          "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/inbox/" 2>/dev/null; then
+        echo "  ! upload failed — keeping local for retry"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      echo "  ✓ uploaded"
+      rm -f "$BATCH_FILE"
+      ;;
 
-  # 5. (Optional) clean up local copy to save disk on the laptop.
-  rm -f "$BATCH_FILE"
+    bench_h2h)
+      H2H_POWER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('current_power',''))" "$CONFIG_PATH" 2>/dev/null)
+      H2H_GAMES=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('games_per_box',100))" "$CONFIG_PATH" 2>/dev/null)
+      H2H_ITER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('mcts_iter',1000))" "$CONFIG_PATH" 2>/dev/null)
+      if [ -z "$H2H_POWER" ]; then
+        echo "  ! bench_h2h task has no current_power, sleeping"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      OUT_FILE="${DATA_DIR}/bench_h2h_${H2H_POWER}_W${WORKER_ID}_b$(printf '%05d' "$BATCH_COUNTER")_t${TS}.json"
+      OUT_DIR="bench_inbox_${H2H_POWER}"
+      echo "[$(date +%H:%M:%S)] h2h ${H2H_POWER} batch ${BATCH_COUNTER} (${H2H_GAMES} games, seed ${SEED}, iter ${H2H_ITER})..."
+      T0=$(date +%s)
+      if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+          --current-power "$H2H_POWER" \
+          --games "$H2H_GAMES" --seed "$SEED" \
+          --iter "$H2H_ITER" --workers "$WORKERS" \
+          --ref-dir "${DATA_DIR}/ref" \
+          --out "$OUT_FILE" 2>&1; then
+        echo "  ! bench failed, retrying"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      T1=$(date +%s)
+      echo "  ✓ bench done in $((T1 - T0))s → $(basename "$OUT_FILE")"
+
+      echo "[$(date +%H:%M:%S)] uploading to ${OUT_DIR}..."
+      ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p ${REMOTE_PATH}/packages/ai/data/${OUT_DIR}"
+      if ! rsync -az -e "${RSYNC_SSH}" \
+          "$OUT_FILE" \
+          "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/${OUT_DIR}/" 2>/dev/null; then
+        echo "  ! upload failed — keeping local for retry"
+        sleep "$IDLE_SECONDS"
+        continue
+      fi
+      echo "  ✓ uploaded"
+      rm -f "$OUT_FILE"
+      ;;
+
+    idle)
+      # Coord asks workers to pause (e.g., during training). Sleep then re-poll.
+      sleep "$IDLE_SECONDS"
+      ;;
+
+    *)
+      echo "  ! unknown task '$TASK', sleeping"
+      sleep "$IDLE_SECONDS"
+      ;;
+  esac
 done
