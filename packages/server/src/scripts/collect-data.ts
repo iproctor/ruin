@@ -60,6 +60,14 @@ const dirichletNoise = dirichletWeight > 0
 // Restored 2026-05-03 (post-r0 rollback to iter 1650 era).
 const hofMix = parseFloat(getArg('--hof-mix', '0'));
 
+// Temperature on summoning move selection. For rounds <= tempRounds, sample
+// the action proportional to MCTS visit counts (τ=1) instead of taking
+// max-visits (τ=0). AlphaZero-style exploration: generates diverse opening
+// trajectories so off-policy lines enter training data, breaking r0 mutual
+// blindness over many games. Set 0 to disable. Visit counts in the training
+// sample are unchanged — temperature only affects which action is *played*.
+const tempRounds = parseInt(getArg('--temp-rounds', '2'), 10);
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
@@ -147,6 +155,29 @@ function computeRankTarget(state: GameState, winners: Power[] | null): number[] 
   return target;
 }
 
+/**
+ * Sample an action proportional to MCTS visit counts (τ=1). Falls back to
+ * the highest-visit action if visit totals are 0. Caller passes a per-game
+ * deterministic RNG so re-running the same seed reproduces the trajectory.
+ */
+function sampleActionByVisits(
+  visitCounts: ReadonlyArray<{ action: Action; visits: number }>,
+  rand: () => number,
+): Action {
+  if (visitCounts.length === 0) {
+    throw new Error('sampleActionByVisits: empty visit list');
+  }
+  let total = 0;
+  for (const vc of visitCounts) total += vc.visits;
+  if (total <= 0) return visitCounts[0]!.action;
+  let r = rand() * total;
+  for (const vc of visitCounts) {
+    r -= vc.visits;
+    if (r <= 0) return vc.action;
+  }
+  return visitCounts[visitCounts.length - 1]!.action;
+}
+
 // ── Subaction kinds that go through MCTS (anything strategic, not stylistic) ─
 
 const MCTS_SUBACTION_KINDS = new Set<string>([
@@ -183,9 +214,10 @@ function logCollectError(seed: number, kind: string, state: GameState, pending: 
 
 function runGame(seed: number): GameResult {
   const samples: Sample[] = [];
-  // Deterministic per-game RNG for HOF lineup selection so a re-run of the
-  // same seed reproduces the exact opponent assignment. Linear-congruential
-  // — quality is fine for biased sampling.
+  // Deterministic per-game RNG, shared by HOF lineup selection and τ=1
+  // visit-proportional move sampling so a re-run of the same seed reproduces
+  // the same trajectory. Linear-congruential — quality is fine for biased
+  // sampling.
   let rngState = (seed * 2654435761) >>> 0;
   const rand = (): number => {
     rngState = (rngState * 1664525 + 1013904223) >>> 0;
@@ -242,7 +274,12 @@ function runGame(seed: number): GameResult {
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
         });
-        action = stats.action;
+        // τ=1 visit-proportional sampling for opening rounds; τ=0 (max-visits)
+        // afterward. Only the *played* action changes — visit counts written
+        // to the training sample below still reflect the full MCTS distribution.
+        action = (tempRounds > 0 && state.round <= tempRounds)
+          ? sampleActionByVisits(stats.visitCounts, rand)
+          : stats.action;
         // Multiple legal actions can canonicalise to the same slot — sum visits.
         const slotVisits: Record<string, number> = {};
         for (const { action: a, visits } of stats.visitCounts) {
