@@ -34,7 +34,7 @@ WORKER_ID=${WORKER_ID:-0}
 # batch (no idle workers, no fractional distribution). Coordinator has 16
 # workers → 32 games. Worker boxes have 7 workers but use the same 32 (so
 # each does ~4-5 games sequentially — fine, just slower wall clock).
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-32}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-16}
 WORKERS=${WORKERS:-16}
 # Co-training: under MaxN MCTS every game already exercises all 4 power
 # value heads (each leaf eval uses all 4 perspectives, each opponent node
@@ -42,7 +42,7 @@ WORKERS=${WORKERS:-16}
 # heads each iter from the same self-play batch — no FOCUS_POWER, no
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
 TRAIN_WINDOW=${TRAIN_WINDOW:-30}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
