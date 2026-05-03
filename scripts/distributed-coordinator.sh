@@ -59,8 +59,13 @@ mkdir -p "$INBOX" "$ARCHIVE"
 
 # H2H bench knobs.
 H2H_ENABLE=${H2H_ENABLE:-1}            # set 0 to skip h2h benches entirely
-H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-600}  # games per power per bench cycle
-H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-100}  # each worker batch contributes this many
+H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-640}  # games per power per bench cycle
+H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-16}   # each worker batch contributes this many
+                                             # 40 bundles × 16 games = 640 target.
+                                             # Smaller bundles → workers re-poll
+                                             # the coord every ~3 min instead of
+                                             # every ~17 min so config changes
+                                             # propagate fast.
 H2H_ITER=${H2H_ITER:-1000}             # MCTS iters per move during bench
 H2H_WAIT_SECS=${H2H_WAIT_SECS:-1800}   # max time to wait per power for workers
 ALL_POWERS=(xarm gormen tenzen lasha)
