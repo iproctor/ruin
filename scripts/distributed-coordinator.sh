@@ -83,10 +83,6 @@ print(json.dumps({
     > "$DATA_DIR/worker_config.json"
 }
 
-# Initialize config so workers know to collect.
-write_worker_config "collect" ""
-
-
 # Find the latest existing iter snapshot to continue numbering. Includes both
 # the shared-model snapshots (model_iter_*.json) and per-power focus snapshots
 # (model_<power>_iter_*.json). Otherwise in focus-training mode the shared
@@ -99,6 +95,10 @@ START_ITER=$(ls "$DATA_DIR"/model_iter_*.json "$DATA_DIR"/model_*_iter_*.json 2>
 START_ITER=${START_ITER:-0}
 ITER=$((START_ITER + 1))
 BATCH_COUNTER=0
+
+# Initialize worker config (now that ITER is defined). Workers read this on
+# their next loop iteration and dispatch on the `task` field.
+write_worker_config "collect" ""
 
 {
   echo ""
