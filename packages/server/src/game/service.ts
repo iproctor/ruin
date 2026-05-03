@@ -33,6 +33,23 @@ export interface AiSlot { power: string | null; locked: boolean }
 
 const ALL_POWERS_LIST: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
+// Action kinds the AI runs MCTS for (vs greedy). Must match
+// MCTS_SUBACTION_KINDS in collect-data.ts plus summoning_action — the
+// strategy training saw must be the strategy gameplay uses.
+const MCTS_ACTION_KINDS = new Set<string>([
+  'summoning_action',
+  'battle_hit_assignment',
+  'tenzen_discard',
+  'dial_place_token',
+  'dial_remove_corruption',
+  'dial_remove_world_token',
+  'upgrade_choice',
+  'world_choice',
+  'hero_removal',
+  'corruption_harvest_choice',
+  'card_on_play_choice',
+]);
+
 function normalizeAiSlots(raw: unknown): AiSlot[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((x) => {
@@ -224,7 +241,10 @@ async function maybeRunAiTurns(gameId: string, state: GameState, currentSeq: num
 
     let action: Action;
     try {
-      if (current.pendingAction!.actionKind === 'summoning_action') {
+      // Run MCTS for the same set of action kinds collect-data uses, so the
+      // model plays consistently across training and runtime. Other kinds
+      // (e.g. forced_discard) fall back to greedy.
+      if (MCTS_ACTION_KINDS.has(current.pendingAction!.actionKind)) {
         action = await runMctsInWorker(current, waitingFor);
       } else {
         action = greedyAction(current, waitingFor);

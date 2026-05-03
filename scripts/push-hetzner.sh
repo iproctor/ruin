@@ -55,8 +55,6 @@ RSYNC_EXCLUDES=(
   --exclude='packages/ai/data/training_smoke.jsonl'
   --exclude='packages/ai/data/training_padded.jsonl'
   --exclude='packages/ai/data/training_test.jsonl'
-  --exclude='packages/ai/data/training_recent_tenzen.jsonl'
-  --exclude='packages/ai/data/demos.jsonl'
   --exclude='packages/ai/data/model_box_latest.json'
   --exclude='/tmp'
 )
@@ -81,7 +79,7 @@ push_one() {
 
   echo "[$host] building..."
   ssh ${SSH_OPTS} "${REMOTE_USER}@${host}" \
-    "cd ${REMOTE_PATH} && pnpm --filter engine build && pnpm --filter ai build" 2>&1 \
+    "cd ${REMOTE_PATH} && pnpm --filter engine build && pnpm --filter ai build && make -C packages/ai/native" 2>&1 \
     | sed "s/^/[$host] /"
   echo "[$host] ✓ done"
 }

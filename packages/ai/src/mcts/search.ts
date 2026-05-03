@@ -4,11 +4,12 @@ import {
   sampleLegalSummoningAction,
 } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
-import { evaluateState } from '../evaluate.js';
 import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
-import { policyForState, modelForPowerLoaded } from '../learn/evaluator.js';
+import {
+  policyForState, modelForPowerLoaded, evaluateAllPowersLearned, hasModel,
+} from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ export interface MctsOptions {
 // practice. Set high enough that fast searches (shallow trees, no rollout)
 // don't artificially bottleneck.
 const DEFAULT_ITERATIONS = 100000;
-const DEFAULT_TIME_MS = 300;
+const DEFAULT_TIME_MS = 400;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
 
 /**
@@ -279,12 +280,12 @@ function runMctsCore(
   root.childPriors = priors;
   const usePuct = priors !== null;
 
-  // Per-power-trained powers: drop the rollout min-depth floor. Rollouts
-  // still run but can exit at the first round change or terminal state — no
-  // guaranteed N plies. Preserves grounded end-of-round evaluation; lets
-  // rollouts abort sooner in short rounds → more MCTS iterations.
+  // Default to r0 (-1, skip rollout) when a per-power model is loaded —
+  // matches the all-r0 training regime that produced the tenzen breakout.
+  // Without a model, fall back to biased-random rollout with the adaptive
+  // min-depth floor. Caller can override via options.rolloutDepth.
   const rolloutDepth = options?.rolloutDepth ?? (
-    modelForPowerLoaded(forPower) ? 0 : rolloutDepthForRound(state.round)
+    modelForPowerLoaded(forPower) ? -1 : rolloutDepthForRound(state.round)
   );
   const t0 = Date.now();
   const deadline = t0 + maxTimeMs;
@@ -736,14 +737,16 @@ const HARD_ROLLOUT_CAP = 120;
 /** Per-power leaf evaluation: each power's value-head score for the state.
  *  Used for MaxN backup so each tree node tracks values for all four powers
  *  independently, letting opponent nodes pick actions that maximise the
- *  acting opponent's own value (not the AI's negated value). */
+ *  acting opponent's own value (not the AI's negated value).
+ *
+ *  Shares one feature-extraction across the four viewpoints — only the
+ *  hand-encoding block differs per viewpoint — instead of running the full
+ *  854-dim extractor four times. */
 function evaluateAllPowers(state: GameState): Record<Power, number> {
-  return {
-    xarm: evaluateState(state, 'xarm'),
-    gormen: evaluateState(state, 'gormen'),
-    tenzen: evaluateState(state, 'tenzen'),
-    lasha: evaluateState(state, 'lasha'),
-  };
+  if (!hasModel()) {
+    throw new Error('evaluateAllPowers called with no model loaded');
+  }
+  return evaluateAllPowersLearned(state);
 }
 
 /**

@@ -1,5 +1,5 @@
-import type { GameState, Power, RegionId, FollowerClass, TokenType } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, followersInRegion, getRegionDomination } from '@ruin/engine';
+import type { GameState, Power, RegionId, FollowerClass, TokenType, FollowerInstance } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, getRegionDomination } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -171,6 +171,17 @@ const DOMINATION_LEADER_DIMS = (POWERS.length + 1) * REGION_ORDER.length;
 // (typical max ~6-12 actions per power per game).
 const SUMMONING_TURNS_DIMS = POWERS.length;
 
+// Offset of the viewpoint hand block within the full feature vector. The
+// hand encoding is the only viewpoint-dependent slice; everything before and
+// after this range is identical across viewpoints. Used by
+// extractFeaturesAllPowers to clone one base vector and re-encode just the
+// hand for each of the 4 viewpoints.
+export const HAND_BLOCK_OFFSET =
+  GLOBAL_DIMS +
+  POWERS.length * PER_POWER +
+  REGION_ORDER.length * PER_REGION +
+  WORLD_TRACK_DIMS;
+
 export const FEATURE_DIM =
   GLOBAL_DIMS +
   POWERS.length * PER_POWER +
@@ -186,8 +197,16 @@ export const FEATURE_DIM =
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Count regions where `power` would optimistically earn a dial counter this round. */
-function optimisticDac(state: GameState, power: Power): number {
+/**
+ * Count regions where `power` would optimistically earn a dial counter this
+ * round. The per-region follower lists are passed in so callers can share one
+ * scan of state.powers[*].followers across all 4 powers.
+ */
+function optimisticDac(
+  state: GameState,
+  power: Power,
+  regionFigs: Record<string, FollowerInstance[]>,
+): number {
   let count = 0;
   const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
   const lashaRavers = state.powers['lasha']?.upgradesInPlay.includes('lasha_ravers_up') ?? false;
@@ -203,7 +222,7 @@ function optimisticDac(state: GameState, power: Power): number {
       if (ecstasy) continue;
       const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
       let attack = 0;
-      const figs = followersInRegion(state, r);
+      const figs = regionFigs[r]!;
       for (const f of figs) {
         if (f.tipped || (f.controlledBy ?? f.power) !== 'xarm') continue;
         if (f.class === 'warrior' || f.class === 'incarnation') attack++;
@@ -216,7 +235,7 @@ function optimisticDac(state: GameState, power: Power): number {
       const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
       if (warCry && !changer) continue;
 
-      const rFigs = followersInRegion(state, r);
+      const rFigs = regionFigs[r]!;
       const cultists = rFigs.filter(f => !f.tipped && (f.controlledBy ?? f.power) === power && f.class === 'cultist').length;
       let warriors = 0;
       if (power === 'lasha' && lashaRavers) {
@@ -240,11 +259,38 @@ function optimisticDac(state: GameState, power: Power): number {
   return count;
 }
 
+/**
+ * Build a per-region follower list in one pass over state.powers[*].followers.
+ * Same ordering as the engine's followersInRegion (active-powers iteration
+ * order). Used to share the scan across the many follower-by-region lookups
+ * inside extractFeatures (per-region per-power, fate shield, lasha protected,
+ * potential corruption, expected ruin, optimisticDac).
+ */
+function buildRegionFollowers(state: GameState): Record<string, FollowerInstance[]> {
+  const out: Record<string, FollowerInstance[]> = Object.create(null);
+  for (const r of REGION_ORDER) out[r] = [];
+  for (const p of state.activePowers) {
+    const followers = state.powers[p]?.followers;
+    if (!followers) continue;
+    for (const f of followers) {
+      const rid = f.regionId;
+      if (rid !== null && out[rid] !== undefined) out[rid]!.push(f);
+    }
+  }
+  return out;
+}
+
 // ── Extractor ────────────────────────────────────────────────────────────────
 
 export function extractFeatures(state: GameState, viewpoint: Power): Float32Array {
   const out = new Float32Array(FEATURE_DIM);
   let i = 0;
+
+  // Single scan of state.powers[*].followers, bucketed by region. Shared
+  // across the per-region/per-power loops, fate-shield/lasha-protected loops,
+  // potential-corruption + expected-ruin loops, and optimisticDac. Replaces
+  // ~140 individual followersInRegion calls.
+  const regionFigs = buildRegionFollowers(state);
 
   // ── Global ──────────────────────────────────────────────────────────────
   out[i++] = state.round / 10;
@@ -261,7 +307,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     out[i++] = ps.dialPosition / DIAL_MAX[p];
     // Optimistic expected DAC: count regions where this power would earn a
     // dial counter assuming optimistic outcomes (xarm kills, others' cultists survive).
-    out[i++] = Math.min(optimisticDac(state, p) / 3, 1);
+    out[i++] = Math.min(optimisticDac(state, p, regionFigs) / 3, 1);
     // PP as fraction of base (1.0 = full budget, 0 = spent). A +1 PP change
     // on a base-6 power is a 0.17 shift — much more visible than the old /10.
     out[i++] = ps.basePowerPoints > 0 ? ps.powerPoints / ps.basePowerPoints : 0;
@@ -335,7 +381,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       out[i++] = Math.min((region.corruptionTokens[p] ?? 0) / 12, 1);
       // Skip tipped (dead-but-not-cleared) figures — they no longer contribute
       // to combat or domination this round.
-      const figs = followersInRegion(state, r).filter(
+      const figs = regionFigs[r]!.filter(
         f => !f.tipped && (f.controlledBy ?? f.power) === p,
       );
       out[i++] = Math.min(figs.length / 6, 1);
@@ -392,7 +438,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       let count = region.tokens.filter(x => x === t).length;
       if (t === 'chaos_stone' &&
           state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-          followersInRegion(state, r).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
+          regionFigs[r]!.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
         count += 2;
       }
       out[i++] = Math.min(count / 3, 1);
@@ -440,7 +486,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const region = state.regions[r];
     let pCult = 0, pWar = 0, pInc = 0;
     if (region) {
-      for (const f of followersInRegion(state, r)) {
+      for (const f of regionFigs[r]!) {
         if (!f.protected || f.tipped) continue;
         if (f.class === 'cultist') pCult++;
         else if (f.class === 'warrior') pWar++;
@@ -459,7 +505,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const region = state.regions[r];
     let n = 0;
     if (region) {
-      for (const f of followersInRegion(state, r)) {
+      for (const f of regionFigs[r]!) {
         if (!f.protected || f.tipped) continue;
         if ((f.controlledBy ?? f.power) === 'lasha') n++;
       }
@@ -481,7 +527,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
       const warCry = region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
       if (warCry && !changer) { out[i++] = 0; continue; }
 
-      const rFigs = followersInRegion(state, r);
+      const rFigs = regionFigs[r]!;
       const cultists = rFigs.filter(f =>
         !f.tipped && (f.controlledBy ?? f.power) === p && f.class === 'cultist'
       ).length;
@@ -514,7 +560,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
     const fatespinnerBonus =
       state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-      followersInRegion(state, r).some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+      regionFigs[r]!.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
     out[i++] = (corrTokens + chaosStones + fatespinnerBonus + potentialPerRegion[ri]!) >= 12 ? 1 : 0;
   }
 
@@ -557,6 +603,35 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
 
 export function powerIndex(power: Power): number {
   return POWERS.indexOf(power);
+}
+
+/**
+ * Extract features for all four viewpoints in one shot. The bulk of the
+ * vector is viewpoint-independent — only the hand block (CHAOS_CARD_IDS.length
+ * slots starting at HAND_BLOCK_OFFSET) varies by viewpoint. We compute the
+ * full vector once with viewpoint='xarm', then for each other power copy that
+ * buffer and rewrite the hand block.
+ *
+ * Used by `evaluateAllPowersLearned` to skip 3 of the 4 redundant feature
+ * extractions per leaf evaluation.
+ */
+export function extractFeaturesAllPowers(state: GameState): Record<Power, Float32Array> {
+  const base = extractFeatures(state, 'xarm');
+  const result = { xarm: base } as Record<Power, Float32Array>;
+  for (const p of POWERS) {
+    if (p === 'xarm') continue;
+    const view = base.slice();
+    for (let k = 0; k < CHAOS_CARD_IDS.length; k++) view[HAND_BLOCK_OFFSET + k] = 0;
+    const ps = state.powers[p];
+    if (ps) {
+      for (const cardId of ps.hand) {
+        const idx = CHAOS_CARD_INDEX.get(cardId);
+        if (idx !== undefined) view[HAND_BLOCK_OFFSET + idx] = 1;
+      }
+    }
+    result[p] = view;
+  }
+  return result;
 }
 
 // Debug helper — ensures our dim math is right.

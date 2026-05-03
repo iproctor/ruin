@@ -15,8 +15,6 @@
  * Usage: pnpm tsx packages/server/src/scripts/probe-card-value.ts
  */
 
-process.env['TENZEN_EVAL_CUTOFF'] = '0';  // force learned eval
-
 import {
   createInitialState, applyAction, autoAdvance, GameLog, getLegalActions,
   sampleLegalSummoningAction, enumerateBattleHitStrategies, makeRng,

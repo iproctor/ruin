@@ -44,13 +44,6 @@ WORKERS=${WORKERS:-16}
 # heads each iter from the same self-play batch — no FOCUS_POWER, no
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
-TENZEN_CUTOFF_SHIFT=1.0
-# Hall of Fame mix: fraction of games where any given power uses a random
-# snapshot from its hof/<power>/ pool instead of the live model. Guards
-# against training-data collapse by guaranteeing some games show each power
-# executing a known-strong policy.
-HOF_MIX=0.1
-export TENZEN_CUTOFF_SHIFT
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
 TRAIN_WINDOW=${TRAIN_WINDOW:-30}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
@@ -58,11 +51,6 @@ TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_EVERY=${BENCH_EVERY:-5}
 BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
-# League snapshots are obsolete under co-training — opponents always come
-# from each power's own HOF (kept current by the per-iter promotion of all
-# four powers). Forced to 0.
-LEAGUE_SIZE=0
-LEAGUE_MIX=0
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -130,16 +118,11 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-  # Co-training: no --focus-power. All powers use their live per-power
-  # models (with HOF mix), and all powers' visit distributions are recorded
-  # for policy training.
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
-      --workers "$WORKERS" --epsilon 0 \
-      --league-size 0 \
-      --hof-mix "$HOF_MIX" \
+      --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
-      | grep -E "^(  worker|.*samples →|\[league\]|\[hof\])" | tee -a "$LOG_FILE"; then
+      | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
     sleep 5
     continue
@@ -187,20 +170,6 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # Demonstration data: high-VP tenzen wins extracted from human play. Used
-  # ONLY for tenzen training (see per-power loop below). These samples carry
-  # above-plateau outcomes self-play never produces — applying them to other
-  # powers would make their value heads pessimistic on demo states.
-  DEMO_FILE="$DATA_DIR/demos.jsonl"
-  TENZEN_RECENT="$DATA_DIR/training_recent_tenzen.jsonl"
-  if [ -f "$DEMO_FILE" ]; then
-    cat "$RECENT_FILE" "$DEMO_FILE" > "$TENZEN_RECENT"
-    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
-    echo "  · tenzen-only: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
-  else
-    rm -f "$TENZEN_RECENT"
-  fi
-
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
   # invocation filters samples to that power and updates only its own
   # model_<power>.json. Sequential to keep CPU usage bounded.
@@ -211,17 +180,34 @@ while true; do
     TRAIN_OUT="$DATA_DIR/model_${POWER}.json"
     WARM_SRC="$DATA_DIR/model_${POWER}.json"
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
-    # Tenzen runs on a wider trunk (1024/256) — bigger brain, after a
-    # production warm-start basin proved to inflate value-head MAE by 33%
-    # vs fresh init on the same data.
+    # Tenzen + lasha run on a wider trunk (1024/256) — bigger brain. Tenzen
+    # was promoted after a production warm-start basin proved to inflate
+    # value-head MAE by 33% vs fresh init on the same data; lasha promoted
+    # 2026-05-03 after an extended 0.06–0.23 oscillation. Lasha gets a
+    # one-time fresh start (empty warm-start) — the existing 512/128
+    # checkpoint can't be reused at the new width anyway.
     HIDDEN_ARGS=()
-    [ "$POWER" = "tenzen" ] && HIDDEN_ARGS=(--hidden1 1024 --hidden2 256)
-    # Tenzen-only training file (self-play + demos) when present.
-    TRAIN_IN="$RECENT_FILE"
-    [ "$POWER" = "tenzen" ] && [ -f "$TENZEN_RECENT" ] && TRAIN_IN="$TENZEN_RECENT"
+    case "$POWER" in
+      tenzen|lasha) HIDDEN_ARGS=(--hidden1 1024 --hidden2 256) ;;
+    esac
+    # Skip warm-start when the saved model exists but its architecture
+    # doesn't match the current --hidden{1,2}. For now this only fires for
+    # lasha during the 512/128 → 1024/256 transition; once a wide-trunk
+    # model_lasha.json is saved, warm-start resumes naturally.
+    EFFECTIVE_WARM="$WARM_SRC"
+    if [ "$POWER" = "lasha" ] && [ -f "$WARM_SRC" ]; then
+      OLD_H1=$(python3 -c "import json,sys
+m=json.load(open(sys.argv[1]))
+ls=m.get('layers',[])
+print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
+      if [ "$OLD_H1" != "1024" ]; then
+        EFFECTIVE_WARM=""
+        echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
+      fi
+    fi
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$TRAIN_IN" --out "$TRAIN_OUT" \
-        --iter "$ITER" --power "$POWER" --warm-start "$WARM_SRC" \
+        --in "$RECENT_FILE" --out "$TRAIN_OUT" \
+        --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
         --scalar-value --lr 5e-4 \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
         "${HIDDEN_ARGS[@]}" 2>&1 \

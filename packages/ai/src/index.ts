@@ -4,7 +4,7 @@ export { greedyAction } from './greedy.js';
 export type { MctsNode } from './mcts/node.js';
 
 // Learned evaluator pipeline
-export { extractFeatures, FEATURE_DIM, POWERS, powerIndex } from './learn/features.js';
+export { extractFeatures, extractFeaturesAllPowers, FEATURE_DIM, HAND_BLOCK_OFFSET, POWERS, powerIndex } from './learn/features.js';
 export {
   ACTION_DIM,
   canonicalActionIndex,

@@ -1094,3 +1094,107 @@ Tenzen
     Patch extended to shape-check policy head too.
 
     Awaiting iter 1637+ post-fix to see fresh-init metrics.
+
+  May 1          Handmade evaluators removed; cutoff-2 leak fixed
+    Discovered: TENZEN_EVAL_CUTOFF defaulted to 2, so handmade
+    evaluateTenzen ran for rounds 1-2 of every BENCH and UI game
+    silently — three eval regimes in production:
+      - Collection: cutoff=0 via TENZEN_CUTOFF_SHIFT=1.0 (correct)
+      - Bench / fork experiments / server gameplay: cutoff=2
+        (handmade rounds 1-2)
+      - All bench numbers we'd been reacting to (8.3% peak etc.)
+        were partially handmade-driven, not pure-learned
+    Rather than fix the default, ripped out all per-power handmade
+    evaluators (evaluateTenzen, evaluateGormen, evaluateLasha,
+    evaluateXarm, evaluateGormenHandmade, ~750 lines). evaluateState
+    is now: terminal check → evaluateLearned (or throw if no model
+    loaded). One regime everywhere.
+
+    Removed:
+    - cutoff env vars and the cached module-level cutoffs
+    - setTenzenCutoff / setGormenCutoff exports
+    - collect-data per-game cutoff sampling logic
+    - TENZEN_CUTOFF_SHIFT env var in coord + worker scripts
+    - handmade evaluator implementations and their helpers
+
+  May 1          ONNX experiment: 3.4× per-call but slower in MCTS
+    Hypothesis: the JS-side Mlp matmul was 42% of self-play wall
+    time per CPU profile; onnxruntime-node native binding could
+    speed it up. Built a converter (convert_to_onnx.py), bench
+    showed 0.054ms/call vs 0.184ms/call on a single forward pass
+    (3.4× speedup, numerically identical).
+
+    Cascaded async through MCTS (10+ files, evaluator → evaluate
+    → search → callers). Got pnpm headless running.
+
+    Result: ONNX r0 → 2845 iters/300ms, JSON r0 → 3175 iters/300ms.
+    JSON ~10% FASTER under MCTS context. The async/Promise overhead
+    per await (microtask scheduling, tensor allocation, Promise.all
+    in evaluateAllPowers) outweighs the per-call inference speedup.
+    The 3.4× bench was inside an async loop, so the overhead was
+    already there; in MCTS the work amplifies it.
+
+    Reverted entirely. Both the ONNX commit and its revert dropped
+    locally; the failing pushes to GitHub had been triggered by an
+    accidentally-staged 1.6 GB training_padded.jsonl.
+
+  May 1          BIG RESET: all-r0 trial
+    Tenzen-only r0 had failed (asymmetric value-head calibration —
+    other powers' models stayed grounded by their own rollouts and
+    hit OOD states they hadn't seen). Switching every power to r0
+    so all 4 models adapt together. Coupled with:
+    - All 4 models reverted to iter 1645 snapshots
+    - inbox/ and archive/ wiped (training on fresh r0 data only)
+    - 5k iters uniform (was 3k+rollout for non-tenzen, 4k+rollout
+      for tenzen); per-iter cost lower without rollout walks so
+      iter count can rise
+    - --no-rollout-zero opt-out flag
+
+    First iter 1651 (fresh init): tenzen 5.7%. Initial dip as the
+    value head re-calibrates to r0-MCTS's state distribution.
+
+  May 1          Tenzen breakout under all-r0
+    Within 3 iters of fresh init:
+      iter 1651:  tenzen 5.7% (fresh init)
+      iter 1652:  tenzen 7.8%
+      iter 1653:  tenzen 15.3%
+      iter 1654:  tenzen 20.0% (peak)
+      iter 1655:  tenzen 17.5%
+      iter 1656:  tenzen 16.4%
+    xarm dropped 65% → 55% over the same window. Closest the four
+    powers have ever been to balanced. The "value head re-calibrates
+    over a few iters" hypothesis was confirmed exactly.
+
+  May 2          Demo path retired
+    With tenzen organically at 17%, the 50× replicated demo data
+    was no longer carrying its weight. Removed:
+    - demos.jsonl + training_recent_tenzen.jsonl on coord
+    - coord script demo-concat block + tenzen-specific TRAIN_IN
+    - push-hetzner exclude rules
+
+    Tenzen now trains on the same self-play batch as everyone else.
+
+  May 2          collect-data.ts cleanup
+    Cumulative dead code from old training regimes:
+    - League mode (--league-size, --league-mix, snapshotPool) —
+      LEAGUE_SIZE=0 hardcoded everywhere since co-training era
+    - HOF mix logic — only loaded inside the focus branch which
+      is unreachable
+    - Focus power (--focus-power, focusPowerModel,
+      mctsOpponentIterations, currentModelPowers visit gate)
+    - livePerPowerModels — only consulted inside focus
+    - Per-game RNG — only used for epsilon (already 0)
+    - maxRoundCap = 999 truncation guard — value unreachable
+    - Sample emission gate currentModelPowers.has() — under co-
+      training every power's visits are wanted; gate is no-op
+
+    collect-data.ts: 506 → 275 lines. collect-parallel + worker +
+    coord scripts also stripped of pass-through flags.
+
+  May 2          MCTS r0 default
+    Search.ts default rolloutDepth flipped: per-power-model-loaded
+    now defaults to -1 (skip rollout, value head leaf eval) instead
+    of 0 (rollout with no min-depth floor). Matches the regime
+    training has been using since the all-r0 trial. In-app gameplay
+    (server, headless, bench) now plays the way the model was trained.
+    Caller can override via options.rolloutDepth.
