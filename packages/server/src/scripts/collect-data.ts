@@ -15,7 +15,7 @@ import {
 } from '@ruin/engine';
 import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS, powerIndex,
-  canonicalActionIndex, ACTION_DIM,
+  canonicalActionIndex, ACTION_DIM, loadModelForPower, type ModelJson,
 } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -34,10 +34,10 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
-// MCTS budget. Iter cap governs; time cap is a safety net. 3k uniform —
-// iter-compare showed 3k → 5k flips ~15% of decisions but doubles cycle
-// time. Worth the throughput.
-const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
+// MCTS budget. Iter cap governs; time cap is a safety net. 5k uniform —
+// post-r0 rollback (2026-05-03) bumped from 3k to 5k for all powers since
+// r0 throws away the rollout signal and depth becomes the only refutation.
+const mctsIterations = parseInt(getArg('--iter', '5000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
@@ -54,7 +54,45 @@ const dirichletNoise = dirichletWeight > 0
   ? { alpha: dirichletAlpha, weight: dirichletWeight }
   : undefined;
 
+// HOF mix: per game, for each power, with this probability swap the live
+// per-power model for a random hall-of-fame snapshot for that power. Reduces
+// overfitting to the current opponent policy distribution. 0 disables.
+// Restored 2026-05-03 (post-r0 rollback to iter 1650 era).
+const hofMix = parseFloat(getArg('--hof-mix', '0'));
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+
+// Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
+// and the HOF pools BEFORE any HOF swap, so each game can pick its lineup
+// fresh. Empty pools = HOF inactive for that power.
+const livePerPowerModels: Partial<Record<Power, ModelJson>> = {};
+const hofModelsByPower: Partial<Record<Power, ModelJson[]>> = {};
+{
+  const dataDir = path.resolve('packages/ai/data');
+  for (const p of ALL_POWERS) {
+    const live = path.join(dataDir, `model_${p}.json`);
+    if (fs.existsSync(live)) {
+      try { livePerPowerModels[p] = JSON.parse(fs.readFileSync(live, 'utf-8')) as ModelJson; }
+      catch { /* malformed file — fall through to shared model */ }
+    }
+    if (hofMix > 0) {
+      const hofDir = path.join(dataDir, 'hof', p);
+      if (fs.existsSync(hofDir)) {
+        const files = fs.readdirSync(hofDir)
+          .filter(f => f.endsWith('.json') && f !== 'manifest.json');
+        const pool: ModelJson[] = [];
+        for (const f of files) {
+          try { pool.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson); }
+          catch { /* skip malformed */ }
+        }
+        if (pool.length > 0) {
+          hofModelsByPower[p] = pool;
+          console.log(`[hof] ${p}: ${pool.length} snapshots loaded (mix=${hofMix})`);
+        }
+      }
+    }
+  }
+}
 
 // Output dir + append-mode handle (multiple runs accumulate).
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -145,6 +183,39 @@ function logCollectError(seed: number, kind: string, state: GameState, pending: 
 
 function runGame(seed: number): GameResult {
   const samples: Sample[] = [];
+  // Deterministic per-game RNG for HOF lineup selection so a re-run of the
+  // same seed reproduces the exact opponent assignment. Linear-congruential
+  // — quality is fine for biased sampling.
+  let rngState = (seed * 2654435761) >>> 0;
+  const rand = (): number => {
+    rngState = (rngState * 1664525 + 1013904223) >>> 0;
+    return rngState / 0xffffffff;
+  };
+
+  // HOF lineup: per power, with probability hofMix replace the live model
+  // with a random HOF snapshot for that power. Live model is the default.
+  // Models persist between games, so we always re-load every power's choice
+  // at the start of each game (no carry-over from the previous game's HOF
+  // selection).
+  if (hofMix > 0) {
+    const swaps: string[] = [];
+    for (const p of ALL_POWERS) {
+      const pool = hofModelsByPower[p];
+      const useHof = pool && pool.length > 0 && rand() < hofMix;
+      if (useHof) {
+        const pick = pool![Math.floor(rand() * pool!.length)]!;
+        loadModelForPower(p, pick);
+        swaps.push(p);
+      } else if (livePerPowerModels[p]) {
+        loadModelForPower(p, livePerPowerModels[p]!);
+      }
+    }
+    if (swaps.length > 0 && seed % 8 === 0) {
+      // Logging every game would flood; sample to keep the tail readable.
+      console.log(`  · seed ${seed} HOF lineup: ${swaps.join(',')}`);
+    }
+  }
+
   let { state } = autoAdvance({
     state: createInitialState({
       gameId: `collect-${seed}`,
@@ -156,7 +227,6 @@ function runGame(seed: number): GameResult {
   });
 
   let actionCount = 0;
-  let ts = Date.now()
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) break;
     const pending = state.pendingAction;
@@ -208,8 +278,6 @@ function runGame(seed: number): GameResult {
 
     try {
       const result = applyAction(state, action);
-      console.log('step', Date.now() - ts)
-      ts = Date.now()
       state = result.state;
     } catch (err) {
       logCollectError(seed, 'apply', state, pending, err, { action });

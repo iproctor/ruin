@@ -121,6 +121,7 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
+      --hof-mix 0.15 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
@@ -229,15 +230,12 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
       | grep -oE "${POWER}:[0-9.]+" \
       | cut -d: -f2)
     if [ -n "$POWER_RANK" ] && [ -f "$DATA_DIR/model_${POWER}_iter_${DATA_GEN_ITER}.json" ]; then
-      HOF_FLOOR="0.3"
-      # Tenzen uses VP/50 target (not rank target like the others), so
-      # absolute values are different. ~7 VP avg = 0.14, ~10 VP = 0.20.
-      # Floor 0.10 (= 5 VP avg) lets HOF fill steadily while still
-      # discriminating utterly stuck snapshots.
-      [ "$POWER" = "tenzen" ] && HOF_FLOOR="0.10"
+      # No floor (post-r0 rollback 2026-05-03): every iter promotes its prior
+      # snapshot if it beats the worst HOF member. Capacity still caps the
+      # pool, so weak iters age out naturally as stronger ones replace them.
       python3 "$ROOT/scripts/hof-promote.py" \
         --iter "$DATA_GEN_ITER" --rank "$POWER_RANK" --power "$POWER" \
-        --min-rank "$HOF_FLOOR" \
+        --min-rank 0.0 \
         --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
     fi
   done
