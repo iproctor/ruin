@@ -180,14 +180,34 @@ while true; do
     TRAIN_OUT="$DATA_DIR/model_${POWER}.json"
     WARM_SRC="$DATA_DIR/model_${POWER}.json"
     [ ! -f "$WARM_SRC" ] && WARM_SRC="$DATA_DIR/model.json"
-    # Tenzen runs on a wider trunk (1024/256) — bigger brain, after a
-    # production warm-start basin proved to inflate value-head MAE by 33%
-    # vs fresh init on the same data.
+    # Tenzen + lasha run on a wider trunk (1024/256) — bigger brain. Tenzen
+    # was promoted after a production warm-start basin proved to inflate
+    # value-head MAE by 33% vs fresh init on the same data; lasha promoted
+    # 2026-05-03 after an extended 0.06–0.23 oscillation. Lasha gets a
+    # one-time fresh start (empty warm-start) — the existing 512/128
+    # checkpoint can't be reused at the new width anyway.
     HIDDEN_ARGS=()
-    [ "$POWER" = "tenzen" ] && HIDDEN_ARGS=(--hidden1 1024 --hidden2 256)
+    case "$POWER" in
+      tenzen|lasha) HIDDEN_ARGS=(--hidden1 1024 --hidden2 256) ;;
+    esac
+    # Skip warm-start when the saved model exists but its architecture
+    # doesn't match the current --hidden{1,2}. For now this only fires for
+    # lasha during the 512/128 → 1024/256 transition; once a wide-trunk
+    # model_lasha.json is saved, warm-start resumes naturally.
+    EFFECTIVE_WARM="$WARM_SRC"
+    if [ "$POWER" = "lasha" ] && [ -f "$WARM_SRC" ]; then
+      OLD_H1=$(python3 -c "import json,sys
+m=json.load(open(sys.argv[1]))
+ls=m.get('layers',[])
+print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
+      if [ "$OLD_H1" != "1024" ]; then
+        EFFECTIVE_WARM=""
+        echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
+      fi
+    fi
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
-        --iter "$ITER" --power "$POWER" --warm-start "$WARM_SRC" \
+        --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
         --scalar-value --lr 5e-4 \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
         "${HIDDEN_ARGS[@]}" 2>&1 \
