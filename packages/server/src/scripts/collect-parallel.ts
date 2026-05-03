@@ -26,6 +26,7 @@ const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'))
 const iter = getArg('--iter', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
 const hofMix = getArg('--hof-mix', '');
+const tempRounds = getArg('--temp-rounds', '');
 const noRolloutZero = process.argv.includes('--no-rollout-zero');
 
 // Slice the seed space across workers. Use floor + distribute remainder so
@@ -69,6 +70,7 @@ const processes = slices.map((s, w) =>
       ...(iter ? ['--iter', iter] : []),
       ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
       ...(hofMix ? ['--hof-mix', hofMix] : []),
+      ...(tempRounds ? ['--temp-rounds', tempRounds] : []),
       ...(noRolloutZero ? ['--no-rollout-zero'] : []),
       '--out', s.out,
     ], { stdio: ['ignore', 'pipe', 'pipe'] });
