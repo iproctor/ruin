@@ -46,7 +46,7 @@ export interface MctsOptions {
 // practice. Set high enough that fast searches (shallow trees, no rollout)
 // don't artificially bottleneck.
 const DEFAULT_ITERATIONS = 100000;
-const DEFAULT_TIME_MS = 300;
+const DEFAULT_TIME_MS = 400;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
 
 /**
