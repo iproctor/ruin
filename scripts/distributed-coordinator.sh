@@ -430,7 +430,12 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
             --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
         fi
       else
-        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA})" | tee -a "$LOG_FILE"
+        # Revert: not promoted means the candidate failed the gate, so its
+        # live model_<P>.json gets rolled back to ref. Otherwise rejected
+        # iters compound: next iter trains/collects from the rejected model
+        # instead of the known-good one. AlphaZero discipline.
+        cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
+        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
       fi
     done
 
