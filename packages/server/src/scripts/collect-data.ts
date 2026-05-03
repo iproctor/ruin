@@ -38,15 +38,12 @@ const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'))
 // iter-compare showed 3k → 5k flips ~15% of decisions but doubles cycle
 // time. Worth the throughput.
 const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '3000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
 // the leaf eval. All 4 power models adapt together to the resulting state
 // distribution. --no-rollout-zero falls back to default rollout.
 const allRolloutZero = !process.argv.includes('--no-rollout-zero');
-const iterBudgetFor = (p: Power): number =>
-  p === 'tenzen' ? mctsTenzenIterations : mctsIterations;
 const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 
 // Dirichlet noise on root priors (training-time exploration). Weight 0
@@ -170,7 +167,7 @@ function runGame(seed: number): GameResult {
     try {
       if (pending.actionKind === 'summoning_action') {
         const stats = runMctsWithStats(state, pending.waitingFor, {
-          iterations: iterBudgetFor(pending.waitingFor),
+          iterations: mctsIterations,
           timeMs: mctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
@@ -187,7 +184,7 @@ function runGame(seed: number): GameResult {
         visitsForSample = slotVisits;
       } else if (MCTS_SUBACTION_KINDS.has(pending.actionKind)) {
         action = runMcts(state, pending.waitingFor, {
-          iterations: iterBudgetFor(pending.waitingFor),
+          iterations: mctsIterations,
           timeMs: mctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),

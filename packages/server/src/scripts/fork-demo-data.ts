@@ -41,20 +41,13 @@ const maxForks = parseInt(getArg('--max-forks', '40'), 10);
 // than every decision. Set 0 to fall back to per-decision forking.
 const fromRound = parseInt(getArg('--from-round', '2'), 10);
 const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
-const mctsTenzenIterations = parseInt(getArg('--iter-tenzen', '4000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 const rolloutPolicyArg = getArg('--rollout-policy', 'off') as 'off' | 'all' | 'tenzen' | 'except-tenzen';
-// Tenzen-only rollout=0 + 5x iters: skip rollouts on tenzen leaves (let
-// the demo-trained value head's prediction stand) and use the saved
-// compute on deeper search instead.
-const tenzenRolloutZero = process.argv.includes('--tenzen-rollout-zero');
+// All-r0: skip rollouts everywhere; value head is the leaf eval.
+const allRolloutZero = !process.argv.includes('--no-rollout-zero');
+const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 const VP_TARGET = 50;
 if (!gameId) { console.error('--game required'); process.exit(1); }
-
-const iterBudgetFor = (p: Power): number =>
-  p === 'tenzen' ? mctsTenzenIterations : mctsIterations;
-const rolloutDepthFor = (p: Power): number | undefined =>
-  p === 'tenzen' && tenzenRolloutZero ? -1 : undefined;
 
 interface Sample {
   x: number[];
@@ -104,12 +97,11 @@ function playToEnd(initialState: GameState): { samples: Sample[]; finalState: Ga
 
     try {
       if (pending.actionKind === 'summoning_action') {
-        const rd = rolloutDepthFor(waiter);
         const stats = runMctsWithStats(state, waiter, {
-          iterations: iterBudgetFor(waiter),
+          iterations: mctsIterations,
           timeMs: mctsTimeMs,
           rolloutPolicy: rolloutPolicyArg,
-          ...(rd !== undefined ? { rolloutDepth: rd } : {}),
+          ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
         });
         action = stats.action;
         const slotVisits: Record<string, number> = {};
@@ -138,13 +130,12 @@ function playToEnd(initialState: GameState): { samples: Sample[]; finalState: Ga
           pending.actionKind === 'hero_removal' ||
           pending.actionKind === 'corruption_harvest_choice' ||
           pending.actionKind === 'card_on_play_choice';
-        const rd2 = rolloutDepthFor(waiter);
         action = useMcts
           ? runMcts(state, waiter, {
-              iterations: iterBudgetFor(waiter),
+              iterations: mctsIterations,
               timeMs: mctsTimeMs,
               rolloutPolicy: rolloutPolicyArg,
-              ...(rd2 !== undefined ? { rolloutDepth: rd2 } : {}),
+              ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
             })
           : greedyAction(state, waiter);
       }

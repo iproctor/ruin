@@ -24,7 +24,6 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().length - 1))), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 const iter = getArg('--iter', '');
-const iterTenzen = getArg('--iter-tenzen', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
 const noRolloutZero = process.argv.includes('--no-rollout-zero');
 
@@ -67,7 +66,6 @@ const processes = slices.map((s, w) =>
       '--games', String(s.count),
       '--seed', String(s.start),
       ...(iter ? ['--iter', iter] : []),
-      ...(iterTenzen ? ['--iter-tenzen', iterTenzen] : []),
       ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
       ...(noRolloutZero ? ['--no-rollout-zero'] : []),
       '--out', s.out,
