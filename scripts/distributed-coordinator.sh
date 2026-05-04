@@ -58,7 +58,9 @@ LOG_FILE="$DATA_DIR/training_loop.log"
 mkdir -p "$INBOX" "$ARCHIVE"
 
 # H2H bench knobs.
-H2H_ENABLE=${H2H_ENABLE:-1}            # set 0 to skip h2h benches entirely
+H2H_ENABLE=${H2H_ENABLE:-0}            # set 1 to enable h2h benches; default off
+                                       # to let multi-iter training accumulate
+                                       # before testing against ref
 H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-640}  # games per power per bench cycle
 H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-16}   # each worker batch contributes this many
                                              # 40 bundles × 16 games = 640 target.
@@ -151,10 +153,8 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
-      --hof-mix 0.10 \
-      --temp-rounds 0 \
-      --iter 3000 \
-      --no-rollout-zero \
+      --hof-mix 0.15 \
+      --temp-rounds 2 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"

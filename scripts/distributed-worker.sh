@@ -40,9 +40,9 @@ LEAGUE_SIZE=0
 LEAGUE_MIX=0
 TENZEN_CUTOFF_SHIFT=1.0
 export TENZEN_CUTOFF_SHIFT
-HOF_MIX=0.10
+HOF_MIX=0.15
 export HOF_MIX
-TEMP_ROUNDS=${TEMP_ROUNDS:-0}
+TEMP_ROUNDS=${TEMP_ROUNDS:-2}
 export TEMP_ROUNDS
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -169,8 +169,6 @@ while true; do
           --hof-mix "$HOF_MIX" \
           --temp-rounds "$TEMP_ROUNDS" \
           --dirichlet-weight 0.25 \
-          --iter 3000 \
-          --no-rollout-zero \
           --out "${DATA_DIR}/training.jsonl" 2>&1; then
         echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
         sleep "$IDLE_SECONDS"
