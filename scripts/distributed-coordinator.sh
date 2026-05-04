@@ -151,7 +151,7 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
-      --hof-mix 0 \
+      --hof-mix 0.10 \
       --temp-rounds 0 \
       --iter 3000 \
       --no-rollout-zero \
