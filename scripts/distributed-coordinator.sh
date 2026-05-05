@@ -155,6 +155,7 @@ while true; do
       --dirichlet-weight 0.25 \
       --hof-mix 0.15 \
       --temp-rounds 2 \
+      --iter 3000 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
