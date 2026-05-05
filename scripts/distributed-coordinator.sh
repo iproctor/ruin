@@ -398,7 +398,7 @@ print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*1
     fi
   fi
 
-  if [ "$H2H_ENABLE" = "1" ] && [ -f "$REF_BASELINE_FILE" ]; then
+  if [ "$H2H_ENABLE" = "1" ] && [ -f "$REF_BASELINE_FILE" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
     echo "[iter $ITER] h2h cycle (target=${H2H_TARGET_GAMES}/power, iter=${H2H_ITER})" | tee -a "$LOG_FILE"
     for POWER in "${ALL_POWERS[@]}"; do
       BENCH_INBOX="$DATA_DIR/bench_inbox_${POWER}"
