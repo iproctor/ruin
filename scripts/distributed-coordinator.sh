@@ -205,6 +205,20 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
+  # Demonstration data: high-VP tenzen wins extracted from human play. Used
+  # ONLY for tenzen training (see per-power loop below). These samples carry
+  # above-plateau outcomes self-play never produces — applying them to other
+  # powers would make their value heads pessimistic on demo states.
+  DEMO_FILE="$DATA_DIR/demos.jsonl"
+  TENZEN_RECENT="$DATA_DIR/training_recent_tenzen.jsonl"
+  if [ -f "$DEMO_FILE" ]; then
+    cat "$RECENT_FILE" "$DEMO_FILE" > "$TENZEN_RECENT"
+    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
+    echo "  · tenzen-only: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
+  else
+    rm -f "$TENZEN_RECENT"
+  fi
+
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
   # invocation filters samples to that power and updates only its own
   # model_<power>.json. Sequential to keep CPU usage bounded.
@@ -240,8 +254,11 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
         echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
       fi
     fi
+    # Tenzen-only training file (self-play + demos) when present.
+    TRAIN_IN="$RECENT_FILE"
+    [ "$POWER" = "tenzen" ] && [ -f "$TENZEN_RECENT" ] && TRAIN_IN="$TENZEN_RECENT"
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$RECENT_FILE" --out "$TRAIN_OUT" \
+        --in "$TRAIN_IN" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
         --scalar-value --lr 5e-4 \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
