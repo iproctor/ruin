@@ -58,9 +58,13 @@ LOG_FILE="$DATA_DIR/training_loop.log"
 mkdir -p "$INBOX" "$ARCHIVE"
 
 # H2H bench knobs.
-H2H_ENABLE=${H2H_ENABLE:-0}            # set 1 to enable h2h benches; default off
-                                       # to let multi-iter training accumulate
-                                       # before testing against ref
+H2H_ENABLE=${H2H_ENABLE:-1}            # h2h benches on by default; gated by
+                                       # H2H_AFTER_ITERS to give training a
+                                       # warm-up window before testing
+H2H_AFTER_ITERS=${H2H_AFTER_ITERS:-5}  # skip h2h for the first N iters of
+                                       # this coord run (relative to
+                                       # START_ITER) to let demos + reset
+                                       # accumulate before any promotion
 H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-640}  # games per power per bench cycle
 H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-16}   # each worker batch contributes this many
                                              # 40 bundles × 16 games = 640 target.
@@ -206,17 +210,15 @@ while true; do
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
   # Demonstration data: high-VP tenzen wins extracted from human play. Used
-  # ONLY for tenzen training (see per-power loop below). These samples carry
-  # above-plateau outcomes self-play never produces — applying them to other
-  # powers would make their value heads pessimistic on demo states.
+  # for ALL four powers' training. Each power's trainer call filters demo
+  # samples by `p` field — xarm sees its own demo turns, etc. The trade-off
+  # against pessimism on losing-power slots is accepted in exchange for the
+  # state-distribution shift that lifted iter 1693 xarm to within 4pp of ref.
   DEMO_FILE="$DATA_DIR/demos.jsonl"
-  TENZEN_RECENT="$DATA_DIR/training_recent_tenzen.jsonl"
   if [ -f "$DEMO_FILE" ]; then
-    cat "$RECENT_FILE" "$DEMO_FILE" > "$TENZEN_RECENT"
+    cat "$DEMO_FILE" >> "$RECENT_FILE"
     DEMO_COUNT=$(wc -l < "$DEMO_FILE")
-    echo "  · tenzen-only: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
-  else
-    rm -f "$TENZEN_RECENT"
+    echo "  · all-powers: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
   fi
 
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
@@ -254,11 +256,8 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
         echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
       fi
     fi
-    # Tenzen-only training file (self-play + demos) when present.
-    TRAIN_IN="$RECENT_FILE"
-    [ "$POWER" = "tenzen" ] && [ -f "$TENZEN_RECENT" ] && TRAIN_IN="$TENZEN_RECENT"
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
-        --in "$TRAIN_IN" --out "$TRAIN_OUT" \
+        --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
         --scalar-value --lr 5e-4 \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
@@ -310,7 +309,7 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
-  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ]; then
+  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
     # 3f.0. Ensure baseline exists. Distributed: workers + coord all
     # contribute to bench_inbox_baseline/, coord aggregates.
     if [ ! -f "$REF_BASELINE_FILE" ]; then
