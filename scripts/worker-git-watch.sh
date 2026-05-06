@@ -122,6 +122,7 @@ while true; do
       if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
           --workers "$WORKERS" --epsilon 0 --league-size 0 \
           --hof-mix "$HOF_MIX" --dirichlet-weight 0.25 \
+          --temp-rounds 2 --iter 1000 \
           --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
         mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"
         SAMPLES=$(wc -l < "$BATCH_FILE")
