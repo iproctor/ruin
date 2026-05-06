@@ -224,6 +224,12 @@ function runGame(seed: number): GameResult {
     return rngState / 0xffffffff;
   };
 
+  // τ=1 affects ONE power per game (the "explorer"). Other 3 powers play
+  // max-visit (τ=0). Idea: when only one player explores, their bad picks
+  // produce clean loss signal — vs everyone exploring, where noise blurs
+  // who caused the outcome. Cycles which power is explorer across seeds.
+  const explorerPower: Power = ALL_POWERS[Math.floor(rand() * ALL_POWERS.length)]!;
+
   // HOF lineup: per power, with probability hofMix replace the live model
   // with a random HOF snapshot for that power. Live model is the default.
   // Models persist between games, so we always re-load every power's choice
@@ -274,10 +280,11 @@ function runGame(seed: number): GameResult {
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
         });
-        // τ=1 visit-proportional sampling for opening rounds; τ=0 (max-visits)
-        // afterward. Only the *played* action changes — visit counts written
-        // to the training sample below still reflect the full MCTS distribution.
-        action = (tempRounds > 0 && state.round <= tempRounds)
+        // τ=1 visit-proportional sampling for opening rounds, but ONLY for
+        // the per-game explorer (one randomly-chosen power). Other powers
+        // play max-visit so the explorer's exploration produces a clean
+        // win/loss signal rather than noise blurred across all 4 powers.
+        action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
           ? sampleActionByVisits(stats.visitCounts, rand)
           : stats.action;
         // Multiple legal actions can canonicalise to the same slot — sum visits.

@@ -43,7 +43,7 @@ WORKERS=${WORKERS:-16}
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
-TRAIN_WINDOW=${TRAIN_WINDOW:-30}
+TRAIN_WINDOW=${TRAIN_WINDOW:-90}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
@@ -159,7 +159,7 @@ while true; do
       --dirichlet-weight 0.25 \
       --hof-mix 0.15 \
       --temp-rounds 2 \
-      --iter 3000 \
+      --iter 1000 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
@@ -209,17 +209,6 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
-  # Demonstration data: high-VP tenzen wins extracted from human play. Used
-  # for ALL four powers' training. Each power's trainer call filters demo
-  # samples by `p` field — xarm sees its own demo turns, etc. The trade-off
-  # against pessimism on losing-power slots is accepted in exchange for the
-  # state-distribution shift that lifted iter 1693 xarm to within 4pp of ref.
-  DEMO_FILE="$DATA_DIR/demos.jsonl"
-  if [ -f "$DEMO_FILE" ]; then
-    cat "$DEMO_FILE" >> "$RECENT_FILE"
-    DEMO_COUNT=$(wc -l < "$DEMO_FILE")
-    echo "  · all-powers: appended ${DEMO_COUNT} demo samples" | tee -a "$LOG_FILE"
-  fi
 
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
   # invocation filters samples to that power and updates only its own
