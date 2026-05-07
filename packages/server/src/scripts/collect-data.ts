@@ -122,36 +122,20 @@ interface GameResult {
 }
 
 /**
- * Per-power value target. Most powers get rank-decay (1.0 → 0.0 by projected
- * rounds-to-win); tenzen is overridden with VP/50 because rank collapsed to
- * 0 every game during the plateau and provided no gradient.
+ * Per-power value target: continuous progress = max(vp/55, threat/35), clipped
+ * to 1.0. VP normalizer is 55 (not 50) so overshoot-in-ties produces a
+ * non-saturated signal. Replaces the prior rank-decay scheme — winners reach
+ * 1.0 naturally by hitting a threshold, losers' targets reflect actual
+ * proximity to victory rather than a comparative ranking.
  */
-function computeRankTarget(state: GameState, winners: Power[] | null): number[] {
+function computeProgressTarget(state: GameState): number[] {
   const target = new Array<number>(POWERS.length).fill(0);
-  const N = POWERS.length;
-  const winnerSet = new Set(winners ?? []);
-  const rounds = Math.max(state.round, 1);
-  const VP_TARGET = 50;
-  const THREAT_TARGET = 35;
-  const roundsToWin = (p: Power): number => {
-    const ps = state.powers[p];
-    const vpRate = ps.victoryPoints / rounds;
-    const threatRate = ps.threatValue / rounds;
-    const vpProj = vpRate > 0 ? (VP_TARGET - ps.victoryPoints) / vpRate : Infinity;
-    const threatProj = threatRate > 0 ? (THREAT_TARGET - ps.threatValue) / threatRate : Infinity;
-    return Math.min(vpProj, threatProj);
-  };
-  const ranked = [...POWERS].sort((a, b) => {
-    const aWin = winnerSet.has(a), bWin = winnerSet.has(b);
-    if (aWin !== bWin) return aWin ? -1 : 1;
-    return roundsToWin(a) - roundsToWin(b);
-  });
-  for (let i = 0; i < ranked.length; i++) {
-    target[POWERS.indexOf(ranked[i]!)] = (N - 1 - i) / (N - 1);
+  for (let i = 0; i < POWERS.length; i++) {
+    const ps = state.powers[POWERS[i]!];
+    const vpProgress = ps.victoryPoints / 55;
+    const threatProgress = ps.threatValue / 35;
+    target[i] = Math.min(Math.max(vpProgress, threatProgress), 1.0);
   }
-  // Tenzen: continuous VP/50 instead of rank.
-  const tenzenIdx = POWERS.indexOf('tenzen');
-  target[tenzenIdx] = Math.min(state.powers['tenzen'].victoryPoints / VP_TARGET, 1.0);
   return target;
 }
 
@@ -334,7 +318,7 @@ function runGame(seed: number): GameResult {
     samples,
     winners: state.winners,
     rounds: state.round,
-    target: computeRankTarget(state, state.winners),
+    target: computeProgressTarget(state),
   };
 }
 
