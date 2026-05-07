@@ -542,6 +542,27 @@ describe('applyWorldChoice: validation', () => {
     expect(state.regions.toscavar!.tokens).toContain('noble');
   });
 
+  test('grand_muster accepts a short final bucket when fewer than 6 regions remain (regression)', () => {
+    // Ruin 4 regions so only 5 non-ruined remain. legalActions splits 2+2+1;
+    // validator must accept that rather than demanding nobleRegions=2.
+    let s = pendingFor('grand_muster');
+    s = ruinRegion(s, 'mittelreich');
+    s = ruinRegion(s, 'normagne');
+    s = ruinRegion(s, 'almerida');
+    s = ruinRegion(s, 'the_barrens');
+    const { state } = applyWorldChoice(s, {
+      kind: 'world_choice', power: 'xarm', cardId: 'grand_muster',
+      choices: {
+        peasantRegions: ['norrsund', 'talvimaa'],
+        heroRegions:    ['volensk', 'toscavar'],
+        nobleRegions:   ['pelascos'],
+      },
+    });
+    expect(state.regions.norrsund!.tokens).toContain('peasant');
+    expect(state.regions.volensk!.tokens).toContain('hero');
+    expect(state.regions.pelascos!.tokens).toContain('noble');
+  });
+
   test('northern_heir rejects bad pair', () => {
     const s = pendingFor('northern_heir');
     expect(() => applyWorldChoice(s, {

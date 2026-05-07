@@ -249,10 +249,16 @@ function validateWorldChoice(state: GameState, cardId: string, choices: Record<s
       return;
 
     case 'grand_muster': {
-      const peasants = requireRegionsArray('peasantRegions', 2);
-      const heroes   = requireRegionsArray('heroRegions',    2);
-      const nobles   = requireRegionsArray('nobleRegions',   2);
-      // Across-group distinctness: no region appears in more than one bucket.
+      // Three buckets share a single pool of allowed regions and must be
+      // disjoint, so cap them sequentially — matches the slicing in
+      // legalActions.ts (peasants take first 2, heroes next 2, nobles next 2).
+      const cap = allowed.size;
+      const nP = Math.min(2, cap);
+      const nH = Math.min(2, Math.max(0, cap - nP));
+      const nN = Math.min(2, Math.max(0, cap - nP - nH));
+      const peasants = requireRegionsArray('peasantRegions', nP);
+      const heroes   = requireRegionsArray('heroRegions',    nH);
+      const nobles   = requireRegionsArray('nobleRegions',   nN);
       const all = [...peasants, ...heroes, ...nobles];
       if (new Set(all).size !== all.length) {
         throw new Error(`world_choice/${cardId}: peasant/hero/noble regions must all be distinct`);
