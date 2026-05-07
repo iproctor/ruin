@@ -245,6 +245,14 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
         echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
       fi
     fi
+    # Operator-driven one-shot fresh init: if data/fresh_powers exists and
+    # contains this power name, drop warm-start. File is cleared after the
+    # train step so the fresh init only fires once.
+    FRESH_FILE="$DATA_DIR/fresh_powers"
+    if [ -f "$FRESH_FILE" ] && grep -qw "$POWER" "$FRESH_FILE"; then
+      EFFECTIVE_WARM=""
+      echo "[iter $ITER] $POWER: fresh init (matched fresh_powers)" | tee -a "$LOG_FILE"
+    fi
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
@@ -267,6 +275,12 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
     # fail head-to-head against the known-good ref set.
   done
   [ "$TRAIN_OK" -ne 1 ] && continue
+
+  # Consume one-shot fresh_powers marker after all powers trained.
+  if [ -f "$DATA_DIR/fresh_powers" ]; then
+    rm -f "$DATA_DIR/fresh_powers"
+    echo "[iter $ITER] consumed fresh_powers marker" | tee -a "$LOG_FILE"
+  fi
 
   # 3d. Move processed inbox files to archive (so we don't double-train)
   mv "$INBOX"/*.jsonl "$ARCHIVE"/
