@@ -530,8 +530,16 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
         # live model_<P>.json gets rolled back to ref. Otherwise rejected
         # iters compound: next iter trains/collects from the rejected model
         # instead of the known-good one. AlphaZero discipline.
-        cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
-        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+        # Operator override: if data/no_revert lists this power, keep the
+        # candidate live so training continues from current weights. Persists
+        # until operator removes the file. Use sparingly — disables the
+        # safety that prevents drift from a regressing trajectory.
+        if [ -f "$DATA_DIR/no_revert" ] && grep -qw "$POWER" "$DATA_DIR/no_revert"; then
+          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → kept (no_revert)" | tee -a "$LOG_FILE"
+        else
+          cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
+          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+        fi
       fi
     done
 
