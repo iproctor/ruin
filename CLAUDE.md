@@ -50,7 +50,7 @@ with 1k MCTS iters, no rollout, no demos, 90-batch training window.
 
 | var | default | meaning |
 |---|---|---|
-| `TRAIN_WINDOW` | 90 | recent batches concatenated per train pass |
+| `TRAIN_WINDOW` | 180 | recent batches concatenated per train pass |
 | `TRAIN_EPOCHS` | 25 | epochs per train pass |
 | `H2H_AFTER_ITERS` | 5 | warm-up before h2h gate fires |
 | `H2H_TARGET_GAMES` | 768 | games per power per cycle |

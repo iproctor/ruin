@@ -43,7 +43,7 @@ WORKERS=${WORKERS:-16}
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
-TRAIN_WINDOW=${TRAIN_WINDOW:-90}
+TRAIN_WINDOW=${TRAIN_WINDOW:-180}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
