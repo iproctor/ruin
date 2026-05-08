@@ -309,7 +309,7 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # promoted: cp model_<P>.json → ref/model_<P>_ref.json. Any promotion
   # invalidates the baseline (deletes ref_baseline.json) so the next cycle
   # re-runs baseline calibration with the new ref set.
-  H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.04}
+  H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then

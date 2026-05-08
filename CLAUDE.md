@@ -54,7 +54,7 @@ with 1k MCTS iters, no rollout, no demos, 90-batch training window.
 | `TRAIN_EPOCHS` | 25 | epochs per train pass |
 | `H2H_AFTER_ITERS` | 5 | warm-up before h2h gate fires |
 | `H2H_TARGET_GAMES` | 768 | games per power per cycle |
-| `H2H_PROMOTE_DELTA` | 0.04 | win rate margin required to promote |
+| `H2H_PROMOTE_DELTA` | 0.02 | win rate margin required to promote |
 | `H2H_ITER` | 1000 | MCTS iters during h2h |
 
 ### Empirical cadence
