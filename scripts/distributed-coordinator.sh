@@ -310,6 +310,7 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # invalidates the baseline (deletes ref_baseline.json) so the next cycle
   # re-runs baseline calibration with the new ref set.
   H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
+  H2H_PROMOTE_DELTA_XARM=${H2H_PROMOTE_DELTA_XARM:-0.04}  # higher bar — high baseline noise
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
@@ -495,6 +496,14 @@ print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][pow
     for POWER in "${ALL_POWERS[@]}"; do
       AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
       [ ! -f "$AGG_OUT" ] && continue
+      # Per-power threshold: xarm has a high baseline (~68%) where binomial
+      # noise alone is ~2pp, so a 2pp delta is barely a 1σ event. Other
+      # powers have low baselines (~10%) where +2pp is a meaningful 20%
+      # relative lift. Use a tighter delta for xarm, looser for the rest.
+      case "$POWER" in
+        xarm) POWER_DELTA="$H2H_PROMOTE_DELTA_XARM" ;;
+        *)    POWER_DELTA="$H2H_PROMOTE_DELTA" ;;
+      esac
       DECISION=$(python3 -c "
 import json, sys
 power = sys.argv[1]
@@ -506,14 +515,14 @@ bl = base['win_rates'].get(power, 0.0)
 delta = cur - bl
 verdict = 'PROMOTE' if delta >= delta_thr else 'hold'
 print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
-" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" 2>/dev/null)
+" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$POWER_DELTA" 2>/dev/null)
       VERDICT=$(echo "$DECISION" | cut -d'|' -f1)
       CUR=$(echo "$DECISION" | cut -d'|' -f2)
       BL=$(echo "$DECISION" | cut -d'|' -f3)
       DELTA=$(echo "$DECISION" | cut -d'|' -f4)
       if [ "$VERDICT" = "PROMOTE" ]; then
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
-        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → ref updated" | tee -a "$LOG_FILE"
+        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
 
         # HOF entry: only h2h-promoted models. Use the h2h win rate as the
@@ -535,10 +544,10 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
         # until operator removes the file. Use sparingly — disables the
         # safety that prevents drift from a regressing trajectory.
         if [ -f "$DATA_DIR/no_revert" ] && grep -qw "$POWER" "$DATA_DIR/no_revert"; then
-          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → kept (no_revert)" | tee -a "$LOG_FILE"
+          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → kept (no_revert)" | tee -a "$LOG_FILE"
         else
           cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
-          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${H2H_PROMOTE_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
         fi
       fi
     done
