@@ -56,6 +56,7 @@ with 1k MCTS iters, no rollout, no demos, 90-batch training window.
 | `H2H_TARGET_GAMES` | 768 | games per power per cycle |
 | `H2H_PROMOTE_DELTA` | 0.02 | win rate margin required to promote (gormen/tenzen/lasha) |
 | `H2H_PROMOTE_DELTA_XARM` | 0.04 | xarm-only threshold; higher because high-baseline noise |
+| `H2H_NO_REVERT_FLOOR` | -0.02 | no_revert candidates with Δ below this revert anyway |
 | `H2H_ITER` | 1000 | MCTS iters during h2h |
 
 ### Empirical cadence

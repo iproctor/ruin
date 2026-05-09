@@ -311,6 +311,7 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # re-runs baseline calibration with the new ref set.
   H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
   H2H_PROMOTE_DELTA_XARM=${H2H_PROMOTE_DELTA_XARM:-0.04}  # higher bar — high baseline noise
+  H2H_NO_REVERT_FLOOR=${H2H_NO_REVERT_FLOOR:--0.02}       # below this Δ, no_revert is overridden
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
@@ -540,14 +541,24 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
         # iters compound: next iter trains/collects from the rejected model
         # instead of the known-good one. AlphaZero discipline.
         # Operator override: if data/no_revert lists this power, keep the
-        # candidate live so training continues from current weights. Persists
-        # until operator removes the file. Use sparingly — disables the
-        # safety that prevents drift from a regressing trajectory.
+        # candidate live so training continues from current weights —
+        # *unless* delta drops below H2H_NO_REVERT_FLOOR, in which case
+        # the candidate is regressing too far and we revert to ref.
+        # File persists until operator removes it.
+        NO_REVERT_MATCH=0
         if [ -f "$DATA_DIR/no_revert" ] && grep -qw "$POWER" "$DATA_DIR/no_revert"; then
+          NO_REVERT_MATCH=1
+        fi
+        BELOW_FLOOR=$(python3 -c "import sys; print('1' if float(sys.argv[1]) < float(sys.argv[2]) else '0')" "$DELTA" "$H2H_NO_REVERT_FLOOR" 2>/dev/null)
+        if [ "$NO_REVERT_MATCH" = "1" ] && [ "$BELOW_FLOOR" = "0" ]; then
           echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → kept (no_revert)" | tee -a "$LOG_FILE"
         else
           cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
-          echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+          if [ "$NO_REVERT_MATCH" = "1" ]; then
+            echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → reverted (Δ below floor ${H2H_NO_REVERT_FLOOR})" | tee -a "$LOG_FILE"
+          else
+            echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}, thr=${POWER_DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+          fi
         fi
       fi
     done
