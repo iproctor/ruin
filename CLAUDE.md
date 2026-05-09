@@ -23,11 +23,13 @@ change.
      play games where slot P is the candidate `model_<P>.json` and the
      other 3 slots use `ref/model_<other>_ref.json`. Aggregate to
      `bench_h2h_iter_NNNN_<P>.json`.
-   - **Promote/revert per power**: if candidate win rate exceeds baseline
-     by ≥ `H2H_PROMOTE_DELTA=0.02`, copy `model_<P>.json` →
-     `ref/model_<P>_ref.json` (and add HOF entry). Otherwise **revert**:
-     copy ref back to live so the next iter trains from the known-good
-     model. AlphaZero discipline — rejected iters do **not** compound.
+   - **Three-band verdict per power** based on Δ = candidate_winrate − baseline:
+     - Δ ≥ +`H2H_PROMOTE_DELTA` (default 0.02): **promote** — copy
+       `model_<P>.json` → `ref/model_<P>_ref.json` (and add HOF entry).
+     - Δ < -`H2H_REVERT_DELTA` (default 0.02): **revert** — copy ref
+       back to live; rejected iters do not compound.
+     - Otherwise: **hold** — leave `model_<P>.json` as the candidate
+       so the next iter continues training from current weights.
    - Any promotion invalidates the baseline (`rm ref_baseline.json`); next
      cycle recalibrates against the new ref set.
 
@@ -54,9 +56,8 @@ with 1k MCTS iters, no rollout, no demos, 90-batch training window.
 | `TRAIN_EPOCHS` | 25 | epochs per train pass |
 | `H2H_AFTER_ITERS` | 5 | warm-up before h2h gate fires |
 | `H2H_TARGET_GAMES` | 768 | games per power per cycle |
-| `H2H_PROMOTE_DELTA` | 0.02 | win rate margin required to promote (gormen/tenzen/lasha) |
-| `H2H_PROMOTE_DELTA_XARM` | 0.04 | xarm-only threshold; higher because high-baseline noise |
-| `H2H_NO_REVERT_FLOOR` | -0.02 | no_revert candidates with Δ below this revert anyway |
+| `H2H_PROMOTE_DELTA` | 0.02 | Δ ≥ this → promote candidate to ref |
+| `H2H_REVERT_DELTA` | 0.02 | Δ < -this → revert candidate to ref; in-band → hold |
 | `H2H_ITER` | 1000 | MCTS iters during h2h |
 
 ### Empirical cadence
