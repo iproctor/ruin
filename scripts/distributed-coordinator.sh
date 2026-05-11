@@ -12,7 +12,7 @@
 #        b. Train fresh model.json
 #        c. Snapshot as model_iter_NNNN.json
 #        d. Move processed inbox files to archive/
-#        e. Optionally run a benchmark every BENCH_EVERY trains
+#        e. (deprecated) periodic benchmark — replaced by h2h baseline + deltas
 #        f. Increment iter counter
 #   4. Goto 1
 #
@@ -25,9 +25,7 @@
 #   TRAIN_THRESHOLD   number of inbox files needed to trigger a train (default 6)
 #   TRAIN_EPOCHS      epochs per training pass (default 25)
 #   TRAIN_THREADS     openblas threads for training (default 8)
-#   BENCH_EVERY       run benchmark every N trains (default 5)
-#   BENCH_GAMES       games per benchmark (default 48)
-#   BENCH_WORKERS     parallel workers for benchmark (default 14)
+#   BENCH_WORKERS     local sub-workers for h2h bench parallel sharder (default 14)
 
 set -uo pipefail
 
@@ -36,7 +34,7 @@ WORKER_ID=${WORKER_ID:-0}
 # batch (no idle workers, no fractional distribution). Coordinator has 16
 # workers → 32 games. Worker boxes have 7 workers but use the same 32 (so
 # each does ~4-5 games sequentially — fine, just slower wall clock).
-GAMES_PER_BATCH=${GAMES_PER_BATCH:-32}
+GAMES_PER_BATCH=${GAMES_PER_BATCH:-16}
 WORKERS=${WORKERS:-16}
 # Co-training: under MaxN MCTS every game already exercises all 4 power
 # value heads (each leaf eval uses all 4 perspectives, each opponent node
@@ -44,12 +42,10 @@ WORKERS=${WORKERS:-16}
 # heads each iter from the same self-play batch — no FOCUS_POWER, no
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
-TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-20}
-TRAIN_WINDOW=${TRAIN_WINDOW:-30}
+TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
+TRAIN_WINDOW=${TRAIN_WINDOW:-180}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
-BENCH_EVERY=${BENCH_EVERY:-5}
-BENCH_GAMES=${BENCH_GAMES:-48}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
 ALL_POWERS=(xarm gormen tenzen lasha)
 
@@ -60,6 +56,43 @@ ARCHIVE="$DATA_DIR/archive"
 LOG_FILE="$DATA_DIR/training_loop.log"
 
 mkdir -p "$INBOX" "$ARCHIVE"
+
+# H2H bench knobs.
+H2H_ENABLE=${H2H_ENABLE:-1}            # h2h benches on by default; gated by
+                                       # H2H_AFTER_ITERS to give training a
+                                       # warm-up window before testing
+H2H_AFTER_ITERS=${H2H_AFTER_ITERS:-5}  # skip h2h for the first N iters of
+                                       # this coord run (relative to
+                                       # START_ITER) to let demos + reset
+                                       # accumulate before any promotion
+H2H_TARGET_GAMES=${H2H_TARGET_GAMES:-768}  # games per power per bench cycle
+H2H_GAMES_PER_BOX=${H2H_GAMES_PER_BOX:-16}   # each worker batch contributes this many
+                                             # 40 bundles × 16 games = 640 target.
+                                             # Smaller bundles → workers re-poll
+                                             # the coord every ~3 min instead of
+                                             # every ~17 min so config changes
+                                             # propagate fast.
+H2H_ITER=${H2H_ITER:-1000}             # MCTS iters per move during bench
+H2H_WAIT_SECS=${H2H_WAIT_SECS:-1800}   # max time to wait per power for workers
+ALL_POWERS=(xarm gormen tenzen lasha)
+REF_DIR="$DATA_DIR/ref"
+
+# Worker dispatch: coord writes worker_config.json; workers rsync it every batch
+# and dispatch on `task`. Default = collect.
+write_worker_config() {
+  local task="$1"
+  local current_power="$2"
+  python3 -c '
+import json, sys
+print(json.dumps({
+  "task": sys.argv[1],
+  "iter": int(sys.argv[2]),
+  "current_power": sys.argv[3],
+  "games_per_box": int(sys.argv[4]),
+  "mcts_iter": int(sys.argv[5]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" \
+    > "$DATA_DIR/worker_config.json"
+}
 
 # Find the latest existing iter snapshot to continue numbering. Includes both
 # the shared-model snapshots (model_iter_*.json) and per-power focus snapshots
@@ -72,8 +105,11 @@ START_ITER=$(ls "$DATA_DIR"/model_iter_*.json "$DATA_DIR"/model_*_iter_*.json 2>
   | sort -n | tail -1)
 START_ITER=${START_ITER:-0}
 ITER=$((START_ITER + 1))
-TRAINS_SINCE_BENCH=0
 BATCH_COUNTER=0
+
+# Initialize worker config (now that ITER is defined). Workers read this on
+# their next loop iteration and dispatch on the `task` field.
+write_worker_config "collect" ""
 
 {
   echo ""
@@ -121,6 +157,9 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
+      --hof-mix 0.15 \
+      --temp-rounds 2 \
+      --iter 1000 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
     echo "  ! collection failed, retrying" | tee -a "$LOG_FILE"
@@ -170,6 +209,7 @@ while true; do
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
 
+
   # 3b. Train all 4 power heads from the same batch. Each train_mlp.py
   # invocation filters samples to that power and updates only its own
   # model_<power>.json. Sequential to keep CPU usage bounded.
@@ -205,6 +245,14 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
         echo "[iter $ITER] lasha: skipping warm-start (old h1=${OLD_H1}, want 1024) — fresh init" | tee -a "$LOG_FILE"
       fi
     fi
+    # Operator-driven one-shot fresh init: if data/fresh_powers exists and
+    # contains this power name, drop warm-start. File is cleared after the
+    # train step so the fresh init only fires once.
+    FRESH_FILE="$DATA_DIR/fresh_powers"
+    if [ -f "$FRESH_FILE" ] && grep -qw "$POWER" "$FRESH_FILE"; then
+      EFFECTIVE_WARM=""
+      echo "[iter $ITER] $POWER: fresh init (matched fresh_powers)" | tee -a "$LOG_FILE"
+    fi
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
@@ -220,28 +268,19 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
     T3=$(date +%s)
     cp "$TRAIN_OUT" "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json"
     echo "[iter $ITER] $POWER trained in $((T3 - T2))s → model_${POWER}.json" | tee -a "$LOG_FILE"
-
-    # HOF promotion per power. Promote the prior iter's snapshot (the model
-    # that GENERATED the data), not the freshly-trained one — training drift
-    # must not cause us to HOF the worse trainee.
-    POWER_RANK=$(grep "^avg rank:" "$LOG_FILE" \
-      | tail -1 \
-      | grep -oE "${POWER}:[0-9.]+" \
-      | cut -d: -f2)
-    if [ -n "$POWER_RANK" ] && [ -f "$DATA_DIR/model_${POWER}_iter_${DATA_GEN_ITER}.json" ]; then
-      HOF_FLOOR="0.3"
-      # Tenzen uses VP/50 target (not rank target like the others), so
-      # absolute values are different. ~7 VP avg = 0.14, ~10 VP = 0.20.
-      # Floor 0.10 (= 5 VP avg) lets HOF fill steadily while still
-      # discriminating utterly stuck snapshots.
-      [ "$POWER" = "tenzen" ] && HOF_FLOOR="0.10"
-      python3 "$ROOT/scripts/hof-promote.py" \
-        --iter "$DATA_GEN_ITER" --rank "$POWER_RANK" --power "$POWER" \
-        --min-rank "$HOF_FLOOR" \
-        --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
-    fi
+    # HOF promotion is no longer driven by avg-rank from training. The h2h
+    # phase below is the sole gate: a model joins the HOF for its power only
+    # when it beats the ref baseline by H2H_PROMOTE_DELTA. Avoids polluting
+    # the HOF with marginal/regressed iters that pass training metrics but
+    # fail head-to-head against the known-good ref set.
   done
   [ "$TRAIN_OK" -ne 1 ] && continue
+
+  # Consume one-shot fresh_powers marker after all powers trained.
+  if [ -f "$DATA_DIR/fresh_powers" ]; then
+    rm -f "$DATA_DIR/fresh_powers"
+    echo "[iter $ITER] consumed fresh_powers marker" | tee -a "$LOG_FILE"
+  fi
 
   # 3d. Move processed inbox files to archive (so we don't double-train)
   mv "$INBOX"/*.jsonl "$ARCHIVE"/
@@ -255,16 +294,268 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
     echo "  · pruned ${PRUNE_COUNT} old archive files (kept ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
   fi
 
-  # 3e. Optional periodic benchmark
-  TRAINS_SINCE_BENCH=$((TRAINS_SINCE_BENCH + 1))
-  if [ "$TRAINS_SINCE_BENCH" -ge "$BENCH_EVERY" ]; then
-    TRAINS_SINCE_BENCH=0
-    BENCH_FILE="$DATA_DIR/bench_iter_${ITER_TAG}.json"
-    echo "[iter $ITER] benchmarking ($BENCH_GAMES games)..." | tee -a "$LOG_FILE"
-    pnpm benchmark:parallel --games "$BENCH_GAMES" --seed 100 \
-        --workers "$BENCH_WORKERS" --out "$BENCH_FILE" 2>&1 \
-        | grep -E "^(  [a-z]+ +[0-9]|WIN|DAC|ROUNDS|VP|spread|AGGREGATED|ERRORS|Total wall)" \
-        | tee -a "$LOG_FILE"
+  # 3e. (Removed 2026-05-03) periodic benchmark:parallel was redundant with
+  # the h2h baseline below — both measure 4-way self-play win rates among
+  # the current ref set. ref_baseline.json plus per-iter h2h deltas serve
+  # the same role with finer per-power resolution.
+
+  # 3f. H2H bench cycle. For each power P, swap workers to bench_h2h mode,
+  # contribute coord's own batch, wait for cluster to reach target games,
+  # aggregate. Workers see the task switch via worker_config.json (rsynced
+  # at the top of their loop) and dispatch to bench-h2h-parallel.ts.
+  #
+  # Compares against ref_baseline.json (all-ref self-play). Per-power, if
+  # current win rate exceeds baseline + H2H_PROMOTE_DELTA, the candidate is
+  # promoted: cp model_<P>.json → ref/model_<P>_ref.json. Any promotion
+  # invalidates the baseline (deletes ref_baseline.json) so the next cycle
+  # re-runs baseline calibration with the new ref set.
+  # Three-band rule: Δ ≥ +PROMOTE_DELTA → promote, Δ < -REVERT_DELTA → revert,
+  # otherwise hold (keep candidate live so training continues from current
+  # weights). Same threshold for all powers.
+  H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
+  H2H_REVERT_DELTA=${H2H_REVERT_DELTA:-0.02}
+  REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
+
+  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
+    # 3f.0. Ensure baseline exists. Distributed: workers + coord all
+    # contribute to bench_inbox_baseline/, coord aggregates.
+    if [ ! -f "$REF_BASELINE_FILE" ]; then
+      BL_INBOX="$DATA_DIR/bench_inbox_baseline"
+      rm -rf "$BL_INBOX"
+      mkdir -p "$BL_INBOX"
+
+      write_worker_config "bench_baseline" ""
+      BL_T0=$(date +%s)
+      BL_SEED_BASE=$((900000 + ITER * 1000))
+      echo "[iter $ITER] baseline: contributing batches alongside workers, target ${H2H_TARGET_GAMES} games..." | tee -a "$LOG_FILE"
+
+      # Coord keeps running its own bench batches while workers contribute,
+      # rather than running one batch and idling. Each coord batch = 16
+      # games / ~3 min with native MLP. Workers upload async to the same
+      # bench_inbox_baseline/. Loop ends when total games >= target or we
+      # exceed the wait timeout.
+      WAIT_T0=$(date +%s)
+      BL_BATCH=0
+      while true; do
+        TOTAL=$(python3 -c "
+import json, glob
+t = 0
+for f in glob.glob('${BL_INBOX}/*.json'):
+  try: t += json.load(open(f)).get('games', 0)
+  except: pass
+print(t)" 2>/dev/null || echo 0)
+        [ "$TOTAL" -ge "$H2H_TARGET_GAMES" ] && break
+        WAITED=$(($(date +%s) - WAIT_T0))
+        if [ "$WAITED" -gt "$H2H_WAIT_SECS" ]; then
+          echo "  ! baseline: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
+          break
+        fi
+        BL_BATCH=$((BL_BATCH + 1))
+        BL_SEED=$((BL_SEED_BASE + BL_BATCH * 100))
+        BL_OUT="${BL_INBOX}/coord_b$(printf '%03d' "$BL_BATCH")_$(date +%s).json"
+        if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+            --baseline \
+            --games "$H2H_GAMES_PER_BOX" --seed "$BL_SEED" \
+            --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
+            --ref-dir "$REF_DIR" \
+            --out "$BL_OUT" 2>&1 \
+            | grep -E "^baseline" \
+            | tee -a "$LOG_FILE"; then
+          echo "  ! coord baseline batch ${BL_BATCH} failed — sleeping" | tee -a "$LOG_FILE"
+          sleep 10
+        fi
+      done
+
+      # Aggregate baseline shards → ref_baseline.json.
+      python3 -c "
+import json, glob, sys
+out = sys.argv[1]
+inbox = sys.argv[2]
+itr = int(sys.argv[3])
+agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
+       'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'rounds_w': 0, 'shards': []}
+for f in sorted(glob.glob(f'{inbox}/*.json')):
+    try:
+        d = json.load(open(f))
+        agg['games'] += d['games']
+        agg['completed'] += d['completed']
+        agg['no_winners'] += d['no_winners']
+        agg['co_wins'] += d['co_wins']
+        for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
+        for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        agg['rounds_w'] += d['avg_rounds'] * d['games']
+        agg['shards'].append(f.split('/')[-1])
+    except Exception as e:
+        print(f'shard {f}: {e}', file=sys.stderr)
+g = agg['games'] or 1
+agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
+agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['avg_rounds'] = agg['rounds_w'] / g
+del agg['vp_w']; del agg['rounds_w']
+agg['baseline'] = True
+agg['iter'] = itr
+open(out, 'w').write(json.dumps(agg, indent=2))
+print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*100:.1f}% gormen:{agg[\"win_rates\"][\"gormen\"]*100:.1f}% tenzen:{agg[\"win_rates\"][\"tenzen\"]*100:.1f}% lasha:{agg[\"win_rates\"][\"lasha\"]*100:.1f}% | rounds={agg[\"avg_rounds\"]:.2f} | {len(agg[\"shards\"])} shards')
+" "$REF_BASELINE_FILE" "$BL_INBOX" "$ITER" 2>&1 | tee -a "$LOG_FILE"
+
+      BL_T1=$(date +%s)
+      echo "[iter $ITER] baseline calibrated in $((BL_T1 - BL_T0))s" | tee -a "$LOG_FILE"
+    fi
+  fi
+
+  if [ "$H2H_ENABLE" = "1" ] && [ -f "$REF_BASELINE_FILE" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
+    echo "[iter $ITER] h2h cycle (target=${H2H_TARGET_GAMES}/power, iter=${H2H_ITER})" | tee -a "$LOG_FILE"
+    for POWER in "${ALL_POWERS[@]}"; do
+      BENCH_INBOX="$DATA_DIR/bench_inbox_${POWER}"
+      rm -rf "$BENCH_INBOX"
+      mkdir -p "$BENCH_INBOX"
+
+      write_worker_config "bench_h2h" "$POWER"
+      H2H_T0=$(date +%s)
+      H2H_SEED_BASE=$((100000 + ITER * 1000))
+      echo "[iter $ITER] h2h ${POWER}: contributing batches alongside workers, target ${H2H_TARGET_GAMES} games..." | tee -a "$LOG_FILE"
+
+      # Same loop pattern as baseline: coord keeps producing 16-game batches
+      # while workers also upload, instead of running once and idling.
+      WAIT_T0=$(date +%s)
+      H2H_BATCH=0
+      while true; do
+        TOTAL=$(python3 -c "
+import json, glob
+t = 0
+for f in glob.glob('${BENCH_INBOX}/*.json'):
+  try: t += json.load(open(f)).get('games', 0)
+  except: pass
+print(t)" 2>/dev/null || echo 0)
+        [ "$TOTAL" -ge "$H2H_TARGET_GAMES" ] && break
+        WAITED=$(($(date +%s) - WAIT_T0))
+        if [ "$WAITED" -gt "$H2H_WAIT_SECS" ]; then
+          echo "  ! h2h ${POWER}: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
+          break
+        fi
+        H2H_BATCH=$((H2H_BATCH + 1))
+        H2H_SEED=$((H2H_SEED_BASE + H2H_BATCH * 100))
+        H2H_OUT="${BENCH_INBOX}/coord_b$(printf '%03d' "$H2H_BATCH")_$(date +%s).json"
+        if ! npx tsx packages/server/src/scripts/bench-h2h-parallel.ts \
+            --current-power "$POWER" \
+            --games "$H2H_GAMES_PER_BOX" --seed "$H2H_SEED" \
+            --iter "$H2H_ITER" --workers "$BENCH_WORKERS" \
+            --ref-dir "$REF_DIR" \
+            --out "$H2H_OUT" 2>&1 \
+            | grep -E "^${POWER}:" \
+            | tee -a "$LOG_FILE"; then
+          echo "  ! coord h2h ${POWER} batch ${H2H_BATCH} failed — sleeping" | tee -a "$LOG_FILE"
+          sleep 10
+        fi
+      done
+
+      # Aggregate.
+      AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
+      python3 -c "
+import json, glob, sys
+power = sys.argv[1]
+out = sys.argv[2]
+inbox = sys.argv[3]
+itr = int(sys.argv[4])
+agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
+       'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'rounds_w': 0, 'shards': []}
+for f in sorted(glob.glob(f'{inbox}/*.json')):
+    try:
+        d = json.load(open(f))
+        agg['games'] += d['games']
+        agg['completed'] += d['completed']
+        agg['no_winners'] += d['no_winners']
+        agg['co_wins'] += d['co_wins']
+        for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
+        for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        agg['rounds_w'] += d['avg_rounds'] * d['games']
+        agg['shards'].append(f.split('/')[-1])
+    except Exception as e:
+        print(f'shard {f}: {e}', file=sys.stderr)
+g = agg['games'] or 1
+agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
+agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['avg_rounds'] = agg['rounds_w'] / g
+del agg['vp_w']; del agg['rounds_w']
+agg['current_power'] = power
+agg['iter'] = itr
+open(out, 'w').write(json.dumps(agg, indent=2))
+print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][power]*100:.1f}% | rounds={agg[\"avg_rounds\"]:.2f} | {len(agg[\"shards\"])} shards')
+" "$POWER" "$AGG_OUT" "$BENCH_INBOX" "$ITER" 2>&1 | tee -a "$LOG_FILE"
+
+      H2H_T1=$(date +%s)
+      echo "[iter $ITER] h2h ${POWER}: $((H2H_T1 - H2H_T0))s total" | tee -a "$LOG_FILE"
+    done
+
+    # Promotion phase. Per power, compare current win rate to baseline.
+    # If current beats baseline by at least H2H_PROMOTE_DELTA, promote the
+    # candidate: cp model_<P>.json → ref/model_<P>_ref.json. Track whether
+    # any promotion fired so we can invalidate the baseline below.
+    ANY_PROMOTED=0
+    for POWER in "${ALL_POWERS[@]}"; do
+      AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
+      [ ! -f "$AGG_OUT" ] && continue
+      # Three-band verdict: PROMOTE (Δ ≥ +promote_delta), REVERT (Δ < -revert_delta),
+      # or HOLD (in between — keep candidate live, don't touch ref).
+      DECISION=$(python3 -c "
+import json, sys
+power = sys.argv[1]
+agg = json.load(open(sys.argv[2]))
+base = json.load(open(sys.argv[3]))
+promote_thr = float(sys.argv[4])
+revert_thr = float(sys.argv[5])
+cur = agg['win_rates'].get(power, 0.0)
+bl = base['win_rates'].get(power, 0.0)
+delta = cur - bl
+if delta >= promote_thr:
+    verdict = 'PROMOTE'
+elif delta < -revert_thr:
+    verdict = 'REVERT'
+else:
+    verdict = 'HOLD'
+print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
+" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_REVERT_DELTA" 2>/dev/null)
+      VERDICT=$(echo "$DECISION" | cut -d'|' -f1)
+      CUR=$(echo "$DECISION" | cut -d'|' -f2)
+      BL=$(echo "$DECISION" | cut -d'|' -f3)
+      DELTA=$(echo "$DECISION" | cut -d'|' -f4)
+      if [ "$VERDICT" = "PROMOTE" ]; then
+        cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
+        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) → ref updated" | tee -a "$LOG_FILE"
+        ANY_PROMOTED=1
+
+        # HOF entry: only h2h-promoted models. Use the h2h win rate as the
+        # rank, --min-rank 0.0 so the gate is purely the h2h verdict above.
+        # Source snapshot is this iter's just-trained model_<P>_iter_NNNN.json.
+        if [ -f "$DATA_DIR/model_${POWER}_iter_${ITER_TAG}.json" ]; then
+          python3 "$ROOT/scripts/hof-promote.py" \
+            --iter "$ITER" --rank "$CUR" --power "$POWER" \
+            --min-rank 0.0 \
+            --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
+        fi
+      elif [ "$VERDICT" = "REVERT" ]; then
+        cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
+        echo "[iter $ITER] revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+      else
+        # HOLD: candidate stayed close to baseline. Keep it live so training
+        # continues from current weights instead of snapping back to ref.
+        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) → kept" | tee -a "$LOG_FILE"
+      fi
+    done
+
+    # If any promotion changed the ref set, invalidate the baseline so the
+    # next h2h cycle recalibrates against the new known-good lineup.
+    if [ "$ANY_PROMOTED" = "1" ]; then
+      rm -f "$REF_BASELINE_FILE"
+      echo "[iter $ITER] ref set updated — baseline invalidated, will recalibrate next cycle" | tee -a "$LOG_FILE"
+    fi
+
+    # Return workers to collect mode.
+    write_worker_config "collect" ""
   fi
 
   ITER=$((ITER + 1))

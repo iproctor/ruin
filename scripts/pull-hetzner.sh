@@ -38,6 +38,12 @@ rsync -avz -e "ssh ${SSH_OPTS}" \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/hof/" \
   "${LOCAL_ROOT}/packages/ai/data/hof/" 2>/dev/null || echo "  (no hof dir on remote)"
 
+echo "→ Pulling ref/ (h2h-promoted refs — authoritative on coord)"
+mkdir -p "${LOCAL_ROOT}/packages/ai/data/ref"
+rsync -avz --delete -e "ssh ${SSH_OPTS}" \
+  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/ref/" \
+  "${LOCAL_ROOT}/packages/ai/data/ref/" 2>/dev/null || echo "  (no ref dir on remote)"
+
 echo "→ Pulling all model_iter_*.json + per-power iter snapshots (incremental, then prune old remote)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
   --include='model_iter_*.json' \

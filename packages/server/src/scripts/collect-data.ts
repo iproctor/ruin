@@ -15,7 +15,7 @@ import {
 } from '@ruin/engine';
 import {
   runMcts, runMctsWithStats, greedyAction, extractFeatures, POWERS, powerIndex,
-  canonicalActionIndex, ACTION_DIM,
+  canonicalActionIndex, ACTION_DIM, loadModelForPower, type ModelJson,
 } from '@ruin/ai';
 import { loadLearnedModelIfPresent } from './load-model.js';
 
@@ -34,10 +34,10 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const maxActions = parseInt(getArg('--max-actions', '2000'), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 
-// MCTS budget. Iter cap governs; time cap is a safety net. 3k uniform —
-// iter-compare showed 3k → 5k flips ~15% of decisions but doubles cycle
-// time. Worth the throughput.
-const mctsIterations = parseInt(getArg('--iter', '3000'), 10);
+// MCTS budget. Iter cap governs; time cap is a safety net. 5k uniform —
+// post-r0 rollback (2026-05-03) bumped from 3k to 5k for all powers since
+// r0 throws away the rollout signal and depth becomes the only refutation.
+const mctsIterations = parseInt(getArg('--iter', '5000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
@@ -54,7 +54,53 @@ const dirichletNoise = dirichletWeight > 0
   ? { alpha: dirichletAlpha, weight: dirichletWeight }
   : undefined;
 
+// HOF mix: per game, for each power, with this probability swap the live
+// per-power model for a random hall-of-fame snapshot for that power. Reduces
+// overfitting to the current opponent policy distribution. 0 disables.
+// Restored 2026-05-03 (post-r0 rollback to iter 1650 era).
+const hofMix = parseFloat(getArg('--hof-mix', '0'));
+
+// Temperature on summoning move selection. For rounds <= tempRounds, sample
+// the action proportional to MCTS visit counts (τ=1) instead of taking
+// max-visits (τ=0). AlphaZero-style exploration: generates diverse opening
+// trajectories so off-policy lines enter training data, breaking r0 mutual
+// blindness over many games. Set 0 to disable. Visit counts in the training
+// sample are unchanged — temperature only affects which action is *played*.
+const tempRounds = parseInt(getArg('--temp-rounds', '2'), 10);
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
+
+// Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
+// and the HOF pools BEFORE any HOF swap, so each game can pick its lineup
+// fresh. Empty pools = HOF inactive for that power.
+const livePerPowerModels: Partial<Record<Power, ModelJson>> = {};
+const hofModelsByPower: Partial<Record<Power, ModelJson[]>> = {};
+{
+  const dataDir = path.resolve('packages/ai/data');
+  for (const p of ALL_POWERS) {
+    const live = path.join(dataDir, `model_${p}.json`);
+    if (fs.existsSync(live)) {
+      try { livePerPowerModels[p] = JSON.parse(fs.readFileSync(live, 'utf-8')) as ModelJson; }
+      catch { /* malformed file — fall through to shared model */ }
+    }
+    if (hofMix > 0) {
+      const hofDir = path.join(dataDir, 'hof', p);
+      if (fs.existsSync(hofDir)) {
+        const files = fs.readdirSync(hofDir)
+          .filter(f => f.endsWith('.json') && f !== 'manifest.json');
+        const pool: ModelJson[] = [];
+        for (const f of files) {
+          try { pool.push(JSON.parse(fs.readFileSync(path.join(hofDir, f), 'utf-8')) as ModelJson); }
+          catch { /* skip malformed */ }
+        }
+        if (pool.length > 0) {
+          hofModelsByPower[p] = pool;
+          console.log(`[hof] ${p}: ${pool.length} snapshots loaded (mix=${hofMix})`);
+        }
+      }
+    }
+  }
+}
 
 // Output dir + append-mode handle (multiple runs accumulate).
 fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -76,37 +122,44 @@ interface GameResult {
 }
 
 /**
- * Per-power value target. Most powers get rank-decay (1.0 → 0.0 by projected
- * rounds-to-win); tenzen is overridden with VP/50 because rank collapsed to
- * 0 every game during the plateau and provided no gradient.
+ * Per-power value target: continuous progress = max(vp/55, threat/35), clipped
+ * to 1.0. VP normalizer is 55 (not 50) so overshoot-in-ties produces a
+ * non-saturated signal. Replaces the prior rank-decay scheme — winners reach
+ * 1.0 naturally by hitting a threshold, losers' targets reflect actual
+ * proximity to victory rather than a comparative ranking.
  */
-function computeRankTarget(state: GameState, winners: Power[] | null): number[] {
+function computeProgressTarget(state: GameState): number[] {
   const target = new Array<number>(POWERS.length).fill(0);
-  const N = POWERS.length;
-  const winnerSet = new Set(winners ?? []);
-  const rounds = Math.max(state.round, 1);
-  const VP_TARGET = 50;
-  const THREAT_TARGET = 35;
-  const roundsToWin = (p: Power): number => {
-    const ps = state.powers[p];
-    const vpRate = ps.victoryPoints / rounds;
-    const threatRate = ps.threatValue / rounds;
-    const vpProj = vpRate > 0 ? (VP_TARGET - ps.victoryPoints) / vpRate : Infinity;
-    const threatProj = threatRate > 0 ? (THREAT_TARGET - ps.threatValue) / threatRate : Infinity;
-    return Math.min(vpProj, threatProj);
-  };
-  const ranked = [...POWERS].sort((a, b) => {
-    const aWin = winnerSet.has(a), bWin = winnerSet.has(b);
-    if (aWin !== bWin) return aWin ? -1 : 1;
-    return roundsToWin(a) - roundsToWin(b);
-  });
-  for (let i = 0; i < ranked.length; i++) {
-    target[POWERS.indexOf(ranked[i]!)] = (N - 1 - i) / (N - 1);
+  for (let i = 0; i < POWERS.length; i++) {
+    const ps = state.powers[POWERS[i]!];
+    const vpProgress = ps.victoryPoints / 55;
+    const threatProgress = ps.threatValue / 35;
+    target[i] = Math.min(Math.max(vpProgress, threatProgress), 1.0);
   }
-  // Tenzen: continuous VP/50 instead of rank.
-  const tenzenIdx = POWERS.indexOf('tenzen');
-  target[tenzenIdx] = Math.min(state.powers['tenzen'].victoryPoints / VP_TARGET, 1.0);
   return target;
+}
+
+/**
+ * Sample an action proportional to MCTS visit counts (τ=1). Falls back to
+ * the highest-visit action if visit totals are 0. Caller passes a per-game
+ * deterministic RNG so re-running the same seed reproduces the trajectory.
+ */
+function sampleActionByVisits(
+  visitCounts: ReadonlyArray<{ action: Action; visits: number }>,
+  rand: () => number,
+): Action {
+  if (visitCounts.length === 0) {
+    throw new Error('sampleActionByVisits: empty visit list');
+  }
+  let total = 0;
+  for (const vc of visitCounts) total += vc.visits;
+  if (total <= 0) return visitCounts[0]!.action;
+  let r = rand() * total;
+  for (const vc of visitCounts) {
+    r -= vc.visits;
+    if (r <= 0) return vc.action;
+  }
+  return visitCounts[visitCounts.length - 1]!.action;
 }
 
 // ── Subaction kinds that go through MCTS (anything strategic, not stylistic) ─
@@ -145,6 +198,46 @@ function logCollectError(seed: number, kind: string, state: GameState, pending: 
 
 function runGame(seed: number): GameResult {
   const samples: Sample[] = [];
+  // Deterministic per-game RNG, shared by HOF lineup selection and τ=1
+  // visit-proportional move sampling so a re-run of the same seed reproduces
+  // the same trajectory. Linear-congruential — quality is fine for biased
+  // sampling.
+  let rngState = (seed * 2654435761) >>> 0;
+  const rand = (): number => {
+    rngState = (rngState * 1664525 + 1013904223) >>> 0;
+    return rngState / 0xffffffff;
+  };
+
+  // τ=1 affects ONE power per game (the "explorer"). Other 3 powers play
+  // max-visit (τ=0). Idea: when only one player explores, their bad picks
+  // produce clean loss signal — vs everyone exploring, where noise blurs
+  // who caused the outcome. Cycles which power is explorer across seeds.
+  const explorerPower: Power = ALL_POWERS[Math.floor(rand() * ALL_POWERS.length)]!;
+
+  // HOF lineup: per power, with probability hofMix replace the live model
+  // with a random HOF snapshot for that power. Live model is the default.
+  // Models persist between games, so we always re-load every power's choice
+  // at the start of each game (no carry-over from the previous game's HOF
+  // selection).
+  if (hofMix > 0) {
+    const swaps: string[] = [];
+    for (const p of ALL_POWERS) {
+      const pool = hofModelsByPower[p];
+      const useHof = pool && pool.length > 0 && rand() < hofMix;
+      if (useHof) {
+        const pick = pool![Math.floor(rand() * pool!.length)]!;
+        loadModelForPower(p, pick);
+        swaps.push(p);
+      } else if (livePerPowerModels[p]) {
+        loadModelForPower(p, livePerPowerModels[p]!);
+      }
+    }
+    if (swaps.length > 0 && seed % 8 === 0) {
+      // Logging every game would flood; sample to keep the tail readable.
+      console.log(`  · seed ${seed} HOF lineup: ${swaps.join(',')}`);
+    }
+  }
+
   let { state } = autoAdvance({
     state: createInitialState({
       gameId: `collect-${seed}`,
@@ -156,7 +249,6 @@ function runGame(seed: number): GameResult {
   });
 
   let actionCount = 0;
-  let ts = Date.now()
   while (state.winners === null && state.phase !== 'completed') {
     if (actionCount >= maxActions) break;
     const pending = state.pendingAction;
@@ -172,7 +264,13 @@ function runGame(seed: number): GameResult {
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
         });
-        action = stats.action;
+        // τ=1 visit-proportional sampling for opening rounds, but ONLY for
+        // the per-game explorer (one randomly-chosen power). Other powers
+        // play max-visit so the explorer's exploration produces a clean
+        // win/loss signal rather than noise blurred across all 4 powers.
+        action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
+          ? sampleActionByVisits(stats.visitCounts, rand)
+          : stats.action;
         // Multiple legal actions can canonicalise to the same slot — sum visits.
         const slotVisits: Record<string, number> = {};
         for (const { action: a, visits } of stats.visitCounts) {
@@ -208,8 +306,6 @@ function runGame(seed: number): GameResult {
 
     try {
       const result = applyAction(state, action);
-      console.log('step', Date.now() - ts)
-      ts = Date.now()
       state = result.state;
     } catch (err) {
       logCollectError(seed, 'apply', state, pending, err, { action });
@@ -222,7 +318,7 @@ function runGame(seed: number): GameResult {
     samples,
     winners: state.winners,
     rounds: state.round,
-    target: computeRankTarget(state, state.winners),
+    target: computeProgressTarget(state),
   };
 }
 

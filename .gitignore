@@ -18,7 +18,9 @@ packages/ai/data/training_iter_*.jsonl
 packages/ai/data/training_recent.jsonl
 packages/ai/data/training_w*.jsonl
 packages/ai/data/training_smoke.jsonl
+packages/ai/data/training_recent_tenzen.jsonl
 packages/ai/data/training_loop.log
+packages/ai/data/demos.jsonl
 
 # CPU profile dumps
 *.cpuprofile
