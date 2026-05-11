@@ -103,9 +103,9 @@ export function enumerateKillActions(
   }
 
   // ── Single-group commits: kill K of one (power, class) ──────────────────
-  // For each group, enumerate K = 1..maxAffordable.
-  // We include all K because the model should be able to choose between
-  // "kill 1 cultist (save hits)" vs "kill 3 cultists (commit hard)".
+  // For each group, enumerate K = 1..maxAffordable. Partial K (< maxAffordable)
+  // are kept only when they can still be padded with peasants below; the engine
+  // rejects underallocated actions where a kill or peasant remains affordable.
   const groupArr = Array.from(groups.values());
   for (const members of groupArr) {
     const def = effectiveDefense(state, ctx.regionId, members[0]!, attacker);
@@ -160,5 +160,27 @@ export function enumerateKillActions(
     add([]);
   }
 
-  return actions;
+  // ── Drop strictly-dominated underallocations ────────────────────────────
+  // The engine rejects an action that leaves hits unused while a kill or
+  // peasant is still affordable. Filter those out so MCTS doesn't pop them
+  // and crash during expansion.
+  const enemyDef = new Map<string, number>();
+  for (const e of enemies) enemyDef.set(e.id, effectiveDefense(state, ctx.regionId, e, attacker));
+  const filtered = actions.filter(a => {
+    let spent = a.peasantsToTake ?? 0;
+    const killed = new Set(a.followerIds);
+    for (const id of a.followerIds) spent += enemyDef.get(id) ?? 0;
+    const leftover = ctx.hitsRemaining - spent;
+    if (leftover <= 0) return true;
+    const peasantsRemaining = ctx.peasantsAvailable - (a.peasantsToTake ?? 0);
+    if (peasantsRemaining > 0) return false;
+    for (const e of enemies) {
+      if (killed.has(e.id)) continue;
+      const d = enemyDef.get(e.id) ?? 0;
+      if (d > 0 && d <= leftover) return false;
+    }
+    return true;
+  });
+
+  return filtered.length > 0 ? filtered : actions;
 }

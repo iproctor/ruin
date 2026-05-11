@@ -11,7 +11,7 @@ import {
   UPGRADES, THREAT_DIALS,
 } from '../constants.js';
 import { applyAction, autoAdvance } from '../reducers.js';
-import { applyBattleHitAssignment } from '../phases/battle.js';
+import { applyBattleHitAssignment, effectiveDefense } from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
 import { GameLog } from '../gameLog.js';
 import { followersInRegion } from '../helpers.js';
@@ -366,14 +366,11 @@ export function autoResolveBattle(
     const hitsRemaining = ctx['hitsRemaining'] as number;
     const power = s.pendingAction.waitingFor;
 
-    // Use actual follower stats (accounts for per-power base defense)
+    // Use effective defense so we honor upgrades, War Frenzy carry-over,
+    // Rotting Grasp / Blight Ward, etc.
     const enemies = followersInRegion(s, regionId)
       .filter(f => (f.controlledBy ?? f.power) !== power && !f.tipped && !f.protected)
-      .map(f => {
-        const stats = FOLLOWERS[f.power as Power]?.[f.class];
-        const def = stats?.base.defense ?? 1;
-        return { ...f, def };
-      })
+      .map(f => ({ ...f, def: effectiveDefense(s, regionId, f, power) }))
       .sort((a, b) => a.def - b.def);
 
     let remaining = hitsRemaining;
@@ -381,9 +378,14 @@ export function autoResolveBattle(
     for (const f of enemies) {
       if (f.def <= remaining) { chosen.push(f.id); remaining -= f.def; }
     }
+    // Soak any leftover hits with peasant claims so the engine doesn't
+    // reject the action as underallocated.
+    const peasantsAvailable = s.regions[regionId]!.tokens.filter(t => t === 'peasant').length;
+    const peasantsToTake = Math.min(remaining, peasantsAvailable);
 
     const hitResult = applyBattleHitAssignment(s, {
       kind: 'battle_hit_assignment', power, regionId, followerIds: chosen,
+      ...(peasantsToTake > 0 ? { peasantsToTake } : {}),
     });
     const next = autoAdvance(hitResult);
     s = next.state;

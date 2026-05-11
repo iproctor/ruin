@@ -193,25 +193,59 @@ describe('interactive hit assignment', () => {
     expect(followersInRegion(state, 'norrsund').find(f => f.id === gormenCultistId)).toBeUndefined();
   });
 
-  test('attacker may choose to assign 0 kills (use no hits)', () => {
+  test('attacker may not skip kills when hits are still affordable (regression)', () => {
+    // Tenzen rolled 2 hits in pelascos with three def-1 enemies present (two
+    // lasha cultists + one xarm warrior). The AI submitted `followerIds: [lc1]`
+    // — one kill, second hit silently dropped. The engine accepted it and the
+    // xarm warrior survived a hit it should have eaten. Game 8eec1865.
     let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: 1 });
     for (let i = 1; i <= 6; i++) s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    const gormenCultistId = followersInRegion(s, 'norrsund').find(f => f.power === 'gormen')!.id;
 
-    let result = resolveBattlePhase(s);
+    const result = resolveBattlePhase(s);
     if (result.state.pendingAction?.actionKind !== 'battle_hit_assignment') return; // 0 hits
 
-    // Assign no kills
-    const next = applyAction(result.state, {
+    expect(() => applyAction(result.state, {
       kind: 'battle_hit_assignment',
       power: 'xarm',
       regionId: 'norrsund',
       followerIds: [],
-    });
-    const { state } = autoResolveBattle(next);
-    // Gormen cultist survives (attacker chose not to kill)
-    expect(followersInRegion(state, 'norrsund').find(f => f.id === gormenCultistId)).toBeDefined();
+    })).toThrow(/underallocated/);
+  });
+
+  test('regression: 2 hits + 3 def-1 enemies — submitting 1 kill is rejected', () => {
+    // Direct replay of game 8eec1865 round 2 pelascos: tenzen incarnation rolls
+    // 2 hits with two lasha cultists and one xarm warrior all standing at def 1.
+    // Killing one of them and dropping the second hit must be rejected.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'tenzen', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'lasha', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+
+    const lashaC1 = followersInRegion(s, 'norrsund').find(f => f.power === 'lasha')!.id;
+
+    const paused: GameState = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        nextStep: { type: 'post_normal' },
+      },
+      pendingAction: {
+        waitingFor: 'tenzen',
+        actionKind: 'battle_hit_assignment',
+        context: { regionId: 'norrsund', hitsRemaining: 2, changerOfFateActive: false, peasantsAvailable: 0 },
+      },
+    };
+
+    expect(() => applyBattleHitAssignment(paused, {
+      kind: 'battle_hit_assignment',
+      power: 'tenzen',
+      regionId: 'norrsund',
+      followerIds: [lashaC1],
+    })).toThrow(/underallocated/);
   });
 
   test('auto-resolve drives battle out of battle phase', () => {
