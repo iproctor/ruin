@@ -5,7 +5,7 @@ import type {
   Power,
   RegionId,
 } from '@ruin/engine';
-import { followersInRegion, effectiveDefense } from '@ruin/engine';
+import { followersInRegion, effectiveDefense, isBattleHitAssignmentLegal } from '@ruin/engine';
 
 /**
  * Enumerate hit-assignment actions at a battle_hit_assignment decision point.
@@ -161,26 +161,10 @@ export function enumerateKillActions(
   }
 
   // ── Drop strictly-dominated underallocations ────────────────────────────
-  // The engine rejects an action that leaves hits unused while a kill or
-  // peasant is still affordable. Filter those out so MCTS doesn't pop them
-  // and crash during expansion.
-  const enemyDef = new Map<string, number>();
-  for (const e of enemies) enemyDef.set(e.id, effectiveDefense(state, ctx.regionId, e, attacker));
-  const filtered = actions.filter(a => {
-    let spent = a.peasantsToTake ?? 0;
-    const killed = new Set(a.followerIds);
-    for (const id of a.followerIds) spent += enemyDef.get(id) ?? 0;
-    const leftover = ctx.hitsRemaining - spent;
-    if (leftover <= 0) return true;
-    const peasantsRemaining = ctx.peasantsAvailable - (a.peasantsToTake ?? 0);
-    if (peasantsRemaining > 0) return false;
-    for (const e of enemies) {
-      if (killed.has(e.id)) continue;
-      const d = enemyDef.get(e.id) ?? 0;
-      if (d > 0 && d <= leftover) return false;
-    }
-    return true;
-  });
+  // Use the engine's predicate directly so the filter and the engine's runtime
+  // validation can never disagree about which actions are legal.
+  const pendingCtx = state.pendingAction?.context;
+  const filtered = actions.filter(a => isBattleHitAssignmentLegal(state, a, pendingCtx));
 
   return filtered.length > 0 ? filtered : actions;
 }

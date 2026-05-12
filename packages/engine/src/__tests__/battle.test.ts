@@ -7,7 +7,10 @@
  * and inspect the raw pause state to test the interactive flow specifically.
  */
 import type { GameState } from '../types.js';
-import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment } from '../phases/battle.js';
+import {
+  resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment,
+  isBattleHitAssignmentLegal,
+} from '../phases/battle.js';
 import { resolveEndPhase } from '../phases/end.js';
 import { enumerateBattleHitStrategies } from '../legalActions.js';
 import { applyAction, applyActionForPreview } from '../reducers.js';
@@ -211,6 +214,60 @@ describe('interactive hit assignment', () => {
       regionId: 'norrsund',
       followerIds: [],
     })).toThrow(/underallocated/);
+  });
+
+  test('isBattleHitAssignmentLegal predicate matches applyBattleHitAssignment throw behavior', () => {
+    // The predicate is reused by the AI's enumerateKillActions filter so MCTS
+    // doesn't enumerate actions the engine will throw on. Cover both branches
+    // (legal + illegal) so the two callers can never disagree.
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    s = addToken(s, 'norrsund', 'peasant');
+
+    const tenzenWarriorId = followersInRegion(s, 'norrsund').find(f => f.power === 'tenzen' && f.class === 'warrior')!.id;
+    const tenzenCultistId = followersInRegion(s, 'norrsund').find(f => f.power === 'tenzen' && f.class === 'cultist')!.id;
+
+    const paused: GameState = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        nextStep: { type: 'post_normal' },
+      },
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'battle_hit_assignment',
+        context: { regionId: 'norrsund', hitsRemaining: 5, changerOfFateActive: false, peasantsAvailable: 1 },
+      },
+    };
+
+    // Legal: kill warrior (def 2) + cultist (def 1) + 2 hits as peasants/leftover.
+    // peasantsAvailable=1, so spent = 1 + 2 + 1 = 4, leftover = 1, no peasants
+    // left, no enemy with def ≤ 1 remaining → legal.
+    const legalAction = {
+      kind: 'battle_hit_assignment' as const,
+      power: 'xarm' as const,
+      regionId: 'norrsund' as const,
+      followerIds: [tenzenWarriorId, tenzenCultistId],
+      peasantsToTake: 1,
+    };
+    expect(isBattleHitAssignmentLegal(paused, legalAction)).toBe(true);
+    expect(() => applyBattleHitAssignment(paused, legalAction)).not.toThrow();
+
+    // Illegal: kill warrior only (def 2), no peasants. spent=2, leftover=3,
+    // peasants still available AND tenzen cultist (def 1) is still affordable
+    // → predicate false + engine throws.
+    const illegalAction = {
+      kind: 'battle_hit_assignment' as const,
+      power: 'xarm' as const,
+      regionId: 'norrsund' as const,
+      followerIds: [tenzenWarriorId],
+    };
+    expect(isBattleHitAssignmentLegal(paused, illegalAction)).toBe(false);
+    expect(() => applyBattleHitAssignment(paused, illegalAction)).toThrow(/underallocated/);
   });
 
   test('regression: 2 hits + 3 def-1 enemies — submitting 1 kill is rejected', () => {

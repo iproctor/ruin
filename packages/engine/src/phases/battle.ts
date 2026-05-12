@@ -214,6 +214,59 @@ export function applyCorruptionHarvestChoice(
   return { state: s, log };
 }
 
+/**
+ * Sequentially simulate the engine's affordability accounting for a
+ * battle_hit_assignment action and return whether it would leave hits unused
+ * while a kill or peasant claim is still affordable. Same logic used by both
+ * the engine validation (throws) and the AI's enumerator (filters).
+ *
+ * Pass `pendingContext` explicitly so MCTS expansion can validate child
+ * actions against the context from the parent's pendingAction rather than
+ * relying on `state.pendingAction` (which may already point to the next
+ * decision after speculative apply).
+ */
+export function isBattleHitAssignmentLegal(
+  state: GameState,
+  action: BattleHitAssignmentAction,
+  pendingContext?: Record<string, unknown>,
+): boolean {
+  const ctx = pendingContext ?? state.pendingAction?.context;
+  if (!ctx) return true;
+  const hitsBudget = (ctx['hitsRemaining'] as number | undefined) ?? Infinity;
+  if (!Number.isFinite(hitsBudget)) return true;
+  const changerOfFateActive = (ctx['changerOfFateActive'] as boolean | undefined) ?? false;
+
+  const { regionId, followerIds, peasantsToTake = 0, power: attacker, warFrenzyPartialHits } = action;
+
+  let spent = peasantsToTake;
+  for (const e of warFrenzyPartialHits ?? []) spent += e.hits;
+  const killed = new Set<string>();
+  for (const fId of followerIds) {
+    let fig: FollowerInstance | undefined;
+    for (const p of state.activePowers) {
+      fig = state.powers[p]!.followers.find(f => f.id === fId && f.regionId === regionId);
+      if (fig) break;
+    }
+    if (!fig) continue;
+    const def = effectiveDefense(state, regionId, fig, attacker);
+    if (spent + def > hitsBudget) continue;
+    spent += def;
+    killed.add(fId);
+  }
+  const leftover = hitsBudget - spent;
+  if (leftover <= 0) return true;
+
+  const peasantsRemaining =
+    state.regions[regionId]!.tokens.filter(t => t === 'peasant').length - peasantsToTake;
+  if (peasantsRemaining > 0) return false;
+
+  const remainingEnemies = getEnemyFigures(state, regionId, attacker, changerOfFateActive)
+    .filter(e => !killed.has(e.figure.id));
+  if (remainingEnemies.some(e => e.defense <= leftover)) return false;
+
+  return true;
+}
+
 /** Resume after a battle hit assignment choice has been submitted. */
 export function applyBattleHitAssignment(
   state: GameState,
@@ -225,44 +278,12 @@ export function applyBattleHitAssignment(
   const { regionId, followerIds, peasantsToTake = 0, power: attacker, warFrenzyPartialHits } = action;
   const ctx = state.pendingAction!.context;
   const changerOfFateActive = ctx['changerOfFateActive'] as boolean;
-  const hitsBudget = (ctx['hitsRemaining'] as number | undefined) ?? Infinity;
 
-  // ── Validate: all hits must be allocated when possible ────────────────────
-  // The attacker must spend every rolled hit on a kill, a peasant claim, or
-  // (in War Frenzy) a partial accumulation, so long as such a target remains
-  // affordable. Skipping a hit when a def-1 enemy is still standing isn't a
-  // legal choice in CitOW. Underallocated actions used to be accepted, which
-  // let the AI pick strictly dominated actions enumerated by enumerateKillActions.
-  if (Number.isFinite(hitsBudget)) {
-    let spent = peasantsToTake;
-    for (const e of warFrenzyPartialHits ?? []) spent += e.hits;
-    const killed = new Set<string>();
-    for (const fId of followerIds) {
-      let fig: FollowerInstance | undefined;
-      for (const p of state.activePowers) {
-        fig = state.powers[p]!.followers.find(f => f.id === fId && f.regionId === regionId);
-        if (fig) break;
-      }
-      if (!fig) continue;
-      const def = effectiveDefense(state, regionId, fig, attacker);
-      if (spent + def > hitsBudget) continue;
-      spent += def;
-      killed.add(fId);
-    }
-    const leftover = hitsBudget - spent;
-    if (leftover > 0) {
-      const peasantsRemaining =
-        state.regions[regionId]!.tokens.filter(t => t === 'peasant').length - peasantsToTake;
-      const remainingEnemies = getEnemyFigures(state, regionId, attacker, changerOfFateActive)
-        .filter(e => !killed.has(e.figure.id));
-      const canKill = remainingEnemies.some(e => e.defense <= leftover);
-      const canTakePeasant = peasantsRemaining > 0;
-      if (canKill || canTakePeasant) {
-        throw new Error(
-          `battle_hit_assignment underallocated in ${regionId}: ${leftover} hit(s) unused but a kill/peasant is still affordable for ${attacker}`,
-        );
-      }
-    }
+  if (!isBattleHitAssignmentLegal(state, action, ctx)) {
+    const hitsBudget = (ctx['hitsRemaining'] as number | undefined) ?? Infinity;
+    throw new Error(
+      `battle_hit_assignment underallocated in ${regionId}: ${hitsBudget} hit(s) budget unused but a kill/peasant is still affordable for ${attacker}`,
+    );
   }
 
   // Apply War Frenzy partial hits (don't kill, just accumulate on figure for Xarm's normal battle)
