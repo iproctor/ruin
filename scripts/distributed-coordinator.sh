@@ -375,6 +375,7 @@ itr = int(sys.argv[3])
 agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
        'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
        'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'dial_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
        'rounds_w': 0, 'shards': []}
 for f in sorted(glob.glob(f'{inbox}/*.json')):
     try:
@@ -385,6 +386,7 @@ for f in sorted(glob.glob(f'{inbox}/*.json')):
         agg['co_wins'] += d['co_wins']
         for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
         for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        for p in agg['dial_w']: agg['dial_w'][p] += d.get('dial_mean', {}).get(p, 0) * d['games']
         agg['rounds_w'] += d['avg_rounds'] * d['games']
         agg['shards'].append(f.split('/')[-1])
     except Exception as e:
@@ -392,8 +394,9 @@ for f in sorted(glob.glob(f'{inbox}/*.json')):
 g = agg['games'] or 1
 agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
 agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['dial_mean'] = {p: agg['dial_w'][p]/g for p in agg['dial_w']}
 agg['avg_rounds'] = agg['rounds_w'] / g
-del agg['vp_w']; del agg['rounds_w']
+del agg['vp_w']; del agg['dial_w']; del agg['rounds_w']
 agg['baseline'] = True
 agg['iter'] = itr
 open(out, 'w').write(json.dumps(agg, indent=2))
@@ -462,6 +465,7 @@ itr = int(sys.argv[4])
 agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
        'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
        'vp_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
+       'dial_w': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
        'rounds_w': 0, 'shards': []}
 for f in sorted(glob.glob(f'{inbox}/*.json')):
     try:
@@ -472,6 +476,7 @@ for f in sorted(glob.glob(f'{inbox}/*.json')):
         agg['co_wins'] += d['co_wins']
         for p in agg['wins']: agg['wins'][p] += d['wins'].get(p, 0)
         for p in agg['vp_w']: agg['vp_w'][p] += d['vp_mean'].get(p, 0) * d['games']
+        for p in agg['dial_w']: agg['dial_w'][p] += d.get('dial_mean', {}).get(p, 0) * d['games']
         agg['rounds_w'] += d['avg_rounds'] * d['games']
         agg['shards'].append(f.split('/')[-1])
     except Exception as e:
@@ -479,8 +484,9 @@ for f in sorted(glob.glob(f'{inbox}/*.json')):
 g = agg['games'] or 1
 agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
 agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
+agg['dial_mean'] = {p: agg['dial_w'][p]/g for p in agg['dial_w']}
 agg['avg_rounds'] = agg['rounds_w'] / g
-del agg['vp_w']; del agg['rounds_w']
+del agg['vp_w']; del agg['dial_w']; del agg['rounds_w']
 agg['current_power'] = power
 agg['iter'] = itr
 open(out, 'w').write(json.dumps(agg, indent=2))

@@ -92,6 +92,7 @@ interface GameOutcome {
   winners: Power[];
   rounds: number;
   vp: Record<Power, number>;
+  dial: Record<Power, number>;
 }
 
 function runGame(seed: number): GameOutcome {
@@ -145,6 +146,12 @@ function runGame(seed: number): GameOutcome {
       tenzen: state.powers.tenzen.victoryPoints,
       lasha: state.powers.lasha.victoryPoints,
     },
+    dial: {
+      xarm: state.powers.xarm.dialPosition,
+      gormen: state.powers.gormen.dialPosition,
+      tenzen: state.powers.tenzen.dialPosition,
+      lasha: state.powers.lasha.dialPosition,
+    },
   };
 }
 
@@ -161,6 +168,7 @@ let noWinners = 0;
 let totalRounds = 0;
 let completed = 0;
 const vpSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const dialSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 
 for (let i = 0; i < gameCount; i++) {
   const seed = baseSeed + i;
@@ -171,6 +179,7 @@ for (let i = 0; i < gameCount; i++) {
   for (const w of r.winners) wins[w]++;
   totalRounds += r.rounds;
   for (const p of ALL_POWERS) vpSum[p] += r.vp[p];
+  for (const p of ALL_POWERS) dialSum[p] += r.dial[p];
   if (r.winners.length > 0) completed++;
   if ((i + 1) % 10 === 0 || i + 1 === gameCount) {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -191,6 +200,7 @@ const result = {
   win_rates: Object.fromEntries(ALL_POWERS.map(p => [p, wins[p] / gameCount])) as Record<Power, number>,
   avg_rounds: totalRounds / gameCount,
   vp_mean: Object.fromEntries(ALL_POWERS.map(p => [p, vpSum[p] / gameCount])) as Record<Power, number>,
+  dial_mean: Object.fromEntries(ALL_POWERS.map(p => [p, dialSum[p] / gameCount])) as Record<Power, number>,
   iter: mctsIterations,
   seed_base: baseSeed,
   wall_time_s: wallTimeS,
