@@ -168,7 +168,9 @@ let noWinners = 0;
 let totalRounds = 0;
 let completed = 0;
 const vpSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const vpSqSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 const dialSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const dialSqSum: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 
 for (let i = 0; i < gameCount; i++) {
   const seed = baseSeed + i;
@@ -178,8 +180,12 @@ for (let i = 0; i < gameCount; i++) {
   if (r.winners.length > 1) coWins++;
   for (const w of r.winners) wins[w]++;
   totalRounds += r.rounds;
-  for (const p of ALL_POWERS) vpSum[p] += r.vp[p];
-  for (const p of ALL_POWERS) dialSum[p] += r.dial[p];
+  for (const p of ALL_POWERS) {
+    vpSum[p] += r.vp[p];
+    vpSqSum[p] += r.vp[p] * r.vp[p];
+    dialSum[p] += r.dial[p];
+    dialSqSum[p] += r.dial[p] * r.dial[p];
+  }
   if (r.winners.length > 0) completed++;
   if ((i + 1) % 10 === 0 || i + 1 === gameCount) {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -200,7 +206,17 @@ const result = {
   win_rates: Object.fromEntries(ALL_POWERS.map(p => [p, wins[p] / gameCount])) as Record<Power, number>,
   avg_rounds: totalRounds / gameCount,
   vp_mean: Object.fromEntries(ALL_POWERS.map(p => [p, vpSum[p] / gameCount])) as Record<Power, number>,
+  vp_stdev: Object.fromEntries(ALL_POWERS.map(p => {
+    const mean = vpSum[p] / gameCount;
+    const variance = vpSqSum[p] / gameCount - mean * mean;
+    return [p, Math.sqrt(Math.max(0, variance))];
+  })) as Record<Power, number>,
   dial_mean: Object.fromEntries(ALL_POWERS.map(p => [p, dialSum[p] / gameCount])) as Record<Power, number>,
+  dial_stdev: Object.fromEntries(ALL_POWERS.map(p => {
+    const mean = dialSum[p] / gameCount;
+    const variance = dialSqSum[p] / gameCount - mean * mean;
+    return [p, Math.sqrt(Math.max(0, variance))];
+  })) as Record<Power, number>,
   iter: mctsIterations,
   seed_base: baseSeed,
   wall_time_s: wallTimeS,
