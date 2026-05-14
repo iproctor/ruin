@@ -5,3 +5,8 @@ packages:
 onlyBuiltDependencies:
   - esbuild
   - koffi
+
+# pnpm v11 renamed the setting; keep both so v10 and v11 both work.
+allowBuilds:
+  esbuild: true
+  koffi: true
