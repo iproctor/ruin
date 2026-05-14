@@ -64,6 +64,9 @@ interface ShardResult {
   wins: Record<string, number>;
   avg_rounds: number;
   vp_mean: Record<string, number>;
+  vp_stdev?: Record<string, number>;
+  dial_mean?: Record<string, number>;
+  dial_stdev?: Record<string, number>;
 }
 
 const t0 = Date.now();
@@ -124,14 +127,27 @@ const totalCoWins = results.reduce((a, r) => a + r.co_wins, 0);
 type PowerKey = typeof POWERS[number];
 const wins: Record<PowerKey, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 const vpSum: Record<PowerKey, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const vpSqSum: Record<PowerKey, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const dialSum: Record<PowerKey, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+const dialSqSum: Record<PowerKey, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
 let totalRoundsWeighted = 0;
 for (const r of results) {
   for (const p of POWERS) {
     wins[p] = wins[p] + (r.wins[p] ?? 0);
-    vpSum[p] = vpSum[p] + (r.vp_mean[p] ?? 0) * r.games;
+    const vm = r.vp_mean[p] ?? 0;
+    const vs = r.vp_stdev?.[p] ?? 0;
+    vpSum[p] = vpSum[p] + vm * r.games;
+    vpSqSum[p] = vpSqSum[p] + (vs * vs + vm * vm) * r.games;
+    const dm = r.dial_mean?.[p] ?? 0;
+    const ds = r.dial_stdev?.[p] ?? 0;
+    dialSum[p] = dialSum[p] + dm * r.games;
+    dialSqSum[p] = dialSqSum[p] + (ds * ds + dm * dm) * r.games;
   }
   totalRoundsWeighted += r.avg_rounds * r.games;
 }
+
+const vpMean = Object.fromEntries(POWERS.map(p => [p, (vpSum[p] ?? 0) / totalGames])) as Record<string, number>;
+const dialMean = Object.fromEntries(POWERS.map(p => [p, (dialSum[p] ?? 0) / totalGames])) as Record<string, number>;
 
 const aggregated = {
   current_power: matchTag,
@@ -143,7 +159,16 @@ const aggregated = {
   wins,
   win_rates: Object.fromEntries(POWERS.map(p => [p, (wins[p] ?? 0) / totalGames])),
   avg_rounds: totalRoundsWeighted / totalGames,
-  vp_mean: Object.fromEntries(POWERS.map(p => [p, (vpSum[p] ?? 0) / totalGames])),
+  vp_mean: vpMean,
+  vp_stdev: Object.fromEntries(POWERS.map(p => {
+    const v = (vpSqSum[p] ?? 0) / totalGames - (vpMean[p] ?? 0) ** 2;
+    return [p, Math.sqrt(Math.max(0, v))];
+  })),
+  dial_mean: dialMean,
+  dial_stdev: Object.fromEntries(POWERS.map(p => {
+    const v = (dialSqSum[p] ?? 0) / totalGames - (dialMean[p] ?? 0) ** 2;
+    return [p, Math.sqrt(Math.max(0, v))];
+  })),
   iter: parseInt(mctsIter, 10),
   seed_base: baseSeed,
   wall_time_s: (Date.now() - t0) / 1000,
