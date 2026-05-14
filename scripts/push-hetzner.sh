@@ -54,6 +54,7 @@ RSYNC_EXCLUDES=(
   --exclude='packages/ai/data/archive'
   --exclude='packages/ai/data/worker_config.json'
   --exclude='packages/ai/data/ref_baseline.json'
+  --exclude='packages/ai/data/ref_baseline_iter_*.json'
   --exclude='packages/ai/data/ref/'
   --exclude='packages/ai/data/fresh_powers'
   --exclude='packages/ai/data/bench_inbox_*'

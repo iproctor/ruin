@@ -65,6 +65,12 @@ rsync -avz -e "ssh ${SSH_OPTS}" \
 ssh ${SSH_OPTS} "${REMOTE_USER}@${REMOTE_HOST}" \
   "rm -f ${REMOTE_PATH}/packages/ai/data/bench_iter_*.json"
 
+echo "→ Pulling ref_baseline history (one file per promotion event)"
+rsync -avz -e "ssh ${SSH_OPTS}" \
+  --include='ref_baseline_iter_*.json' --exclude='*' \
+  "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/" \
+  "${LOCAL_ROOT}/packages/ai/data/"
+
 echo "→ Pulling training_loop.log (training progress / bench summaries)"
 rsync -avz -e "ssh ${SSH_OPTS}" \
   "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/packages/ai/data/training_loop.log" \

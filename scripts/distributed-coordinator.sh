@@ -547,11 +547,16 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
       fi
     done
 
-    # If any promotion changed the ref set, invalidate the baseline so the
-    # next h2h cycle recalibrates against the new known-good lineup.
+    # If any promotion changed the ref set, archive the baseline (so we keep
+    # the history of how the ref-vs-ref equilibrium has shifted) and then
+    # invalidate so the next h2h cycle recalibrates against the new lineup.
     if [ "$ANY_PROMOTED" = "1" ]; then
+      if [ -f "$REF_BASELINE_FILE" ]; then
+        BL_ITER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['iter'])" "$REF_BASELINE_FILE" 2>/dev/null || echo "$ITER")
+        cp "$REF_BASELINE_FILE" "$DATA_DIR/ref_baseline_iter_$(printf '%04d' "$BL_ITER").json"
+      fi
       rm -f "$REF_BASELINE_FILE"
-      echo "[iter $ITER] ref set updated — baseline invalidated, will recalibrate next cycle" | tee -a "$LOG_FILE"
+      echo "[iter $ITER] ref set updated — baseline archived as iter ${BL_ITER:-?}, will recalibrate next cycle" | tee -a "$LOG_FILE"
     fi
 
     # Return workers to collect mode.
