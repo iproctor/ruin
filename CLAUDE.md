@@ -23,13 +23,23 @@ change.
      play games where slot P is the candidate `model_<P>.json` and the
      other 3 slots use `ref/model_<other>_ref.json`. Aggregate to
      `bench_h2h_iter_NNNN_<P>.json`.
-   - **Three-band verdict per power** based on Δ = candidate_winrate − baseline:
-     - Δ ≥ +`H2H_PROMOTE_DELTA` (default 0.02): **promote** — copy
-       `model_<P>.json` → `ref/model_<P>_ref.json` (and add HOF entry).
-     - Δ < -`H2H_REVERT_DELTA` (default 0.02): **revert** — copy ref
-       back to live; rejected iters do not compound.
-     - Otherwise: **hold** — leave `model_<P>.json` as the candidate
-       so the next iter continues training from current weights.
+   - **Per-power verdict.** xarm uses win-rate only (its win condition is
+     dial-based; vp is a side effect). g/t/l use a vp-OR-win promote gate
+     because vp_mean is ~6× more sensitive than win-rate at this sample
+     size, so real progress shows up in vp before it tips the win column.
+     - **xarm**:
+       - Δwin ≥ +`H2H_PROMOTE_DELTA` (default 0.02): **promote**.
+       - Δwin < -`H2H_REVERT_DELTA` (default 0.02): **revert**.
+       - Otherwise: **hold**.
+     - **gormen / tenzen / lasha**:
+       - Δwin ≥ +`H2H_PROMOTE_DELTA_WIN_OTHER` (default 0.04)
+         **OR** Δvp ≥ +`H2H_PROMOTE_DELTA_VP` (default 1.0): **promote**.
+       - Δwin < -`H2H_REVERT_DELTA` (default 0.02): **revert**.
+       - Otherwise: **hold**.
+     - Promote copies `model_<P>.json` → `ref/model_<P>_ref.json` and
+       adds an HOF entry. Revert copies ref → live; rejected iters do
+       not compound. Hold leaves `model_<P>.json` as the candidate so the
+       next iter continues training from current weights.
    - Any promotion invalidates the baseline (`rm ref_baseline.json`); next
      cycle recalibrates against the new ref set.
 
@@ -56,8 +66,10 @@ with 1k MCTS iters, no rollout, no demos, 90-batch training window.
 | `TRAIN_EPOCHS` | 25 | epochs per train pass |
 | `H2H_AFTER_ITERS` | 5 | warm-up before h2h gate fires |
 | `H2H_TARGET_GAMES` | 768 | games per power per cycle |
-| `H2H_PROMOTE_DELTA` | 0.02 | Δ ≥ this → promote candidate to ref |
-| `H2H_REVERT_DELTA` | 0.02 | Δ < -this → revert candidate to ref; in-band → hold |
+| `H2H_PROMOTE_DELTA` | 0.02 | xarm: Δwin ≥ this → promote |
+| `H2H_PROMOTE_DELTA_WIN_OTHER` | 0.04 | g/t/l: Δwin ≥ this → promote |
+| `H2H_PROMOTE_DELTA_VP` | 1.0 | g/t/l: Δvp_mean ≥ this → promote |
+| `H2H_REVERT_DELTA` | 0.02 | all powers: Δwin < -this → revert |
 | `H2H_ITER` | 1000 | MCTS iters during h2h |
 
 ### Empirical cadence

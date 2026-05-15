@@ -523,41 +523,61 @@ print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][pow
       echo "[iter $ITER] h2h ${POWER}: $((H2H_T1 - H2H_T0))s total" | tee -a "$LOG_FILE"
     done
 
-    # Promotion phase. Per power, compare current win rate to baseline.
-    # If current beats baseline by at least H2H_PROMOTE_DELTA, promote the
-    # candidate: cp model_<P>.json → ref/model_<P>_ref.json. Track whether
-    # any promotion fired so we can invalidate the baseline below.
+    # Promotion phase. Per power, compare current to baseline.
+    #
+    # xarm: win-rate gated (Δwin ≥ H2H_PROMOTE_DELTA). xarm's win condition
+    # is dial-based; vp is a side-effect, so win-rate is the meaningful signal.
+    #
+    # gormen/tenzen/lasha: promote on EITHER Δwin ≥ H2H_PROMOTE_DELTA_WIN_OTHER
+    # (a clear win-rate jump) OR Δvp ≥ H2H_PROMOTE_DELTA_VP (vp_mean is ~6×
+    # more sensitive than win-rate at this sample size, so a small Δvp is real
+    # progress even when wins haven't tipped). This avoids missing real field
+    # improvement that doesn't yet beat xarm's dial timing.
+    #
+    # Revert is win-rate based for all powers (Δwin < -H2H_REVERT_DELTA).
+    H2H_PROMOTE_DELTA_WIN_OTHER=${H2H_PROMOTE_DELTA_WIN_OTHER:-0.04}
+    H2H_PROMOTE_DELTA_VP=${H2H_PROMOTE_DELTA_VP:-1.0}
     ANY_PROMOTED=0
     for POWER in "${ALL_POWERS[@]}"; do
       AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
       [ ! -f "$AGG_OUT" ] && continue
-      # Three-band verdict: PROMOTE (Δ ≥ +promote_delta), REVERT (Δ < -revert_delta),
-      # or HOLD (in between — keep candidate live, don't touch ref).
       DECISION=$(python3 -c "
 import json, sys
 power = sys.argv[1]
 agg = json.load(open(sys.argv[2]))
 base = json.load(open(sys.argv[3]))
-promote_thr = float(sys.argv[4])
-revert_thr = float(sys.argv[5])
+promote_thr_xarm = float(sys.argv[4])
+promote_thr_win_other = float(sys.argv[5])
+promote_thr_vp = float(sys.argv[6])
+revert_thr = float(sys.argv[7])
 cur = agg['win_rates'].get(power, 0.0)
 bl = base['win_rates'].get(power, 0.0)
 delta = cur - bl
-if delta >= promote_thr:
+cur_vp = agg.get('vp_mean', {}).get(power, 0.0)
+bl_vp = base.get('vp_mean', {}).get(power, 0.0)
+delta_vp = cur_vp - bl_vp
+if power == 'xarm':
+    promote = delta >= promote_thr_xarm
+else:
+    promote = (delta >= promote_thr_win_other) or (delta_vp >= promote_thr_vp)
+if promote:
     verdict = 'PROMOTE'
 elif delta < -revert_thr:
     verdict = 'REVERT'
 else:
     verdict = 'HOLD'
-print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
-" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_REVERT_DELTA" 2>/dev/null)
+print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delta_vp:+.2f}')
+" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" 2>/dev/null)
       VERDICT=$(echo "$DECISION" | cut -d'|' -f1)
       CUR=$(echo "$DECISION" | cut -d'|' -f2)
       BL=$(echo "$DECISION" | cut -d'|' -f3)
       DELTA=$(echo "$DECISION" | cut -d'|' -f4)
+      CUR_VP=$(echo "$DECISION" | cut -d'|' -f5)
+      BL_VP=$(echo "$DECISION" | cut -d'|' -f6)
+      DELTA_VP=$(echo "$DECISION" | cut -d'|' -f7)
       if [ "$VERDICT" = "PROMOTE" ]; then
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
-        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) → ref updated" | tee -a "$LOG_FILE"
+        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
 
         # HOF entry: only h2h-promoted models. Use the h2h win rate as the
@@ -571,11 +591,11 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}')
         fi
       elif [ "$VERDICT" = "REVERT" ]; then
         cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
-        echo "[iter $ITER] revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) → reverted to ref" | tee -a "$LOG_FILE"
+        echo "[iter $ITER] revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → reverted to ref" | tee -a "$LOG_FILE"
       else
         # HOLD: candidate stayed close to baseline. Keep it live so training
         # continues from current weights instead of snapping back to ref.
-        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) → kept" | tee -a "$LOG_FILE"
+        echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → kept" | tee -a "$LOG_FILE"
       fi
     done
 
