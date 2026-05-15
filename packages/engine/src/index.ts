@@ -27,7 +27,7 @@ export { GameLog, renderText } from './gameLog.js';
 export { getLegalActions, enumerateBattleHitStrategies, sampleLegalSummoningAction } from './legalActions.js';
 export { getRegionDominationLeader, getRegionDomination, getRegionResistance, getPowerDomination, previewDialAdvancementEarners, projectedCorruptionPlacement } from './phases/corruption.js';
 export { effectiveDefense, isBattleHitAssignmentLegal } from './phases/battle.js';
-export { followersInRegion } from './helpers.js';
+export { followersInRegion, isWorldCardActive } from './helpers.js';
 export { getWorldChoiceRegions } from './phases/world.js';
 export { checkVictory } from './victory.js';
 

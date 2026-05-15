@@ -1,5 +1,5 @@
 import type { GameState, Power, RegionId, FollowerClass, TokenType, FollowerInstance } from '@ruin/engine';
-import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, FOLLOWERS, getRegionResistance, getRegionDomination } from '@ruin/engine';
+import { CHAOS_CARDS, WORLD_CARDS, UPGRADES, UPGRADE_BY_ID, FOLLOWERS, getRegionResistance, getRegionDomination, isWorldCardActive } from '@ruin/engine';
 
 /**
  * Feature extractor — v2 (~450 features).
@@ -171,6 +171,19 @@ const DOMINATION_LEADER_DIMS = (POWERS.length + 1) * REGION_ORDER.length;
 // (typical max ~6-12 actions per power per game).
 const SUMMONING_TURNS_DIMS = POWERS.length;
 
+// Optimistic double-tick: 1 for the unique power projected to hold the most
+// dial counters at end-phase advance time, 0 otherwise. Captures the
+// advanceThreatDials rule that the strict-most-counters holder gets an extra
+// advance. All-zero if there's a tie or no power has projected any counters.
+const DOUBLE_TICK_DIMS = POWERS.length;
+
+// Expected DAC (one per power) and expected double-tick (one-hot over powers)
+// variants of the above using 0.6-hits-per-die battle attrition to estimate
+// how many cultists actually survive to place corruption / whether xarm has
+// enough hits to kill ≥1 enemy. See expectedDac() for the full formula.
+const EXPECTED_DAC_DIMS = POWERS.length;
+const EXPECTED_DOUBLE_TICK_DIMS = POWERS.length;
+
 // Offset of the viewpoint hand block within the full feature vector. The
 // hand encoding is the only viewpoint-dependent slice; everything before and
 // after this range is identical across viewpoints. Used by
@@ -193,21 +206,29 @@ export const FEATURE_DIM =
   POTENTIAL_CORRUPTION_DIMS +
   EXPECTED_RUIN_DIMS +
   DOMINATION_LEADER_DIMS +
-  SUMMONING_TURNS_DIMS;
+  SUMMONING_TURNS_DIMS +
+  DOUBLE_TICK_DIMS +
+  EXPECTED_DAC_DIMS +
+  EXPECTED_DOUBLE_TICK_DIMS;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Count regions where `power` would optimistically earn a dial counter this
- * round. The per-region follower lists are passed in so callers can share one
- * scan of state.powers[*].followers across all 4 powers.
+ * Optimistic estimate of total dial counters `power` will hold at end-phase
+ * advance time. Sum of:
+ *   1. counters already earned this round (e.g. Plaguefather summon during
+ *      summoning, xarm battle DAC) — read straight from `dialCounters`,
+ *   2. counters predicted to be earned in still-pending phases under
+ *      optimistic outcomes (xarm kills, others' cultists survive).
+ * Per-region follower lists are passed in so callers can share one scan of
+ * state.powers[*].followers across all 4 powers.
  */
 function optimisticDac(
   state: GameState,
   power: Power,
   regionFigs: Record<string, FollowerInstance[]>,
 ): number {
-  let count = 0;
+  let count = state.powers[power]?.dialCounters ?? 0;
   const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
   const lashaRavers = state.powers['lasha']?.upgradesInPlay.includes('lasha_ravers_up') ?? false;
 
@@ -260,6 +281,149 @@ function optimisticDac(
 }
 
 /**
+ * Realistic estimate of total dial counters `power` will hold at advance time,
+ * using a 0.6-hit-per-die expectation to model battle attrition. 0.6 =
+ * expected hits per exploding d6 (3/6 hit on 4+, with explosions on 6).
+ *
+ * Battle-dice modifiers accounted for:
+ *   - Ecstasy (lasha_ecstasy): zero battle dice in region.
+ *   - The Chokepoint (world card) + Event token: each attacker capped at 1 die.
+ *   - War Frenzy (xarm_war_frenzy): adds 2 dice to xarm (not chokepoint-capped).
+ *   - Pestilent Touch (gormen_pestilent_touch): non-gormen defense −1 (min 1).
+ *   - Rain of Bile (gormen_rain_of_bile): gormen defense +1.
+ *   - Changer of Fate: cancels region card text (including those above).
+ *   - Fate Shield (`f.protected`): protected figures cannot be killed —
+ *     for xarm, protected enemies are excluded from kill targets;
+ *     for others, protected own cultists always survive (absorb no hits).
+ *
+ * For xarm: counts a region if expected hits ≥ min enemy effective defense
+ * (likely ≥1 kill).
+ *
+ * For gormen/tenzen/lasha: opponent expected kills only land on
+ * *unprotected* own corruption-laying figures; the survivor count then
+ * needs to clear shimmer reduction and the power-specific DAC condition.
+ *
+ * Always includes `dialCounters` already earned this round (Plaguefather,
+ * xarm battle DAC, etc.) just like optimisticDac.
+ */
+function expectedDac(
+  state: GameState,
+  power: Power,
+  regionFigs: Record<string, FollowerInstance[]>,
+): number {
+  const HIT_RATE = 0.6;
+  let count = state.powers[power]?.dialCounters ?? 0;
+  const xarmHasHeartseekers = state.powers['xarm']?.upgradesInPlay.includes('xarm_heartseekers_up') ?? false;
+  const lashaRavers = state.powers['lasha']?.upgradesInPlay.includes('lasha_ravers_up') ?? false;
+  const chokepointActive = isWorldCardActive(state, 'the_chokepoint');
+
+  for (const r of REGION_ORDER) {
+    const region = state.regions[r];
+    if (!region || region.ruinationCardIndex !== null) continue;
+    const changer = region.chaosCards.some(c => c?.cardId === 'tenzen_changer_of_fate');
+    const ecstasy = !changer && region.chaosCards.some(c => c?.cardId === 'lasha_ecstasy');
+    const figs = regionFigs[r]!;
+    const chokepoint = chokepointActive && region.tokens.includes('event');
+    const pestilentTouch = !changer && region.chaosCards.some(c => c?.cardId === 'gormen_pestilent_touch');
+    const rainOfBile = !changer && region.chaosCards.some(c => c?.cardId === 'gormen_rain_of_bile');
+
+    if (power === 'xarm') {
+      if (ecstasy) continue;
+      const hasWarFrenzy = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_frenzy');
+      let xarmDice = 0;
+      let minEnemyDef = Infinity;
+      for (const f of figs) {
+        if (f.tipped) continue;
+        const controller = f.controlledBy ?? f.power;
+        if (controller === 'xarm') {
+          const owner = f.power as Power;
+          const fdef = FOLLOWERS[owner]![f.class]!;
+          if (f.class === 'cultist') {
+            if (owner === 'xarm' && xarmHasHeartseekers) xarmDice += fdef.upgraded.attack;
+          } else {
+            const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
+              UPGRADE_BY_ID[u]?.upgradeType === f.class
+            );
+            xarmDice += isUpgraded ? fdef.upgraded.attack : fdef.base.attack;
+          }
+        } else if (!f.protected) {
+          const owner = f.power as Power;
+          const fdef = FOLLOWERS[owner]![f.class]!;
+          const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
+            UPGRADE_BY_ID[u]?.upgradeType === f.class
+          );
+          let d = isUpgraded ? fdef.upgraded.defense : fdef.base.defense;
+          if (rainOfBile && owner === 'gormen') d += 1;
+          if (pestilentTouch && owner !== 'gormen') d = Math.max(1, d - 1);
+          if (d < minEnemyDef) minEnemyDef = d;
+        }
+      }
+      // Chokepoint caps the normal-battle die count at 1 per power.
+      if (chokepoint) xarmDice = Math.min(xarmDice, 1);
+      // War Frenzy adds 2 dice on top — not gated by chokepoint per engine.
+      if (hasWarFrenzy) xarmDice += 2;
+      if (xarmDice === 0 || minEnemyDef === Infinity) continue;
+      if (xarmDice * HIT_RATE >= minEnemyDef) count++;
+    } else {
+      const warCry = !changer && region.chaosCards.some(c => c?.cardId === 'xarm_war_cry');
+      if (warCry) continue;
+
+      let myCorruptionFigs = 0;
+      let unprotectedCorruptionFigs = 0;
+      // Per-opponent dice are capped at 1 each under Chokepoint, so accumulate
+      // per-opp totals and apply Math.min(opp, 1) before summing.
+      const oppDicePerPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+      for (const f of figs) {
+        if (f.tipped) continue;
+        const controller = f.controlledBy ?? f.power;
+        if (controller === power) {
+          const isCorruptionLayer = f.class === 'cultist' ||
+            (power === 'lasha' && lashaRavers && f.class === 'warrior' && f.power === 'lasha');
+          if (isCorruptionLayer) {
+            myCorruptionFigs++;
+            if (!f.protected) unprotectedCorruptionFigs++;
+          }
+        } else if (!ecstasy) {
+          const owner = f.power as Power;
+          const fdef = FOLLOWERS[owner]![f.class]!;
+          const isUpgraded = state.powers[owner]!.upgradesInPlay.some(u =>
+            UPGRADE_BY_ID[u]?.upgradeType === f.class
+          );
+          oppDicePerPower[controller as Power] += isUpgraded ? fdef.upgraded.attack : fdef.base.attack;
+        }
+      }
+      if (myCorruptionFigs === 0) continue;
+
+      let oppDice = 0;
+      for (const opp of POWERS) {
+        if (opp === power) continue;
+        const d = oppDicePerPower[opp];
+        oppDice += chokepoint ? Math.min(d, 1) : d;
+      }
+
+      // Expected kills can only land on unprotected figures.
+      const killsLanding = Math.min(unprotectedCorruptionFigs, oppDice * HIT_RATE);
+      const survivors = myCorruptionFigs - killsLanding;
+
+      const shimmer = !changer && region.chaosCards.some(c => c?.cardId === 'tenzen_shimmer');
+      const reduction = (shimmer && power !== 'tenzen') ? 1 : 0;
+      const tokens = Math.max(0, survivors - reduction);
+      if (tokens < 2) continue;
+
+      if (power === 'gormen' && region.populous) count++;
+      else if (power === 'tenzen') {
+        const ms = region.chaosCards.filter(c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId)).length;
+        const cs = region.tokens.filter(t => t === 'chaos_stone').length;
+        const fatespinner = state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+          figs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
+        if (ms + cs + fatespinner >= 2) count++;
+      } else if (power === 'lasha' && region.tokens.some(t => t === 'noble' || t === 'hero')) count++;
+    }
+  }
+  return count;
+}
+
+/**
  * Build a per-region follower list in one pass over state.powers[*].followers.
  * Same ordering as the engine's followersInRegion (active-powers iteration
  * order). Used to share the scan across the many follower-by-region lookups
@@ -292,6 +456,14 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
   // ~140 individual followersInRegion calls.
   const regionFigs = buildRegionFollowers(state);
 
+  // Pre-compute optimisticDac per power once. Reused below for the per-power
+  // column (PER_POWER block) and for the end-of-vector double-tick block,
+  // which needs all four values to identify the strict-max holder.
+  const dacByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+  for (const p of POWERS) {
+    if (state.powers[p]) dacByPower[p] = optimisticDac(state, p, regionFigs);
+  }
+
   // ── Global ──────────────────────────────────────────────────────────────
   out[i++] = state.round / 10;
   out[i++] = state.ruinationCardsUsed / 5;
@@ -305,9 +477,10 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
 
     out[i++] = ps.victoryPoints / 60;
     out[i++] = ps.dialPosition / DIAL_MAX[p];
-    // Optimistic expected DAC: count regions where this power would earn a
-    // dial counter assuming optimistic outcomes (xarm kills, others' cultists survive).
-    out[i++] = Math.min(optimisticDac(state, p, regionFigs) / 3, 1);
+    // Optimistic expected DAC: dialCounters already earned this round plus
+    // regions where this power would still earn a dial counter under
+    // optimistic outcomes (xarm kills, others' cultists survive).
+    out[i++] = Math.min(dacByPower[p] / 3, 1);
     // PP as fraction of base (1.0 = full budget, 0 = spent). A +1 PP change
     // on a base-6 power is a 0.17 shift — much more visible than the old /10.
     out[i++] = ps.basePowerPoints > 0 ? ps.powerPoints / ps.basePowerPoints : 0;
@@ -593,6 +766,48 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
   for (const p of POWERS) {
     const turns = state.powers[p]?.summoningTurnsTaken ?? 0;
     out[i++] = Math.min(turns / 20, 1);
+  }
+
+  // ── Optimistic double-tick leader (one-hot over POWERS) ────────────────
+  // Set the bit for the unique power with the strict-max optimisticDac
+  // (must also be > 0, matching the engine's mostCounters filter). All-zero
+  // on ties or when no power has any projected counters.
+  let dacMax = 0;
+  let dacTies = 0;
+  let dacLeader: Power | null = null;
+  for (const p of POWERS) {
+    const v = dacByPower[p];
+    if (v > dacMax) { dacMax = v; dacTies = 1; dacLeader = p; }
+    else if (v === dacMax) { dacTies++; }
+  }
+  const uniqueLeader: Power | null = (dacMax > 0 && dacTies === 1) ? dacLeader : null;
+  for (const p of POWERS) {
+    out[i++] = p === uniqueLeader ? 1 : 0;
+  }
+
+  // ── Expected DAC per power (battle-attrition aware) ────────────────────
+  // Same /3 cap as optimisticDac so the two columns are directly comparable
+  // ("how many DAC do I think I'll have? optimistic vs expected").
+  const expDacByPower: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+  for (const p of POWERS) {
+    if (state.powers[p]) expDacByPower[p] = expectedDac(state, p, regionFigs);
+  }
+  for (const p of POWERS) {
+    out[i++] = Math.min(expDacByPower[p] / 3, 1);
+  }
+
+  // ── Expected double-tick leader (one-hot over POWERS) ──────────────────
+  let expMax = 0;
+  let expTies = 0;
+  let expLeader: Power | null = null;
+  for (const p of POWERS) {
+    const v = expDacByPower[p];
+    if (v > expMax) { expMax = v; expTies = 1; expLeader = p; }
+    else if (v === expMax) { expTies++; }
+  }
+  const expUniqueLeader: Power | null = (expMax > 0 && expTies === 1) ? expLeader : null;
+  for (const p of POWERS) {
+    out[i++] = p === expUniqueLeader ? 1 : 0;
   }
 
   if (i !== FEATURE_DIM) {
