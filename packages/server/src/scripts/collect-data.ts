@@ -68,6 +68,17 @@ const hofMix = parseFloat(getArg('--hof-mix', '0'));
 // sample are unchanged — temperature only affects which action is *played*.
 const tempRounds = parseInt(getArg('--temp-rounds', '2'), 10);
 
+// Auxiliary "suppress xarm" reward shaping at MCTS selection. Read from
+// XARM_SUPPRESSION_LAMBDA env var (default 0 = disabled). When > 0 and the
+// acting power is non-xarm, the exploitation Q at each MCTS node becomes
+// own_avg_progress - λ × xarm_avg_progress instead of pure own_progress. This
+// biases gormen/tenzen/lasha play toward lines that retard xarm's dial in
+// addition to advancing their own VP. Anneal toward 0 as defence is learned.
+const xarmSuppression = parseFloat(process.env.XARM_SUPPRESSION_LAMBDA ?? '0');
+if (xarmSuppression > 0) {
+  console.log(`[mcts] xarm suppression λ = ${xarmSuppression}`);
+}
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
@@ -263,6 +274,7 @@ function runGame(seed: number): GameResult {
           timeMs: mctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
+          ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
         });
         // τ=1 visit-proportional sampling for opening rounds, but ONLY for
         // the per-game explorer (one randomly-chosen power). Other powers
@@ -286,6 +298,7 @@ function runGame(seed: number): GameResult {
           timeMs: mctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(dirichletNoise ? { dirichletNoise } : {}),
+          ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
         });
       } else {
         action = greedyAction(state, pending.waitingFor);

@@ -81,12 +81,33 @@ function actingPowerForChild(child: MctsNode): Power {
 }
 
 /**
+ * Effective exploitation Q from a power's perspective, optionally with xarm
+ * suppression. When `xarmSuppression > 0` and the acting power is not xarm,
+ * subtract λ × xarm's avg progress at this node — biasing non-xarm players
+ * toward lines that retard xarm's dial in addition to advancing their own VP.
+ * Set λ = 0 for vanilla MaxN behaviour.
+ */
+function effectiveQ(
+  totalScores: Record<Power, number>,
+  visits: number,
+  acting: Power,
+  xarmSuppression: number,
+): number {
+  if (visits <= 0) return 0;
+  const own = totalScores[acting] / visits;
+  if (xarmSuppression > 0 && acting !== 'xarm') {
+    return own - xarmSuppression * (totalScores.xarm / visits);
+  }
+  return own;
+}
+
+/**
  * UCB1 value for selecting which child to visit next, MaxN-style.
  *
  * Each player maximises their own avg score. The acting player's perspective
  * is determined by the action stored on the child being scored.
  */
-export function ucb1(node: MctsNode, explorationC: number): number {
+export function ucb1(node: MctsNode, explorationC: number, xarmSuppression: number = 0): number {
   if (node.visits === 0) {
     return Infinity;
   }
@@ -94,7 +115,7 @@ export function ucb1(node: MctsNode, explorationC: number): number {
   const parentVisits = parent !== null ? parent.visits : node.visits;
 
   const acting = actingPowerForChild(node);
-  const exploitation = node.totalScores[acting] / node.visits;
+  const exploitation = effectiveQ(node.totalScores, node.visits, acting, xarmSuppression);
   const exploration = explorationC * Math.sqrt(Math.log(parentVisits) / node.visits);
   return exploitation + exploration;
 }
@@ -112,13 +133,14 @@ export function puctForUntriedAction(
   action: Action,
   prior: number,
   explorationC: number,
+  xarmSuppression: number = 0,
 ): number {
   const parentVisits = Math.max(1, parent.visits);
   const acting = action.power as Power;
 
   let exploitation: number;
   if (parent.visits > 0) {
-    const parentAvg = parent.totalScores[acting] / parent.visits;
+    const parentAvg = effectiveQ(parent.totalScores, parent.visits, acting, xarmSuppression);
     exploitation = Math.max(0, parentAvg - FPU_REDUCTION);
   } else {
     exploitation = 0.5;
@@ -128,16 +150,16 @@ export function puctForUntriedAction(
   return exploitation + exploration;
 }
 
-export function puct(node: MctsNode, explorationC: number): number {
+export function puct(node: MctsNode, explorationC: number, xarmSuppression: number = 0): number {
   const parent = node.parent;
   const parentVisits = parent !== null ? Math.max(1, parent.visits) : Math.max(1, node.visits);
   const acting = actingPowerForChild(node);
 
   let exploitation: number;
   if (node.visits > 0) {
-    exploitation = node.totalScores[acting] / node.visits;
+    exploitation = effectiveQ(node.totalScores, node.visits, acting, xarmSuppression);
   } else if (parent !== null && parent.visits > 0) {
-    const parentAvg = parent.totalScores[acting] / parent.visits;
+    const parentAvg = effectiveQ(parent.totalScores, parent.visits, acting, xarmSuppression);
     exploitation = Math.max(0, parentAvg - FPU_REDUCTION);
   } else {
     exploitation = 0.5;

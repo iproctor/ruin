@@ -44,6 +44,9 @@ HOF_MIX=0.15
 export HOF_MIX
 TEMP_ROUNDS=${TEMP_ROUNDS:-3}
 export TEMP_ROUNDS
+# See distributed-coordinator.sh for description. Default 0 = off.
+XARM_SUPPRESSION_LAMBDA=${XARM_SUPPRESSION_LAMBDA:-0}
+export XARM_SUPPRESSION_LAMBDA
 
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"

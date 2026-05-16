@@ -18,6 +18,9 @@ GAMES_PER_BATCH=${GAMES_PER_BATCH:-16}
 WORKERS=${WORKERS:-7}
 HOF_MIX=${HOF_MIX:-0.15}
 IDLE_SECONDS=${IDLE_SECONDS:-30}
+# See distributed-coordinator.sh for description. Default 0 = off.
+XARM_SUPPRESSION_LAMBDA=${XARM_SUPPRESSION_LAMBDA:-0}
+export XARM_SUPPRESSION_LAMBDA
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$ROOT/packages/ai/data"

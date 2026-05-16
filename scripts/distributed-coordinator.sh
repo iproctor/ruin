@@ -47,6 +47,14 @@ TRAIN_WINDOW=${TRAIN_WINDOW:-180}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
+# Auxiliary "suppress xarm" reward shaping at MCTS selection. When > 0 and the
+# acting power is non-xarm, the exploitation Q at each MCTS node becomes
+#   Q = own_avg_progress - λ × xarm_avg_progress
+# instead of pure own-progress MaxN. Biases g/t/l play toward retarding xarm's
+# dial. Default 0 = off. Anneal toward 0 once non-xarm powers have learned
+# defensive play. Suggested initial value: 0.5.
+XARM_SUPPRESSION_LAMBDA=${XARM_SUPPRESSION_LAMBDA:-0}
+export XARM_SUPPRESSION_LAMBDA
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

@@ -40,6 +40,18 @@ export interface MctsOptions {
    * Omit at inference; enable only in collection.
    */
   dirichletNoise?: { alpha: number; weight: number };
+  /**
+   * Auxiliary "suppress xarm" reward shaping at MCTS selection. When > 0 and
+   * the acting power is non-xarm, the exploitation term becomes
+   *   Q = own_avg_progress - xarmSuppression * xarm_avg_progress
+   * instead of the pure own-progress MaxN value. Biases non-xarm play toward
+   * lines that retard xarm's dial in addition to advancing the actor's own
+   * VP, breaking the xarm-clock attractor that pure MaxN converges to. Value
+   * head training is unaffected (still trains on true per-power progress) —
+   * the shaped policy comes purely from biased visit distributions. Anneal
+   * to 0 once non-xarm powers have learned defensive play.
+   */
+  xarmSuppression?: number;
 }
 
 // Iteration cap is effectively only a safety net — time cap governs in
@@ -295,7 +307,7 @@ function runMctsCore(
   let maxDepth = 0;
 
   while (iteration < maxIterations && Date.now() < deadline) {
-    const selected = select(root, explorationC, usePuct);
+    const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0);
     const expanded = expand(selected, forPower);
     // Track depth so probeMctsSearch can report tree shape. Cheap (one
     // pointer walk per iter); always-on rather than conditional.
@@ -583,7 +595,7 @@ export function probeMctsSearch(
  *     one); only descend when a node is fully expanded. Broadens before
  *     deepening. Used for powers without per-power models.
  */
-function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNode {
+function select(node: MctsNode, explorationC: number, usePuct: boolean, xarmSup: number): MctsNode {
   const useAzStyle = modelForPowerLoaded(node.forPower);
   let current = node;
 
@@ -598,7 +610,7 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
       let bestChild: MctsNode | null = null;
       let bestScore = -Infinity;
       for (const child of current.children) {
-        const s = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
+        const s = usePuct ? puct(child, explorationC, xarmSup) : ucb1(child, explorationC, xarmSup);
         if (s > bestScore) { bestScore = s; bestChild = child; }
       }
       if (bestChild === null) break;
@@ -610,7 +622,7 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
     let bestChildScore = -Infinity;
     let bestChild: MctsNode | null = null;
     for (const child of current.children) {
-      const s = usePuct ? puct(child, explorationC) : ucb1(child, explorationC);
+      const s = usePuct ? puct(child, explorationC, xarmSup) : ucb1(child, explorationC, xarmSup);
       if (s > bestChildScore) { bestChildScore = s; bestChild = child; }
     }
 
@@ -627,7 +639,7 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean): MctsNod
         for (let i = 0; i < current.untriedActions.length; i++) {
           const action = current.untriedActions[i]!;
           const prior = current.childPriors !== null ? current.childPriors(action) : fallbackPrior;
-          const s = puctForUntriedAction(current, action, prior, explorationC);
+          const s = puctForUntriedAction(current, action, prior, explorationC, xarmSup);
           if (s > bestUntriedScore) { bestUntriedScore = s; bestUntriedIdx = i; }
         }
       } else {
