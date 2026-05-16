@@ -78,6 +78,12 @@ def parse_args() -> argparse.Namespace:
                     help="Filter policy data to this power only (by 'p' field in JSONL).")
     ap.add_argument("--warm-start", type=str, default="",
                     help="Path to a model.json to warm-start from.")
+    ap.add_argument("--overfit-batch", type=int, default=0,
+                    help="Diagnostic mode: take the first N samples, use them as "
+                         "both train and val, run --epochs gradient steps on this "
+                         "fixed batch. A small net should drive policy loss toward "
+                         "H(target) and top-1 toward ~100%% — if it can't, there's "
+                         "a bug or optimizer issue, not a data plateau.")
     return ap.parse_args()
 
 
@@ -520,9 +526,31 @@ def main() -> int:
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)
     X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
-    n_val = int(n * args.val)
-    X_val,  Tv_val, Tp_val, hp_val, pi_val = X[:n_val], T_value[:n_val], T_policy[:n_val], has_policy[:n_val], power_idx[:n_val]
-    X_tr,   Tv_tr,  Tp_tr,  hp_tr,  pi_tr  = X[n_val:], T_value[n_val:], T_policy[n_val:], has_policy[n_val:], power_idx[n_val:]
+    if args.overfit_batch > 0:
+        # Sanity-check mode: take a tiny slice, use it as both train and val.
+        # A small net should be able to memorize this batch in a few hundred
+        # gradient steps. If it can't, the issue is in the model/optimizer/
+        # data plumbing, not the training distribution.
+        ob = min(args.overfit_batch, n)
+        # Prefer samples that have a policy target — meaningless to test
+        # policy-learning on rows with `has_policy=False`.
+        policy_idx = np.where(has_policy)[0]
+        if len(policy_idx) >= ob:
+            keep = policy_idx[:ob]
+        else:
+            keep = np.arange(ob)
+        X = X[keep]; T_value = T_value[keep]; T_policy = T_policy[keep]
+        has_policy = has_policy[keep]; power_idx = power_idx[keep]
+        n = ob
+        n_val = ob
+        X_val, Tv_val, Tp_val, hp_val, pi_val = X, T_value, T_policy, has_policy, power_idx
+        X_tr,  Tv_tr,  Tp_tr,  hp_tr,  pi_tr  = X, T_value, T_policy, has_policy, power_idx
+        print(f"[overfit-batch] using {ob} samples as both train and val "
+              f"(has_policy: {int(has_policy.sum())}/{ob})")
+    else:
+        n_val = int(n * args.val)
+        X_val,  Tv_val, Tp_val, hp_val, pi_val = X[:n_val], T_value[:n_val], T_policy[:n_val], has_policy[:n_val], power_idx[:n_val]
+        X_tr,   Tv_tr,  Tp_tr,  hp_tr,  pi_tr  = X[n_val:], T_value[n_val:], T_policy[n_val:], has_policy[n_val:], power_idx[n_val:]
     # ── Inverse-frequency reweighting ──────────────────────────────────────────
     # Break the self-reinforcing loop: if xarm wins 80% of games, xarm-win
     # samples dominate the gradient and the model learns "predict xarm" instead
@@ -551,9 +579,14 @@ def main() -> int:
         inv_freq[:] = 1.0
 
     sample_weights = inv_freq[winner_class].astype(np.float32)
-    # Split into train/val (same permutation as above)
-    sw_val = sample_weights[:n_val]
-    sw_tr = sample_weights[n_val:]
+    # Split into train/val (same permutation as above). In overfit-batch mode
+    # train == val == the entire (tiny) slice, so weight every sample equally.
+    if args.overfit_batch > 0:
+        sw_val = np.ones(n_val, dtype=np.float32)
+        sw_tr = np.ones(n, dtype=np.float32)
+    else:
+        sw_val = sample_weights[:n_val]
+        sw_tr = sample_weights[n_val:]
     _rw_names = ["xarm", "gormen", "tenzen", "lasha"]
     # avg rank: mean target value per power across all samples. Range [0,1]:
     # 1.0 = always 1st, 0.5 = random placement, 0.0 = always 4th. Richer than
@@ -729,23 +762,25 @@ def main() -> int:
             f"[{dist_str}]  ({dt:.1f}s)"
         )
 
-        # Early stop on combined loss
-        combined = val_v + args.policy_alpha * val_p
-        if combined < best_val - 1e-4:
-            best_val = combined
-            snap_keys = ["W1", "b1", "W2", "b2", "Wv", "bv"]
-            if model.multi_policy:
-                for i in range(N_POWERS):
-                    snap_keys += [f"Wp{i}", f"bp{i}"]
+        # Early stop on combined loss. Skip in overfit-batch mode so we can
+        # watch the full curve even after val flattens (val == train here).
+        if args.overfit_batch == 0:
+            combined = val_v + args.policy_alpha * val_p
+            if combined < best_val - 1e-4:
+                best_val = combined
+                snap_keys = ["W1", "b1", "W2", "b2", "Wv", "bv"]
+                if model.multi_policy:
+                    for i in range(N_POWERS):
+                        snap_keys += [f"Wp{i}", f"bp{i}"]
+                else:
+                    snap_keys += ["Wp", "bp"]
+                best_snap = {k: getattr(model, k).copy() for k in snap_keys}
+                stale = 0
             else:
-                snap_keys += ["Wp", "bp"]
-            best_snap = {k: getattr(model, k).copy() for k in snap_keys}
-            stale = 0
-        else:
-            stale += 1
-            if stale >= patience:
-                print(f"  (early stop at epoch {epoch})")
-                break
+                stale += 1
+                if stale >= patience:
+                    print(f"  (early stop at epoch {epoch})")
+                    break
 
     if best_snap is not None:
         for k, v in best_snap.items():
