@@ -54,9 +54,9 @@ change.
 ### Per-game τ-explorer (current self-play regime, May 7 2026)
 
 `packages/server/src/scripts/collect-data.ts`: only one randomly-chosen
-power per game uses τ=1 sampling for the first 2 rounds; other 3 play
+power per game uses τ=1 sampling for the first 3 rounds; other 3 play
 max-visit. Clean loss attribution when only one player explores. Combined
-with 1k MCTS iters, no rollout, no demos, 90-batch training window.
+with 1k MCTS iters, no rollout, no demos, 180-batch training window.
 
 ### Key tunables (env vars on coord)
 

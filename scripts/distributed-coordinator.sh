@@ -158,7 +158,7 @@ while true; do
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
       --hof-mix 0.15 \
-      --temp-rounds 2 \
+      --temp-rounds 3 \
       --iter 1000 \
       --out "$DATA_DIR/training.jsonl" 2>&1 \
       | grep -E "^(  worker|.*samples →)" | tee -a "$LOG_FILE"; then
