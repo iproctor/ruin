@@ -451,6 +451,32 @@ def policy_top1_accuracy(probs: np.ndarray, T: np.ndarray, mask: np.ndarray) -> 
     return float((p == t).mean())
 
 
+def policy_topk_accuracy(probs: np.ndarray, T: np.ndarray, mask: np.ndarray, k: int) -> float:
+    """Fraction of samples where the target's argmax action is among the
+    model's top-k predicted actions."""
+    if mask.sum() == 0:
+        return 0.0
+    p = probs[mask]
+    if k >= p.shape[1]:
+        return 1.0
+    t = T[mask].argmax(axis=1)
+    topk = np.argpartition(-p, k, axis=1)[:, :k]
+    return float((topk == t.reshape(-1, 1)).any(axis=1).mean())
+
+
+def policy_target_entropy(T: np.ndarray, mask: np.ndarray) -> float:
+    """Mean H(pi_mcts) across masked samples. This is the floor that policy
+    cross-entropy can reach — even a perfect model can't drive loss below it.
+    Excess loss = policy_loss - H(target) = KL(target || model), the actual
+    quantity training is trying to minimize."""
+    if mask.sum() == 0:
+        return 0.0
+    eps = 1e-12
+    t = T[mask]
+    rows = -(t * np.log(np.clip(t, eps, 1.0))).sum(axis=1)
+    return float(rows.mean())
+
+
 def per_class_pred_dist(probs: np.ndarray, n_classes: int) -> list[float]:
     return [float(probs[:, c].mean()) for c in range(n_classes)]
 
@@ -669,6 +695,9 @@ def main() -> int:
         val_p = policy_cross_entropy(p_probs_val, Tp_val, hp_val)
         val_agree = argmax_agreement(v_probs_val, Tv_val)
         pol_top1 = policy_top1_accuracy(p_probs_val, Tp_val, hp_val)
+        pol_top3 = policy_topk_accuracy(p_probs_val, Tp_val, hp_val, 3)
+        pol_h_target = policy_target_entropy(Tp_val, hp_val)
+        pol_excess = max(0.0, val_p - pol_h_target)
         if args.scalar_value:
             # Scalar mode: mean + std of predicted probability. Std distinguishes
             # a model that's learned to discriminate (wide spread) from one that
@@ -694,7 +723,9 @@ def main() -> int:
             f"ep {epoch:2d}  "
             f"v {train_v:.3f}/{val_v:.3f}  "
             f"p {train_p:.3f}/{val_p:.3f}  "
-            f"v-agree {val_agree*100:.0f}%  p-top1 {pol_top1*100:.0f}%  "
+            f"H {pol_h_target:.3f} Δ {pol_excess:.3f}  "
+            f"v-agree {val_agree*100:.0f}%  "
+            f"p-top1 {pol_top1*100:.0f}% top3 {pol_top3*100:.0f}%  "
             f"[{dist_str}]  ({dt:.1f}s)"
         )
 
