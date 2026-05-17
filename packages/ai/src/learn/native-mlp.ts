@@ -29,7 +29,20 @@ export interface NativeMlpForward {
   ): void;
 }
 
+export interface NativeMlpValueOnly {
+  (
+    W1: Float32Array, b1: Float32Array,
+    W2: Float32Array, b2: Float32Array,
+    Wv: Float32Array, bv: Float32Array,
+    input: Float32Array,
+    h1Buf: Float32Array, h2Buf: Float32Array,
+    valueOut: Float32Array,
+    inDim: number, h1: number, h2: number, valueDim: number,
+  ): number;
+}
+
 let cached: NativeMlpForward | null | undefined = undefined;
+let cachedValueOnly: NativeMlpValueOnly | null | undefined = undefined;
 
 function findLibPath(): string | null {
   // Walk up from this file's directory until we find packages/ai/native/libmlp.*
@@ -69,14 +82,25 @@ export function loadNativeMlp(): NativeMlpForward | null {
     const koffi = requireFn('koffi');
     const lib = koffi.load(libPath);
     const fn = lib.func('void mlp_forward(float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, int, int, int, int, int)');
+    const valueFn = lib.func('float mlp_value_only(float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, int, int, int, int)');
     cached = ((W1, b1, W2, b2, Wv, bv, Wp, bp, input, h1Buf, h2Buf, valueOut, policyOut, inDim, h1, h2, valueDim, policyDim) => {
       fn(W1, b1, W2, b2, Wv, bv, Wp, bp, input, h1Buf, h2Buf, valueOut, policyOut, inDim, h1, h2, valueDim, policyDim);
     }) as NativeMlpForward;
+    cachedValueOnly = ((W1, b1, W2, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim) =>
+      valueFn(W1, b1, W2, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim)
+    ) as NativeMlpValueOnly;
     console.log(`[ai] native MLP loaded: ${libPath}`);
     return cached;
   } catch (err) {
     console.warn(`[ai] native MLP load failed (falling back to JS): ${err instanceof Error ? err.message : String(err)}`);
     cached = null;
+    cachedValueOnly = null;
     return null;
   }
+}
+
+export function loadNativeMlpValueOnly(): NativeMlpValueOnly | null {
+  if (cachedValueOnly !== undefined) return cachedValueOnly;
+  if (cached === undefined) loadNativeMlp();
+  return cachedValueOnly ?? null;
 }

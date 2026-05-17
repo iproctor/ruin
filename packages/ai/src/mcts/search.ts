@@ -41,6 +41,23 @@ export interface MctsOptions {
    */
   dirichletNoise?: { alpha: number; weight: number };
   /**
+   * Root-only forced playouts for Dirichlet-noised actions. Enabled by
+   * default when dirichletNoise is present; set false to restore plain PUCT.
+   *
+   * Quotas are derived from the sampled Dirichlet mass, so only actions that
+   * the root noise actually highlighted receive forced visits. These visits
+   * are used for search, then subtracted from non-best moves in the policy
+   * target returned by runMctsWithStats.
+   */
+  forcedPlayouts?: false | {
+    /** Multiplier on sqrt(iterations) * noisePrior. Default 2.0. */
+    factor?: number;
+    /** Hard cap per root action. Default 16. */
+    maxVisits?: number;
+    /** Ignore tiny noise draws below this action-level mass. Default 0.002. */
+    minNoisePrior?: number;
+  };
+  /**
    * Auxiliary "suppress xarm" reward shaping at MCTS selection. When > 0 and
    * the acting power is non-xarm, the exploitation term becomes
    *   Q = own_avg_progress - xarmSuppression * xarm_avg_progress
@@ -60,6 +77,14 @@ export interface MctsOptions {
 const DEFAULT_ITERATIONS = 100000;
 const DEFAULT_TIME_MS = 400;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
+const DEFAULT_FORCED_PLAYOUT_FACTOR = 2.0;
+const DEFAULT_FORCED_PLAYOUT_MAX = 16;
+const DEFAULT_FORCED_PLAYOUT_MIN_NOISE = 0.002;
+
+interface RootPriorInfo {
+  priors: (action: Action) => number;
+  noisePriors: ((action: Action) => number) | null;
+}
 
 /**
  * Build a "lookup the policy prior for this child action" function from the
@@ -76,16 +101,16 @@ function makeRootPriors(
 ): ((action: Action) => number) | null {
   const raw = policyForState(state, forPower);
   if (raw === null) return null;
-  return makeRootPriorsFromRaw(raw, state, rootActions, forPower);
+  return makeRootPriorInfoFromRaw(raw, state, rootActions, forPower)?.priors ?? null;
 }
 
-function makeRootPriorsFromRaw(
+function makeRootPriorInfoFromRaw(
   raw: Float32Array,
   state: GameState,
   rootActions: Action[],
   forPower?: Power,
   dirichlet?: { alpha: number; weight: number },
-): ((action: Action) => number) | null {
+): RootPriorInfo | null {
   // 1. Per-slot raw policy mass.
   const slotPriors = new Map<number, number>();
   const slotCount = new Map<number, number>();
@@ -105,6 +130,7 @@ function makeRootPriorsFromRaw(
   // priors sum to 1 (matching the slot-level normalisation).
   const N = rootActions.length;
   const actionPriors = new Array<number>(N);
+  const noisePriors = dirichlet && N > 0 ? new Array<number>(N).fill(0) : null;
   for (let i = 0; i < N; i++) {
     const idx = canonicalActionIndex(rootActions[i]!, state);
     if (idx >= 0) {
@@ -123,7 +149,9 @@ function makeRootPriorsFromRaw(
     if (gtotal <= 0) gtotal = 1;
     const w = dirichlet.weight;
     for (let i = 0; i < N; i++) {
-      actionPriors[i] = (1 - w) * actionPriors[i]! + w * (gammas[i]! / gtotal);
+      const noisePrior = gammas[i]! / gtotal;
+      noisePriors![i] = noisePrior;
+      actionPriors[i] = (1 - w) * actionPriors[i]! + w * noisePrior;
     }
   }
 
@@ -156,8 +184,42 @@ function makeRootPriorsFromRaw(
   // selection/expansion, so we key the Map by action reference.
   const priorByAction = new Map<Action, number>();
   for (let i = 0; i < N; i++) priorByAction.set(rootActions[i]!, actionPriors[i]!);
+  const noiseByAction = new Map<Action, number>();
+  if (noisePriors) {
+    for (let i = 0; i < N; i++) noiseByAction.set(rootActions[i]!, noisePriors[i]!);
+  }
 
-  return (action: Action) => priorByAction.get(action) ?? (1 / N);
+  return {
+    priors: (action: Action) => priorByAction.get(action) ?? (1 / N),
+    noisePriors: noisePriors
+      ? (action: Action) => noiseByAction.get(action) ?? 0
+      : null,
+  };
+}
+
+function makeForcedRootVisits(
+  noisePriors: ((action: Action) => number) | null,
+  maxIterations: number,
+  options?: MctsOptions,
+): ((action: Action) => number) | null {
+  if (!noisePriors || options?.forcedPlayouts === false) return null;
+
+  const cfg = options?.forcedPlayouts && typeof options.forcedPlayouts === 'object'
+    ? options.forcedPlayouts
+    : {};
+  const factor = cfg.factor ?? DEFAULT_FORCED_PLAYOUT_FACTOR;
+  const maxVisits = cfg.maxVisits ?? DEFAULT_FORCED_PLAYOUT_MAX;
+  const minNoisePrior = cfg.minNoisePrior ?? DEFAULT_FORCED_PLAYOUT_MIN_NOISE;
+  const budgetScale = Math.sqrt(Math.max(1, maxIterations));
+
+  return (action: Action): number => {
+    const noisePrior = noisePriors(action);
+    if (!(noisePrior >= minNoisePrior) || factor <= 0 || maxVisits <= 0) return 0;
+    const quota = Math.floor(factor * budgetScale * noisePrior);
+    // A one-visit quota is indistinguishable from ordinary first expansion
+    // and is pruned from the policy target anyway; only force meaningful probes.
+    return quota >= 2 ? Math.min(maxVisits, quota) : 0;
+  };
 }
 
 // Standard normal via Box-Muller. Accepts Math.random() as a source.
@@ -241,6 +303,7 @@ type MctsRunResult =
       root: MctsNode;
       legalRoot: Action[];
       priors: ((a: Action) => number) | null;
+      forcedRootVisits: ((a: Action) => number) | null;
       usePuct: boolean;
       iteration: number;
       elapsed: number;
@@ -286,9 +349,11 @@ function runMctsCore(
   // Policy head guides PUCT to focus search across the full legal-action space.
   const rawPolicy = policyForState(state, forPower);
   const root = createNode(state, null, null, null, forPower, [...legalRoot]);
-  const priors = rawPolicy !== null
-    ? makeRootPriorsFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise)
+  const rootPriorInfo = rawPolicy !== null
+    ? makeRootPriorInfoFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise)
     : null;
+  const priors = rootPriorInfo?.priors ?? null;
+  const forcedRootVisits = makeForcedRootVisits(rootPriorInfo?.noisePriors ?? null, maxIterations, options);
   root.childPriors = priors;
   const usePuct = priors !== null;
 
@@ -307,7 +372,7 @@ function runMctsCore(
   let maxDepth = 0;
 
   while (iteration < maxIterations && Date.now() < deadline) {
-    const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0);
+    const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0, forcedRootVisits);
     const expanded = expand(selected, forPower);
     // Track depth so probeMctsSearch can report tree shape. Cheap (one
     // pointer walk per iter); always-on rather than conditional.
@@ -329,6 +394,7 @@ function runMctsCore(
     root,
     legalRoot,
     priors,
+    forcedRootVisits,
     usePuct,
     iteration,
     elapsed,
@@ -386,7 +452,10 @@ export function reportMctsStats(): void {
  */
 export interface MctsStats {
   action: Action;
+  /** Policy-supervision visit counts, with artificial forced playouts pruned. */
   visitCounts: Array<{ action: Action; visits: number }>;
+  /** Raw root visit counts from search, including forced exploration. */
+  searchVisitCounts: Array<{ action: Action; visits: number }>;
 }
 
 export function runMctsWithStats(
@@ -396,15 +465,46 @@ export function runMctsWithStats(
 ): MctsStats {
   const res = runMctsCore(state, forPower, options);
   if (res.forced) {
-    return { action: res.action, visitCounts: [{ action: res.action, visits: 1 }] };
+    const visitCounts = [{ action: res.action, visits: 1 }];
+    return { action: res.action, visitCounts, searchVisitCounts: visitCounts };
   }
-  const visitCounts: Array<{ action: Action; visits: number }> = [];
+  const searchVisitCounts: Array<{ action: Action; visits: number }> = [];
   for (const child of res.root.children) {
     if (child.action !== null) {
-      visitCounts.push({ action: child.action, visits: child.visits });
+      searchVisitCounts.push({ action: child.action, visits: child.visits });
     }
   }
-  return { action: bestAction(res.root), visitCounts };
+  const action = bestAction(res.root);
+  const visitCounts = pruneForcedPolicyTarget(res.root, res.forcedRootVisits);
+  return { action, visitCounts, searchVisitCounts };
+}
+
+function pruneForcedPolicyTarget(
+  root: MctsNode,
+  forcedRootVisits: ((action: Action) => number) | null,
+): Array<{ action: Action; visits: number }> {
+  const raw: Array<{ action: Action; visits: number }> = [];
+  for (const child of root.children) {
+    if (child.action !== null) raw.push({ action: child.action, visits: child.visits });
+  }
+  if (!forcedRootVisits || raw.length === 0) return raw;
+
+  let best = raw[0]!;
+  for (const row of raw) {
+    if (row.visits > best.visits) best = row;
+  }
+
+  const pruned: Array<{ action: Action; visits: number }> = [];
+  for (const row of raw) {
+    if (row.action === best.action) {
+      pruned.push(row);
+      continue;
+    }
+    const adjusted = row.visits - forcedRootVisits(row.action);
+    if (adjusted > 1) pruned.push({ action: row.action, visits: adjusted });
+  }
+
+  return pruned.length > 0 ? pruned : [{ action: best.action, visits: Math.max(1, best.visits) }];
 }
 
 // ─── Diagnostic probe ────────────────────────────────────────────────────────
@@ -595,7 +695,13 @@ export function probeMctsSearch(
  *     one); only descend when a node is fully expanded. Broadens before
  *     deepening. Used for powers without per-power models.
  */
-function select(node: MctsNode, explorationC: number, usePuct: boolean, xarmSup: number): MctsNode {
+function select(
+  node: MctsNode,
+  explorationC: number,
+  usePuct: boolean,
+  xarmSup: number,
+  forcedRootVisits: ((action: Action) => number) | null = null,
+): MctsNode {
   const useAzStyle = modelForPowerLoaded(node.forPower);
   let current = node;
 
@@ -603,6 +709,12 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean, xarmSup:
     const hasChildren = current.children.length > 0;
     const hasUntried = current.untriedActions.length > 0;
     if (!hasChildren && !hasUntried) break;
+
+    if (current.parent === null && useAzStyle && forcedRootVisits) {
+      const forced = pickForcedRootChild(current, forcedRootVisits);
+      if (forced === 'expand-root') return current;
+      if (forced !== null) return forced;
+    }
 
     if (!useAzStyle) {
       // Classic: expand every untried before descending.
@@ -662,6 +774,51 @@ function select(node: MctsNode, explorationC: number, usePuct: boolean, xarmSup:
     current = bestChild;
   }
   return current;
+}
+
+function pickForcedRootChild(
+  root: MctsNode,
+  forcedRootVisits: (action: Action) => number,
+): MctsNode | 'expand-root' | null {
+  let bestChild: MctsNode | null = null;
+  let bestUntriedIdx = -1;
+  let bestDeficit = 0;
+  let bestQuota = 0;
+
+  for (const child of root.children) {
+    if (child.action === null) continue;
+    const quota = forcedRootVisits(child.action);
+    const deficit = quota - child.visits;
+    if (deficit > bestDeficit || (deficit === bestDeficit && quota > bestQuota)) {
+      bestChild = child;
+      bestUntriedIdx = -1;
+      bestDeficit = deficit;
+      bestQuota = quota;
+    }
+  }
+
+  for (let i = 0; i < root.untriedActions.length; i++) {
+    const action = root.untriedActions[i]!;
+    const quota = forcedRootVisits(action);
+    if (quota > bestDeficit || (quota === bestDeficit && quota > bestQuota)) {
+      bestChild = null;
+      bestUntriedIdx = i;
+      bestDeficit = quota;
+      bestQuota = quota;
+    }
+  }
+
+  if (bestDeficit <= 0) return null;
+  if (bestUntriedIdx >= 0) {
+    const lastIdx = root.untriedActions.length - 1;
+    if (bestUntriedIdx !== lastIdx) {
+      const tmp = root.untriedActions[lastIdx]!;
+      root.untriedActions[lastIdx] = root.untriedActions[bestUntriedIdx]!;
+      root.untriedActions[bestUntriedIdx] = tmp;
+    }
+    return 'expand-root';
+  }
+  return bestChild;
 }
 
 /**
@@ -911,4 +1068,3 @@ function bestAction(root: MctsNode): Action {
 
   throw new Error('runMcts: could not determine best action — tree is empty');
 }
-

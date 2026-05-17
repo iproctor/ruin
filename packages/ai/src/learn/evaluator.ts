@@ -73,13 +73,11 @@ export function evaluateLearned(state: GameState, power: Power): number {
   // Pass `power` as the viewpoint so the model only sees the calling power's
   // own hand contents (not opponents' — those are hidden info).
   const x = extractFeatures(state, power);
-  const probs = model.forward(x);
   // Scalar value head (outDim=1) directly predicts P(viewpoint wins) via
   // sigmoid. Brief mid-target experiment used outDim=2 (end, mid) — those
   // models are tolerated and read column 0 (end). Multi-power head
   // (outDim=4) outputs per-power softmax; extract the viewpoint's component.
-  if (probs.length === 1 || probs.length === 2) return probs[0]!;
-  return probs[powerIndex(power)]!;
+  return model.forwardValue(x, powerIndex(power));
 }
 
 /**
@@ -105,10 +103,7 @@ export function evaluateAllPowersLearned(state: GameState): Record<Power, number
     if (model === null || model === undefined) {
       throw new Error(`evaluateLearned: no model loaded for ${p}`);
     }
-    const probs = model.forward(features[p]);
-    result[p] = (probs.length === 1 || probs.length === 2)
-      ? probs[0]!
-      : probs[powerIndex(p)]!;
+    result[p] = model.forwardValue(features[p], powerIndex(p));
   }
   return result;
 }

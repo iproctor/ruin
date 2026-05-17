@@ -1,5 +1,5 @@
 import { FEATURE_DIM, POWERS } from './features.js';
-import { loadNativeMlp, type NativeMlpForward } from './native-mlp.js';
+import { loadNativeMlp, loadNativeMlpValueOnly, type NativeMlpForward, type NativeMlpValueOnly } from './native-mlp.js';
 
 /**
  * MLP inference (pure TS, single-example forward pass).
@@ -138,6 +138,7 @@ export class Mlp {
   // Other shapes (perPowerPolicyHeads, policyChain length != 1) fall through
   // to the JS path. The native function is cached at module load.
   private native: NativeMlpForward | null;
+  private nativeValueOnly: NativeMlpValueOnly | null;
   private nativeOk: boolean;
 
   constructor(
@@ -162,12 +163,47 @@ export class Mlp {
     // (in→h1→h2→value) + one-layer policy head from h2. That covers
     // every model train_mlp.py currently emits.
     this.native = loadNativeMlp();
+    this.nativeValueOnly = loadNativeMlpValueOnly();
     this.nativeOk = (
       this.native !== null
       && this.layers.length === 3
       && this.policyChain.length <= 1
       && (this.perPowerPolicyHeads === null || this.perPowerPolicyHeads.size === 0)
     );
+  }
+
+  /**
+   * Value-head fast path for MCTS leaf evaluation. It avoids policy-head work
+   * and output allocation when callers only need one scalar value.
+   */
+  forwardValue(x: Float32Array, powerIdx: number): number {
+    if (this.nativeOk && this.nativeValueOnly !== null) {
+      const W1Layer = this.layers[0]!;
+      const W2Layer = this.layers[1]!;
+      const Wv = this.layers[2]!;
+      const valueOut = this.scratchC.subarray(0, Wv.outDim);
+      this.nativeValueOnly(
+        W1Layer.W, W1Layer.b,
+        W2Layer.W, W2Layer.b,
+        Wv.W, Wv.b,
+        x,
+        this.scratchA, this.scratchB, valueOut,
+        W1Layer.inDim, W1Layer.outDim, W2Layer.outDim, Wv.outDim,
+      );
+      return (Wv.outDim === 1 || Wv.outDim === 2) ? valueOut[0]! : valueOut[powerIdx]!;
+    }
+
+    let input = x;
+    let scratchIdx = 0;
+    const scratches = [this.scratchA, this.scratchB];
+    for (let li = 0; li < this.layers.length; li++) {
+      const out = scratches[scratchIdx]!;
+      scratchIdx ^= 1;
+      applyLayer(input, this.layers[li]!, out);
+      input = out;
+    }
+    const lastOut = this.layers[this.layers.length - 1]!.outDim;
+    return (lastOut === 1 || lastOut === 2) ? input[0]! : input[powerIdx]!;
   }
 
   /** Value-only forward pass. Returns the final-layer (softmax) output. */

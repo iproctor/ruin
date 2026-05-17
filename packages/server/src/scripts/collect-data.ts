@@ -280,8 +280,10 @@ function runGame(seed: number): GameResult {
         // the per-game explorer (one randomly-chosen power). Other powers
         // play max-visit so the explorer's exploration produces a clean
         // win/loss signal rather than noise blurred across all 4 powers.
+        // Use raw search counts here; stats.visitCounts is the denoised
+        // policy target with forced root playouts pruned.
         action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
-          ? sampleActionByVisits(stats.visitCounts, rand)
+          ? sampleActionByVisits(stats.searchVisitCounts, rand)
           : stats.action;
         // Multiple legal actions can canonicalise to the same slot — sum visits.
         const slotVisits: Record<string, number> = {};
