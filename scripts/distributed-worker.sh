@@ -123,9 +123,14 @@ while true; do
   if [ -f "$CONFIG_PATH" ]; then
     TASK=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('task','collect'))" "$CONFIG_PATH" 2>/dev/null || echo collect)
     CONFIG_ITER=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('iter',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+    # Pull λ from coord's config so all worker collect runs see the same value.
+    XARM_SUPPRESSION_LAMBDA=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_suppression_lambda',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+    export XARM_SUPPRESSION_LAMBDA
   else
     TASK="collect"
     CONFIG_ITER=0
+    XARM_SUPPRESSION_LAMBDA=0
+    export XARM_SUPPRESSION_LAMBDA
   fi
 
   # 1b. If league training is on, pull the most recent LEAGUE_SIZE snapshots.

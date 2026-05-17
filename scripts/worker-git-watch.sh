@@ -108,8 +108,13 @@ while true; do
   CONFIG_PATH="${DATA_DIR}/worker_config.json"
   if [ -f "$CONFIG_PATH" ]; then
     TASK=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('task','collect'))" "$CONFIG_PATH" 2>/dev/null || echo collect)
+    # Pull λ from coord's config so all worker collect runs see the same value.
+    XARM_SUPPRESSION_LAMBDA=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_suppression_lambda',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+    export XARM_SUPPRESSION_LAMBDA
   else
     TASK="collect"
+    XARM_SUPPRESSION_LAMBDA=0
+    export XARM_SUPPRESSION_LAMBDA
   fi
 
   BATCH_COUNTER=$((BATCH_COUNTER + 1))

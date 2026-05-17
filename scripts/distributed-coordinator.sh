@@ -98,7 +98,8 @@ print(json.dumps({
   "current_power": sys.argv[3],
   "games_per_box": int(sys.argv[4]),
   "mcts_iter": int(sys.argv[5]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" \
+  "xarm_suppression_lambda": float(sys.argv[6]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" \
     > "$DATA_DIR/worker_config.json"
 }
 
