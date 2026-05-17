@@ -40,6 +40,18 @@ const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'))
 const mctsIterations = parseInt(getArg('--iter', '5000'), 10);
 const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 
+// Playout-cap randomization: most turns use a cheap, no-noise search only to
+// advance the game and produce value data. A sampled subset uses the full
+// search budget and records a policy target. This spends deliberation where it
+// creates labels instead of treating every shallow move distribution as sacred.
+const fullSearchProb = parseFloat(getArg('--full-search-prob', '0.10'));
+const fullSearchImportantBonus = parseFloat(getArg('--full-search-important-bonus', '0.20'));
+const fastMctsIterations = parseInt(
+  getArg('--fast-iter', String(Math.max(1, Math.floor(mctsIterations * 0.2)))),
+  10,
+);
+const fastMctsTimeMs = parseInt(getArg('--fast-time', String(mctsTimeMs)), 10);
+
 // All-r0 trial: rolloutDepth=-1 skips rollouts entirely; the value head is
 // the leaf eval. All 4 power models adapt together to the resulting state
 // distribution. --no-rollout-zero falls back to default rollout.
@@ -127,6 +139,7 @@ interface Sample {
 
 interface GameResult {
   samples: Sample[];
+  policySamples: number;
   winners: Power[] | null;
   rounds: number;
   target: number[];                // value-head target per power
@@ -173,6 +186,45 @@ function sampleActionByVisits(
   return visitCounts[visitCounts.length - 1]!.action;
 }
 
+function regionCorruptionTotal(state: GameState, regionId: keyof GameState['regions']): number {
+  const c = state.regions[regionId].corruptionTokens;
+  return c.xarm + c.gormen + c.tenzen + c.lasha;
+}
+
+function tacticalImportance(state: GameState, power: Power): number {
+  let score = 0;
+
+  // Opening placements and first card commitments shape the whole game tree.
+  if (state.round <= 2) score += 0.2;
+
+  // Low PP means this is likely one of the final meaningful choices before
+  // passing; those are high-leverage in summoning.
+  if (state.powers[power].powerPoints <= 2) score += 0.2;
+
+  // Near-ruin regions create sharp tactical incentives around domination,
+  // corruption placement, and card disruption.
+  for (const regionId of Object.keys(state.regions) as Array<keyof GameState['regions']>) {
+    const region = state.regions[regionId];
+    if (region.ruinationCardIndex !== null) continue;
+    if (regionCorruptionTotal(state, regionId) >= region.resistance - 2) {
+      score += 0.35;
+      break;
+    }
+  }
+
+  // Close-to-winning positions deserve more exact policy labels.
+  const ps = state.powers[power];
+  if (ps.victoryPoints >= 40 || ps.threatValue >= 28) score += 0.25;
+
+  return Math.min(score, 1);
+}
+
+function shouldRunFullSearch(state: GameState, power: Power, rand: () => number): boolean {
+  const p = Math.min(1, Math.max(0, fullSearchProb)
+    + Math.max(0, fullSearchImportantBonus) * tacticalImportance(state, power));
+  return rand() < p;
+}
+
 // ── Subaction kinds that go through MCTS (anything strategic, not stylistic) ─
 
 const MCTS_SUBACTION_KINDS = new Set<string>([
@@ -209,6 +261,7 @@ function logCollectError(seed: number, kind: string, state: GameState, pending: 
 
 function runGame(seed: number): GameResult {
   const samples: Sample[] = [];
+  let policySamples = 0;
   // Deterministic per-game RNG, shared by HOF lineup selection and τ=1
   // visit-proportional move sampling so a re-run of the same seed reproduces
   // the same trajectory. Linear-congruential — quality is fine for biased
@@ -269,37 +322,47 @@ function runGame(seed: number): GameResult {
     let visitsForSample: Record<string, number> | undefined;
     try {
       if (pending.actionKind === 'summoning_action') {
-        const stats = runMctsWithStats(state, pending.waitingFor, {
-          iterations: mctsIterations,
-          timeMs: mctsTimeMs,
-          ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
-          ...(dirichletNoise ? { dirichletNoise } : {}),
-          ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
-        });
-        // τ=1 visit-proportional sampling for opening rounds, but ONLY for
-        // the per-game explorer (one randomly-chosen power). Other powers
-        // play max-visit so the explorer's exploration produces a clean
-        // win/loss signal rather than noise blurred across all 4 powers.
-        // Use raw search counts here; stats.visitCounts is the denoised
-        // policy target with forced root playouts pruned.
-        action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
-          ? sampleActionByVisits(stats.searchVisitCounts, rand)
-          : stats.action;
-        // Multiple legal actions can canonicalise to the same slot — sum visits.
-        const slotVisits: Record<string, number> = {};
-        for (const { action: a, visits } of stats.visitCounts) {
-          const idx = canonicalActionIndex(a, state);
-          if (idx >= 0 && idx < ACTION_DIM) {
-            slotVisits[String(idx)] = (slotVisits[String(idx)] ?? 0) + visits;
+        const fullSearch = shouldRunFullSearch(state, pending.waitingFor, rand);
+        if (fullSearch) {
+          const stats = runMctsWithStats(state, pending.waitingFor, {
+            iterations: mctsIterations,
+            timeMs: mctsTimeMs,
+            ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
+            ...(dirichletNoise ? { dirichletNoise } : {}),
+            ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
+          });
+          // τ=1 visit-proportional sampling for opening rounds, but ONLY for
+          // the per-game explorer (one randomly-chosen power). Other powers
+          // play max-visit so the explorer's exploration produces a clean
+          // win/loss signal rather than noise blurred across all 4 powers.
+          // Use raw search counts here; stats.visitCounts is the denoised
+          // policy target with forced root playouts pruned.
+          action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
+            ? sampleActionByVisits(stats.searchVisitCounts, rand)
+            : stats.action;
+          // Multiple legal actions can canonicalise to the same slot — sum visits.
+          const slotVisits: Record<string, number> = {};
+          for (const { action: a, visits } of stats.visitCounts) {
+            const idx = canonicalActionIndex(a, state);
+            if (idx >= 0 && idx < ACTION_DIM) {
+              slotVisits[String(idx)] = (slotVisits[String(idx)] ?? 0) + visits;
+            }
           }
+          visitsForSample = slotVisits;
+          policySamples++;
+        } else {
+          action = runMcts(state, pending.waitingFor, {
+            iterations: fastMctsIterations,
+            timeMs: fastMctsTimeMs,
+            ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
+            ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
+          });
         }
-        visitsForSample = slotVisits;
       } else if (MCTS_SUBACTION_KINDS.has(pending.actionKind)) {
         action = runMcts(state, pending.waitingFor, {
-          iterations: mctsIterations,
-          timeMs: mctsTimeMs,
+          iterations: fastMctsIterations,
+          timeMs: fastMctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
-          ...(dirichletNoise ? { dirichletNoise } : {}),
           ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
         });
       } else {
@@ -331,6 +394,7 @@ function runGame(seed: number): GameResult {
 
   return {
     samples,
+    policySamples,
     winners: state.winners,
     rounds: state.round,
     target: computeProgressTarget(state),
@@ -341,16 +405,19 @@ function runGame(seed: number): GameResult {
 
 console.log(`\n=== Self-play data collection ===`);
 console.log(`Games: ${gameCount}  |  Base seed: ${baseSeed}  |  Out: ${outPath}\n`);
+console.log(`Search: full ${mctsIterations} iters @ p=${fullSearchProb} (+${fullSearchImportantBonus} tactical), fast ${fastMctsIterations} iters`);
+console.log(`Noise: ${dirichletNoise ? `Dirichlet alpha=${dirichletAlpha} weight=${dirichletWeight} on full searches only` : 'off'}\n`);
 
 const startMs = Date.now();
 let totalSamples = 0;
+let totalPolicySamples = 0;
 let completedGames = 0;
 const winCounts: Record<string, number> = {};
 
 for (let i = 0; i < gameCount; i++) {
   const seed = baseSeed + i;
   const t0 = Date.now();
-  const { samples, winners, rounds, target } = runGame(seed);
+  const { samples, policySamples, winners, rounds, target } = runGame(seed);
   const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
   for (const s of samples) {
@@ -364,10 +431,11 @@ for (let i = 0; i < gameCount; i++) {
   }
 
   totalSamples += samples.length;
+  totalPolicySamples += policySamples;
   completedGames++;
   const winStr = winners && winners.length > 0 ? winners.join('+') : 'NO_WINNER';
   winCounts[winStr] = (winCounts[winStr] ?? 0) + 1;
-  console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): ${winStr.padEnd(14)} (${rounds}r, ${samples.length} samples, ${elapsed}s)`);
+  console.log(`  Game ${i + 1}/${gameCount} (seed ${seed}): ${winStr.padEnd(14)} (${rounds}r, ${samples.length} value, ${policySamples} policy, ${elapsed}s)`);
 }
 
 fs.closeSync(out);
@@ -375,7 +443,7 @@ fs.closeSync(out);
 const totalSec = ((Date.now() - startMs) / 1000).toFixed(1);
 console.log(`\n────────────────────────────────────────`);
 console.log(`Completed: ${completedGames}/${gameCount} games`);
-console.log(`Samples written: ${totalSamples}`);
+console.log(`Samples written: ${totalSamples} value rows, ${totalPolicySamples} policy rows`);
 console.log(`Total time: ${totalSec}s`);
 console.log(`\nWinner distribution:`);
 for (const [w, c] of Object.entries(winCounts).sort((a, b) => b[1] - a[1])) {

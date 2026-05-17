@@ -24,7 +24,13 @@ const baseSeed = parseInt(getArg('--seed', '1'), 10);
 const workerCount = parseInt(getArg('--workers', String(Math.max(1, os.cpus().length - 1))), 10);
 const outPath = getArg('--out', path.resolve('packages/ai/data/training.jsonl'));
 const iter = getArg('--iter', '');
+const time = getArg('--time', '');
+const fastIter = getArg('--fast-iter', '');
+const fastTime = getArg('--fast-time', '');
+const fullSearchProb = getArg('--full-search-prob', '');
+const fullSearchImportantBonus = getArg('--full-search-important-bonus', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
+const dirichletAlpha = getArg('--dirichlet-alpha', '');
 const hofMix = getArg('--hof-mix', '');
 const tempRounds = getArg('--temp-rounds', '');
 const noRolloutZero = process.argv.includes('--no-rollout-zero');
@@ -68,7 +74,13 @@ const processes = slices.map((s, w) =>
       '--games', String(s.count),
       '--seed', String(s.start),
       ...(iter ? ['--iter', iter] : []),
+      ...(time ? ['--time', time] : []),
+      ...(fastIter ? ['--fast-iter', fastIter] : []),
+      ...(fastTime ? ['--fast-time', fastTime] : []),
+      ...(fullSearchProb ? ['--full-search-prob', fullSearchProb] : []),
+      ...(fullSearchImportantBonus ? ['--full-search-important-bonus', fullSearchImportantBonus] : []),
       ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
+      ...(dirichletAlpha ? ['--dirichlet-alpha', dirichletAlpha] : []),
       ...(hofMix ? ['--hof-mix', hofMix] : []),
       ...(tempRounds ? ['--temp-rounds', tempRounds] : []),
       ...(noRolloutZero ? ['--no-rollout-zero'] : []),
