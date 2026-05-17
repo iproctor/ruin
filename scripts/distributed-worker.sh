@@ -177,7 +177,7 @@ while true; do
           --hof-mix "$HOF_MIX" \
           --temp-rounds "$TEMP_ROUNDS" \
           --dirichlet-weight 0.25 \
-          --iter 2000 \
+          --iter 1000 \
           --out "${DATA_DIR}/training.jsonl" 2>&1; then
         echo "  ! collection failed, retrying after ${IDLE_SECONDS}s"
         sleep "$IDLE_SECONDS"
