@@ -85,6 +85,33 @@ H2H_WAIT_SECS=${H2H_WAIT_SECS:-1800}   # max time to wait per power for workers
 ALL_POWERS=(xarm gormen tenzen lasha)
 REF_DIR="$DATA_DIR/ref"
 
+# Auto-anneal xarm suppression λ from baseline xarm win rate.
+# Linear ramp: 0 at win≤0.30, 0.8 at win≥0.60, clamped.
+# Called once per loop iter to refresh XARM_SUPPRESSION_LAMBDA before
+# write_worker_config propagates it to workers.
+compute_xarm_lambda() {
+  local bl="$DATA_DIR/ref_baseline.json"
+  if [ ! -f "$bl" ]; then return; fi
+  local new_l
+  new_l=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    w = float(d.get('win_rates', {}).get('xarm', 0))
+except Exception:
+    print(0.0); sys.exit()
+lo, hi, lmax = 0.30, 0.60, 0.8
+if w <= lo: l = 0.0
+elif w >= hi: l = lmax
+else: l = lmax * (w - lo) / (hi - lo)
+print(f'{l:.4f}')" "$bl" 2>/dev/null)
+  if [ -n "$new_l" ] && [ "$new_l" != "$XARM_SUPPRESSION_LAMBDA" ]; then
+    echo "[$(date +%H:%M:%S)] [coord] xarm λ: ${XARM_SUPPRESSION_LAMBDA} → ${new_l} (from baseline xarm win)" | tee -a "$LOG_FILE"
+    XARM_SUPPRESSION_LAMBDA="$new_l"
+    export XARM_SUPPRESSION_LAMBDA
+  fi
+}
+
 # Worker dispatch: coord writes worker_config.json; workers rsync it every batch
 # and dispatch on `task`. Default = collect.
 write_worker_config() {
@@ -118,6 +145,7 @@ BATCH_COUNTER=0
 
 # Initialize worker config (now that ITER is defined). Workers read this on
 # their next loop iteration and dispatch on the `task` field.
+compute_xarm_lambda
 write_worker_config "collect" ""
 
 {
@@ -148,6 +176,14 @@ while true; do
   if [ "$NOW_MTIME" != "$SELF_MTIME" ]; then
     echo "[$(date +%H:%M:%S)] [coord] script updated on disk, re-execing..." | tee -a "$LOG_FILE"
     exec "$0" "$@"
+  fi
+
+  # Refresh xarm suppression λ from the latest baseline, then re-publish the
+  # worker config so workers see the new value on their next config pull.
+  PREV_LAMBDA="$XARM_SUPPRESSION_LAMBDA"
+  compute_xarm_lambda
+  if [ "$PREV_LAMBDA" != "$XARM_SUPPRESSION_LAMBDA" ]; then
+    write_worker_config "collect" ""
   fi
 
   # ── 1. Check inbox first — skip collection if threshold already met ─────────
