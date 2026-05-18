@@ -86,7 +86,7 @@ ALL_POWERS=(xarm gormen tenzen lasha)
 REF_DIR="$DATA_DIR/ref"
 
 # Auto-anneal xarm suppression λ from baseline xarm win rate.
-# Linear ramp: 0 at win≤0.30, 0.8 at win≥0.60, clamped.
+# Step schedule: 0.7 at xarm>0.4, 0.5 at 0.3<xarm≤0.4, 0 at xarm≤0.3.
 # Called once per loop iter to refresh XARM_SUPPRESSION_LAMBDA before
 # write_worker_config propagates it to workers.
 compute_xarm_lambda() {
@@ -100,10 +100,9 @@ try:
     w = float(d.get('win_rates', {}).get('xarm', 0))
 except Exception:
     print(0.0); sys.exit()
-lo, hi, lmax = 0.30, 0.60, 0.8
-if w <= lo: l = 0.0
-elif w >= hi: l = lmax
-else: l = lmax * (w - lo) / (hi - lo)
+if w > 0.40: l = 0.7
+elif w > 0.30: l = 0.5
+else: l = 0.0
 print(f'{l:.4f}')" "$bl" 2>/dev/null)
   if [ -n "$new_l" ] && [ "$new_l" != "$XARM_SUPPRESSION_LAMBDA" ]; then
     echo "[$(date +%H:%M:%S)] [coord] xarm λ: ${XARM_SUPPRESSION_LAMBDA} → ${new_l} (from baseline xarm win)" | tee -a "$LOG_FILE"
