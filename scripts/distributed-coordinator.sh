@@ -44,6 +44,8 @@ WORKERS=${WORKERS:-16}
 # each from its own slice of the batch.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
 TRAIN_WINDOW=${TRAIN_WINDOW:-180}
+TRAIN_CURATE=${TRAIN_CURATE:-1}
+TRAIN_MAX_SAMPLES=${TRAIN_MAX_SAMPLES:-240000}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
@@ -236,19 +238,38 @@ while true; do
   echo "── train iter ${ITER}  ($(date +%H:%M:%S)) ────────────────────" | tee -a "$LOG_FILE"
 
   # 3a. Build training set: new inbox files + old archive files to fill the window.
+  # Then optionally curate that raw window into a quota-balanced set. The
+  # curator is metadata-aware, but it can also fall back to legacy rows.
   RECENT_FILE="$DATA_DIR/training_recent.jsonl"
+  RAW_RECENT_FILE="$DATA_DIR/training_recent_raw.jsonl"
   # Start with all new data (inbox)
-  cat "$INBOX"/*.jsonl > "$RECENT_FILE"
+  cat "$INBOX"/*.jsonl > "$RAW_RECENT_FILE"
   NEW_COUNT=$INBOX_COUNT
   # Fill remaining window slots from most-recent archive files
   FILL_COUNT=$((TRAIN_WINDOW - NEW_COUNT))
   if [ "$FILL_COUNT" -gt 0 ]; then
     OLD_FILES=$(ls -t "$ARCHIVE"/*.jsonl 2>/dev/null | head -"$FILL_COUNT")
     if [ -n "$OLD_FILES" ]; then
-      echo "$OLD_FILES" | while read -r f; do cat "$f"; done >> "$RECENT_FILE"
+      echo "$OLD_FILES" | while read -r f; do cat "$f"; done >> "$RAW_RECENT_FILE"
       OLD_USED=$(echo "$OLD_FILES" | wc -l | tr -d ' ')
       echo "  · padded with ${OLD_USED} archive batches (window ${TRAIN_WINDOW})" | tee -a "$LOG_FILE"
     fi
+  fi
+  if [ "$TRAIN_CURATE" = "1" ]; then
+    CURATE_REPORT="$DATA_DIR/training_recent_report.json"
+    if python3 packages/ai/scripts/curate_training.py \
+        --in "$RAW_RECENT_FILE" \
+        --out "$RECENT_FILE" \
+        --max-samples "$TRAIN_MAX_SAMPLES" \
+        --seed "$ITER" \
+        --report "$CURATE_REPORT" 2>&1 | tee -a "$LOG_FILE"; then
+      :
+    else
+      echo "  ! curation failed; falling back to raw recent window" | tee -a "$LOG_FILE"
+      cp "$RAW_RECENT_FILE" "$RECENT_FILE"
+    fi
+  else
+    cp "$RAW_RECENT_FILE" "$RECENT_FILE"
   fi
   TOTAL=$(wc -l < "$RECENT_FILE")
   echo "[iter $ITER] training on ${TOTAL} samples (${NEW_COUNT} new + archive fill)" | tee -a "$LOG_FILE"
