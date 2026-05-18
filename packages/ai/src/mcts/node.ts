@@ -38,8 +38,10 @@ export interface MctsNode {
   /** Policy prior for this child (from the policy head). 1.0 = uniform default. */
   prior: number;
   /** Optional: lookup table mapping a child's action to its prior probability.
-   *  Only set on the root when a policy head is available. */
+   *  Set when a policy head is available for the actor at this node. */
   childPriors: ((action: Action) => number) | null;
+  /** Cached value-head scores for pure value-leaf (r0) searches. */
+  leafScores: Record<Power, number> | null;
 }
 
 const ZERO_SCORES: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
@@ -65,6 +67,7 @@ export function createNode(
     untriedActions,
     prior,
     childPriors: null,
+    leafScores: null,
   };
 }
 

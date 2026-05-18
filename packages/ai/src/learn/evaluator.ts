@@ -108,6 +108,44 @@ export function evaluateAllPowersLearned(state: GameState): Record<Power, number
   return result;
 }
 
+function valueForPowerOutput(output: Float32Array, power: Power): number {
+  return (output.length === 1 || output.length === 2) ? output[0]! : output[powerIndex(power)]!;
+}
+
+/**
+ * Combined leaf evaluation for MCTS expansion. It evaluates all four value
+ * heads and, for `policyPower`, also returns that power's policy distribution
+ * from the same trunk pass used for its value.
+ */
+export function evaluateAllPowersAndPolicyLearned(
+  state: GameState,
+  policyPower: Power,
+): { values: Record<Power, number>; policy: Float32Array | null } {
+  if (state.winners !== null) {
+    return { values: evaluateAllPowersLearned(state), policy: null };
+  }
+  const features = extractFeaturesAllPowers(state);
+  const values = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 } as Record<Power, number>;
+  let policy: Float32Array | null = null;
+
+  for (const p of POWERS) {
+    const model = perPowerModels.get(p) ?? cachedModel;
+    if (model === null || model === undefined) {
+      throw new Error(`evaluateLearned: no model loaded for ${p}`);
+    }
+
+    if (p === policyPower && model.hasPolicyHead()) {
+      const out = model.forwardWithPolicy(features[p], p);
+      values[p] = valueForPowerOutput(out.value, p);
+      policy = out.policy;
+    } else {
+      values[p] = model.forwardValue(features[p], powerIndex(p));
+    }
+  }
+
+  return { values, policy };
+}
+
 /**
  * Returns the policy distribution from the model's policy head, viewed from
  * `power`'s perspective. Returns null if the loaded model has no policy head

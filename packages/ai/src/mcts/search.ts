@@ -8,7 +8,7 @@ import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './n
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import {
-  policyForState, modelForPowerLoaded, evaluateAllPowersLearned, hasModel,
+  policyForState, modelForPowerLoaded, evaluateAllPowersLearned, evaluateAllPowersAndPolicyLearned, hasModel,
 } from '../learn/evaluator.js';
 import { canonicalActionIndex } from '../learn/action-canon.js';
 
@@ -197,6 +197,18 @@ function makeRootPriorInfoFromRaw(
   };
 }
 
+function makeChildPriors(
+  state: GameState,
+  actions: Action[],
+  rawPolicy?: Float32Array | null,
+): ((action: Action) => number) | null {
+  if (state.pendingAction === null || actions.length === 0) return null;
+  const actingPower = state.pendingAction.waitingFor;
+  const raw = rawPolicy !== undefined ? rawPolicy : policyForState(state, actingPower);
+  if (raw === null) return null;
+  return makeRootPriorInfoFromRaw(raw, state, actions, actingPower)?.priors ?? null;
+}
+
 function makeForcedRootVisits(
   noisePriors: ((action: Action) => number) | null,
   maxIterations: number,
@@ -373,7 +385,7 @@ function runMctsCore(
 
   while (iteration < maxIterations && Date.now() < deadline) {
     const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0, forcedRootVisits);
-    const expanded = expand(selected, forPower);
+    const expanded = expand(selected, forPower, rolloutDepth < 0);
     // Track depth so probeMctsSearch can report tree shape. Cheap (one
     // pointer walk per iter); always-on rather than conditional.
     let depth = 0;
@@ -383,7 +395,8 @@ function runMctsCore(
     leafCount += 1;
     if (depth > maxDepth) maxDepth = depth;
 
-    const score = rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
+    const score = expanded.leafScores
+      ?? rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
     backpropagate(expanded, score);
     iteration += 1;
   }
@@ -742,10 +755,9 @@ function select(
     let bestUntriedIdx = -1;
     if (hasUntried) {
       if (usePuct) {
-        // Below root, childPriors is null (only root has a policy lookup).
-        // Use uniform prior 1/N over legal actions at this node so PUCT's
-        // exploration term has the right scale instead of treating every
-        // sibling as if it had prior=1.
+        // If this node has network priors, use them. Otherwise use uniform
+        // prior 1/N over legal actions at this node so PUCT's exploration term
+        // has the right scale instead of treating every sibling as prior=1.
         const totalLegalHere = current.children.length + current.untriedActions.length;
         const fallbackPrior = totalLegalHere > 0 ? 1 / totalLegalHere : 1.0;
         for (let i = 0; i < current.untriedActions.length; i++) {
@@ -825,7 +837,7 @@ function pickForcedRootChild(
  * Expansion: pick one untried action from the node and create a child.
  * If the node is terminal or fully expanded, return the node itself.
  */
-function expand(node: MctsNode, forPower: Power): MctsNode {
+function expand(node: MctsNode, forPower: Power, cacheLeafScores: boolean): MctsNode {
   if (isTerminal(node.state) || node.untriedActions.length === 0) {
     return node;
   }
@@ -868,10 +880,9 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
   // Determine legal actions for whoever is now waiting.
   const childUntriedActions = getChildUntriedActions(newState);
 
-  // Look up the prior for this child if the parent has a priors function
-  // (only the root sets one — see runMcts). Below root, fall back to uniform
-  // 1/N over the parent's legal actions so PUCT exploration scales correctly
-  // instead of treating each sibling as if it had prior=1.
+  // Look up the prior for this child if the parent has a priors function.
+  // If no network prior exists for this node/action kind, fall back to uniform
+  // 1/N over the parent's legal actions so PUCT exploration scales correctly.
   const totalLegalHere = node.children.length + node.untriedActions.length + 1;
   const fallbackPrior = 1 / totalLegalHere;
   const childPrior = node.childPriors ? node.childPriors(action) : fallbackPrior;
@@ -879,6 +890,16 @@ function expand(node: MctsNode, forPower: Power): MctsNode {
   const child = createNode(
     newState, action, actingPower, node, forPower, childUntriedActions, childPrior,
   );
+  if (cacheLeafScores && !isTerminal(newState)) {
+    const policyPower = newState.pendingAction?.waitingFor;
+    if (policyPower !== undefined) {
+      const evalResult = evaluateAllPowersAndPolicyLearned(newState, policyPower);
+      child.leafScores = evalResult.values;
+      child.childPriors = makeChildPriors(newState, childUntriedActions, evalResult.policy);
+    }
+  } else {
+    child.childPriors = makeChildPriors(newState, childUntriedActions);
+  }
   node.children.push(child);
   return child;
 }
