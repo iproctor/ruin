@@ -88,24 +88,13 @@ ALL_POWERS=(xarm gormen tenzen lasha)
 REF_DIR="$DATA_DIR/ref"
 
 # Auto-anneal xarm suppression λ from baseline xarm win rate.
-# Step schedule: 0.7 at xarm>0.4, 0.5 at 0.3<xarm≤0.4, 0 at xarm≤0.3.
-# Called once per loop iter to refresh XARM_SUPPRESSION_LAMBDA before
-# write_worker_config propagates it to workers.
+# Retired 2026-05-18: λ-shaping moved the field (xarm 61% → 47%, all three
+# non-xarm powers promoted in iters 1818-1825) but has plateaued. Schedule
+# kept as scaffolding for future use; currently returns 0 unconditionally.
 compute_xarm_lambda() {
   local bl="$DATA_DIR/ref_baseline.json"
   if [ ! -f "$bl" ]; then return; fi
-  local new_l
-  new_l=$(python3 -c "
-import json, sys
-try:
-    d = json.load(open(sys.argv[1]))
-    w = float(d.get('win_rates', {}).get('xarm', 0))
-except Exception:
-    print(0.0); sys.exit()
-if w > 0.40: l = 0.7
-elif w > 0.30: l = 0.5
-else: l = 0.0
-print(f'{l:.4f}')" "$bl" 2>/dev/null)
+  local new_l="0.0000"
   if [ -n "$new_l" ] && [ "$new_l" != "$XARM_SUPPRESSION_LAMBDA" ]; then
     echo "[$(date +%H:%M:%S)] [coord] xarm λ: ${XARM_SUPPRESSION_LAMBDA} → ${new_l} (from baseline xarm win)" | tee -a "$LOG_FILE"
     XARM_SUPPRESSION_LAMBDA="$new_l"
