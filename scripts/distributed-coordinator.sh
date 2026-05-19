@@ -62,7 +62,9 @@ export XARM_SUPPRESSION_LAMBDA
 # non-winners; ties share avg rank value). Default 0.75 per the May 2026
 # reintroduction. Anneal toward 0.9 if all powers stay viable, or back off
 # to 0.6 if any power falls below ~10% baseline.
-RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-0}
+# Force-zero (override any pre-set env value) while debugging the 1833+
+# revert cascade. Restore `${RANK_BLEND_WEIGHT:-0.75}` to re-enable.
+RANK_BLEND_WEIGHT=0
 export RANK_BLEND_WEIGHT
 ALL_POWERS=(xarm gormen tenzen lasha)
 
