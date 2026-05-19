@@ -108,13 +108,17 @@ while true; do
   CONFIG_PATH="${DATA_DIR}/worker_config.json"
   if [ -f "$CONFIG_PATH" ]; then
     TASK=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('task','collect'))" "$CONFIG_PATH" 2>/dev/null || echo collect)
-    # Pull λ from coord's config so all worker collect runs see the same value.
+    # Pull λ + rank-blend from coord's config so all worker collect runs match.
     XARM_SUPPRESSION_LAMBDA=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_suppression_lambda',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
     export XARM_SUPPRESSION_LAMBDA
+    RANK_BLEND_WEIGHT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('rank_blend_weight',0.75))" "$CONFIG_PATH" 2>/dev/null || echo 0.75)
+    export RANK_BLEND_WEIGHT
   else
     TASK="collect"
     XARM_SUPPRESSION_LAMBDA=0
     export XARM_SUPPRESSION_LAMBDA
+    RANK_BLEND_WEIGHT=0.75
+    export RANK_BLEND_WEIGHT
   fi
 
   BATCH_COUNTER=$((BATCH_COUNTER + 1))

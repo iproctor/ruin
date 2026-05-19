@@ -92,6 +92,16 @@ if (xarmSuppression > 0) {
   console.log(`[mcts] xarm suppression λ = ${xarmSuppression}`);
 }
 
+// Value-target blend: target = w_rank · final_rank + (1 - w_rank) · progress.
+// Rank assigns 1.0 / 0.66 / 0.33 / 0.0 to 1st-4th place; winners (per
+// state.winners) outrank all non-winners, then non-winners are tiebroken by
+// progress; ties at any level share the average rank value. Incomplete games
+// fall back to pure progress. Default 0.75 per the May 2026 reintroduction.
+const rankBlendWeight = parseFloat(process.env.RANK_BLEND_WEIGHT ?? '0.75');
+if (rankBlendWeight > 0) {
+  console.log(`[target] rank blend weight = ${rankBlendWeight} (rank + progress)`);
+}
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
@@ -188,6 +198,49 @@ function computeProgressTarget(state: GameState): number[] {
     target[i] = Math.min(Math.max(vpProgress, threatProgress), 1.0);
   }
   return target;
+}
+
+const RANK_VALUES = [1.0, 0.66, 0.33, 0.0];
+
+/**
+ * Final-placement rank target. Winners (state.winners) outrank all non-winners;
+ * non-winners are ordered by their progress score. Ties share the average of
+ * their position rank values. Returns null if the game ended without winners,
+ * in which case the caller should fall back to pure progress.
+ */
+function computeRankTarget(state: GameState): number[] | null {
+  if (state.winners === null || state.winners.length === 0) return null;
+  const winnerSet = new Set<Power>(state.winners);
+  const scores = POWERS.map((p, i) => {
+    const ps = state.powers[p];
+    const progress = Math.max(ps.victoryPoints / 55, ps.threatValue / 35);
+    return { i, score: (winnerSet.has(p) ? 1000 : 0) + progress };
+  });
+  scores.sort((a, b) => b.score - a.score);
+  const target = new Array<number>(POWERS.length).fill(0);
+  let pos = 0;
+  while (pos < scores.length) {
+    let end = pos + 1;
+    while (end < scores.length && scores[end]!.score === scores[pos]!.score) end++;
+    let sum = 0;
+    for (let k = pos; k < end; k++) sum += RANK_VALUES[k]!;
+    const avg = sum / (end - pos);
+    for (let k = pos; k < end; k++) target[scores[k]!.i] = avg;
+    pos = end;
+  }
+  return target;
+}
+
+function computeBlendedTarget(state: GameState, rankWeight: number): number[] {
+  const progress = computeProgressTarget(state);
+  if (rankWeight <= 0) return progress;
+  const rank = computeRankTarget(state);
+  if (rank === null) return progress;
+  const out = new Array<number>(progress.length);
+  for (let i = 0; i < progress.length; i++) {
+    out[i] = rankWeight * rank[i]! + (1 - rankWeight) * progress[i]!;
+  }
+  return out;
 }
 
 /**
@@ -492,7 +545,7 @@ function runGame(seed: number): GameResult {
     complete,
     stopReason: complete ? 'complete' : stopReason,
     actionCount,
-    target: computeProgressTarget(state),
+    target: computeBlendedTarget(state, rankBlendWeight),
     finalVp: powerNumbers(state, 'victoryPoints'),
     finalThreat: powerNumbers(state, 'threatValue'),
     ruinationCount: ruinedRegionCount(state),
@@ -525,7 +578,7 @@ for (let i = 0; i < gameCount; i++) {
       p: number;
       visits?: Record<string, number>;
       meta: SampleMeta & {
-        targetVersion: 'progress_v1';
+        targetVersion: 'rank_progress_blend_v1';
         complete: boolean;
         stopReason: string;
         finalRounds: number;
@@ -541,7 +594,7 @@ for (let i = 0; i < gameCount; i++) {
       p: s.p,
       meta: {
         ...s.meta,
-        targetVersion: 'progress_v1',
+        targetVersion: 'rank_progress_blend_v1',
         complete,
         stopReason,
         finalRounds: rounds,

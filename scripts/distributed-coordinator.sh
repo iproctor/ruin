@@ -57,6 +57,13 @@ BENCH_WORKERS=${BENCH_WORKERS:-14}
 # defensive play. Suggested initial value: 0.5.
 XARM_SUPPRESSION_LAMBDA=${XARM_SUPPRESSION_LAMBDA:-0}
 export XARM_SUPPRESSION_LAMBDA
+# Value-target blend: t = w · final_rank + (1 - w) · progress.
+# Rank target: 1st 1.0 / 2nd 0.66 / 3rd 0.33 / 4th 0.0 (winners outrank
+# non-winners; ties share avg rank value). Default 0.75 per the May 2026
+# reintroduction. Anneal toward 0.9 if all powers stay viable, or back off
+# to 0.6 if any power falls below ~10% baseline.
+RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-0.75}
+export RANK_BLEND_WEIGHT
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -116,7 +123,8 @@ print(json.dumps({
   "games_per_box": int(sys.argv[4]),
   "mcts_iter": int(sys.argv[5]),
   "xarm_suppression_lambda": float(sys.argv[6]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" \
+  "rank_blend_weight": float(sys.argv[7]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" \
     > "$DATA_DIR/worker_config.json"
 }
 
