@@ -92,6 +92,15 @@ if (xarmSuppression > 0) {
   console.log(`[mcts] xarm suppression λ = ${xarmSuppression}`);
 }
 
+// Collection-time ruin-pressure shaping. Used only to steer MCTS labels and
+// self-play trajectories toward building ruin pressure before regions are
+// already urgent; H2H remains unshaped unless explicitly passed elsewhere.
+const ruinPressureLambda = parseFloat(process.env.RUIN_PRESSURE_LAMBDA ?? '0');
+const ruinPressureMaxRound = parseInt(process.env.RUIN_PRESSURE_MAX_ROUND ?? '3', 10);
+if (ruinPressureLambda > 0) {
+  console.log(`[mcts] ruin pressure λ = ${ruinPressureLambda} through round ${ruinPressureMaxRound}`);
+}
+
 // Value-target blend: target = w_rank · final_rank + (1 - w_rank) · progress.
 // Rank assigns 1.0 / 0.66 / 0.33 / 0.0 to 1st-4th place; winners (per
 // state.winners) outrank all non-winners, then non-winners are tiebroken by
@@ -483,6 +492,7 @@ function runGame(seed: number): GameResult {
             ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
             ...(dirichletNoise ? { dirichletNoise } : {}),
             ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
+            ...(ruinPressureLambda > 0 ? { ruinPressureLambda, ruinPressureMaxRound } : {}),
           });
           // τ=1 visit-proportional sampling for opening rounds, but ONLY for
           // the per-game explorer (one randomly-chosen power). Other powers
@@ -509,6 +519,7 @@ function runGame(seed: number): GameResult {
             timeMs: fastMctsTimeMs,
             ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
             ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
+            ...(ruinPressureLambda > 0 ? { ruinPressureLambda, ruinPressureMaxRound } : {}),
           });
         }
       } else if (MCTS_SUBACTION_KINDS.has(pending.actionKind)) {
@@ -517,6 +528,7 @@ function runGame(seed: number): GameResult {
           timeMs: fastMctsTimeMs,
           ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
           ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
+          ...(ruinPressureLambda > 0 ? { ruinPressureLambda, ruinPressureMaxRound } : {}),
         });
       } else {
         action = greedyAction(state, pending.waitingFor);

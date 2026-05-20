@@ -71,6 +71,12 @@ export RANK_BLEND_WEIGHT
 # the late-game target saturation where all four powers sit around 0.8+.
 PROGRESS_TARGET_MODE=${PROGRESS_TARGET_MODE:-relative}
 export PROGRESS_TARGET_MODE
+# Collection-only MCTS leaf shaping: nudge early/midgame searches toward
+# concentrated pre-ruin corruption projects. H2H does not read this knob.
+RUIN_PRESSURE_LAMBDA=${RUIN_PRESSURE_LAMBDA:-0.08}
+RUIN_PRESSURE_MAX_ROUND=${RUIN_PRESSURE_MAX_ROUND:-3}
+export RUIN_PRESSURE_LAMBDA
+export RUIN_PRESSURE_MAX_ROUND
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -132,7 +138,9 @@ print(json.dumps({
   "xarm_suppression_lambda": float(sys.argv[6]),
   "rank_blend_weight": float(sys.argv[7]),
   "progress_target_mode": sys.argv[8],
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" \
+  "ruin_pressure_lambda": float(sys.argv[9]),
+  "ruin_pressure_max_round": int(sys.argv[10]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" \
     > "$DATA_DIR/worker_config.json"
 }
 
@@ -163,6 +171,7 @@ write_worker_config "collect" ""
   echo "  WORKERS:          $WORKERS"
   echo "  TRAIN_THRESHOLD:  $TRAIN_THRESHOLD files in inbox"
   echo "  TARGET_MODE:      $PROGRESS_TARGET_MODE"
+  echo "  RUIN_PRESSURE:    λ=$RUIN_PRESSURE_LAMBDA through round $RUIN_PRESSURE_MAX_ROUND"
   echo "  starting iter:    $ITER"
   echo "===================================================================="
 } | tee -a "$LOG_FILE"

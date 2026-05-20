@@ -69,6 +69,15 @@ export interface MctsOptions {
    * to 0 once non-xarm powers have learned defensive play.
    */
   xarmSuppression?: number;
+  /**
+   * Optional collection-time leaf shaping that rewards building regions toward
+   * ruination before they are already urgent. This is intentionally small and
+   * relative across powers: it nudges round-2/3 setup toward concentrated
+   * corruption without changing terminal scores.
+   */
+  ruinPressureLambda?: number;
+  /** Apply ruinPressureLambda only through this round. Default: all rounds. */
+  ruinPressureMaxRound?: number;
 }
 
 // Iteration cap is effectively only a safety net — time cap governs in
@@ -292,6 +301,7 @@ function rolloutDepthForRound(round: number): number {
 // because random-pass kept ending the Siphon trajectory before its PP was
 // used. Skilled play never passes with resources available.
 const ROLLOUT_AGGRESSION = 1.0;
+const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -395,8 +405,9 @@ function runMctsCore(
     leafCount += 1;
     if (depth > maxDepth) maxDepth = depth;
 
-    const score = expanded.leafScores
+    const baseScore = expanded.leafScores
       ?? rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
+    const score = shapeScoresWithRuinPressure(expanded.state, baseScore, options);
     backpropagate(expanded, score);
     iteration += 1;
   }
@@ -937,6 +948,64 @@ function evaluateAllPowers(state: GameState): Record<Power, number> {
     throw new Error('evaluateAllPowers called with no model loaded');
   }
   return evaluateAllPowersLearned(state);
+}
+
+function shapeScoresWithRuinPressure(
+  state: GameState,
+  scores: Record<Power, number>,
+  options?: MctsOptions,
+): Record<Power, number> {
+  const lambda = options?.ruinPressureLambda ?? 0;
+  if (lambda <= 0) return scores;
+  const maxRound = options?.ruinPressureMaxRound;
+  if (maxRound !== undefined && state.round > maxRound) return scores;
+
+  const pressure = computeRuinPressure(state);
+  const shaped = { ...scores };
+  for (const p of ALL_POWERS) {
+    let other = 0;
+    for (const q of ALL_POWERS) {
+      if (q !== p) other += pressure[q];
+    }
+    const relativePressure = pressure[p] - other / Math.max(1, ALL_POWERS.length - 1);
+    shaped[p] = Math.min(Math.max(scores[p] + lambda * relativePressure, 0), 1);
+  }
+  return shaped;
+}
+
+function computeRuinPressure(state: GameState): Record<Power, number> {
+  const pressure: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };
+  let totalWeight = 0;
+
+  for (const region of Object.values(state.regions)) {
+    if (!region || region.ruinationCardIndex !== null) continue;
+    const resistance = Math.max(1, region.resistance || 1);
+    const tokens = region.corruptionTokens;
+    const total = ALL_POWERS.reduce((sum, p) => sum + Math.max(0, tokens[p] ?? 0), 0);
+    if (total <= 0) continue;
+
+    // Starts nudging once a region is a real project, then ramps smoothly
+    // before the existing "near ruin" signals become obvious.
+    const fill = total / resistance;
+    const ramp = Math.min(Math.max((fill - 0.25) / 0.75, 0), 1);
+    if (ramp <= 0) continue;
+    const curve = ramp * ramp * (3 - 2 * ramp);
+    const valueWeight = 0.75 + Math.min(Math.max(region.conquestValue, 1), 5) / 5;
+    totalWeight += valueWeight;
+
+    for (const p of ALL_POWERS) {
+      const own = Math.max(0, tokens[p] ?? 0);
+      if (own <= 0) continue;
+      const share = own / total;
+      const concentration = Math.min(own / resistance, 1);
+      pressure[p] += valueWeight * curve * (0.6 * share + 0.4 * concentration);
+    }
+  }
+
+  if (totalWeight > 0) {
+    for (const p of ALL_POWERS) pressure[p] = Math.min(Math.max(pressure[p] / totalWeight, 0), 1);
+  }
+  return pressure;
 }
 
 /**
