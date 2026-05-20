@@ -962,12 +962,13 @@ function shapeScoresWithRuinPressure(
 
   const pressure = computeRuinPressure(state);
   const shaped = { ...scores };
-  for (const p of ALL_POWERS) {
+  const ruinPowers = ALL_POWERS.filter(p => p !== 'xarm');
+  for (const p of ruinPowers) {
     let other = 0;
-    for (const q of ALL_POWERS) {
+    for (const q of ruinPowers) {
       if (q !== p) other += pressure[q];
     }
-    const relativePressure = pressure[p] - other / Math.max(1, ALL_POWERS.length - 1);
+    const relativePressure = pressure[p] - other / Math.max(1, ruinPowers.length - 1);
     shaped[p] = Math.min(Math.max(scores[p] + lambda * relativePressure, 0), 1);
   }
   return shaped;
