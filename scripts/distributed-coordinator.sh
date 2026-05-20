@@ -66,6 +66,11 @@ export XARM_SUPPRESSION_LAMBDA
 # revert cascade. Restore `${RANK_BLEND_WEIGHT:-0.75}` to re-enable.
 RANK_BLEND_WEIGHT=0
 export RANK_BLEND_WEIGHT
+# Progress target geometry. "relative" keeps progress but trains on
+# own-progress-vs-field instead of absolute near-threshold progress, avoiding
+# the late-game target saturation where all four powers sit around 0.8+.
+PROGRESS_TARGET_MODE=${PROGRESS_TARGET_MODE:-relative}
+export PROGRESS_TARGET_MODE
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -126,7 +131,8 @@ print(json.dumps({
   "mcts_iter": int(sys.argv[5]),
   "xarm_suppression_lambda": float(sys.argv[6]),
   "rank_blend_weight": float(sys.argv[7]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" \
+  "progress_target_mode": sys.argv[8],
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" \
     > "$DATA_DIR/worker_config.json"
 }
 
@@ -156,6 +162,7 @@ write_worker_config "collect" ""
   echo "  GAMES_PER_BATCH:  $GAMES_PER_BATCH"
   echo "  WORKERS:          $WORKERS"
   echo "  TRAIN_THRESHOLD:  $TRAIN_THRESHOLD files in inbox"
+  echo "  TARGET_MODE:      $PROGRESS_TARGET_MODE"
   echo "  starting iter:    $ITER"
   echo "===================================================================="
 } | tee -a "$LOG_FILE"

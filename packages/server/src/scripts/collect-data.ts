@@ -102,6 +102,14 @@ if (rankBlendWeight > 0) {
   console.log(`[target] rank blend weight = ${rankBlendWeight} (rank + progress)`);
 }
 
+// Progress-target geometry. Absolute progress saturates once everyone is near
+// a win threshold; relative progress trains MCTS on whether the actor is ahead
+// of the field instead of merely "also close to done".
+const progressTargetMode = (process.env.PROGRESS_TARGET_MODE ?? 'absolute').toLowerCase();
+if (progressTargetMode !== 'absolute') {
+  console.log(`[target] progress target mode = ${progressTargetMode}`);
+}
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
@@ -200,6 +208,26 @@ function computeProgressTarget(state: GameState): number[] {
   return target;
 }
 
+/**
+ * Relative progress target: 0.5 means "kept pace with the field", >0.5 means
+ * the power ended ahead of the other three, <0.5 means it fell behind. This
+ * keeps progress as the signal but removes the high-progress saturation where
+ * all four heads train around 0.8+ in late-game samples.
+ */
+function computeRelativeProgressTarget(state: GameState): number[] {
+  const progress = computeProgressTarget(state);
+  const target = new Array<number>(progress.length).fill(0.5);
+  for (let i = 0; i < progress.length; i++) {
+    let otherSum = 0;
+    for (let j = 0; j < progress.length; j++) {
+      if (i !== j) otherSum += progress[j]!;
+    }
+    const otherAvg = otherSum / Math.max(1, progress.length - 1);
+    target[i] = Math.min(Math.max(0.5 + 0.5 * (progress[i]! - otherAvg), 0), 1);
+  }
+  return target;
+}
+
 const RANK_VALUES = [1.0, 0.66, 0.33, 0.0];
 
 /**
@@ -232,7 +260,9 @@ function computeRankTarget(state: GameState): number[] | null {
 }
 
 function computeBlendedTarget(state: GameState, rankWeight: number): number[] {
-  const progress = computeProgressTarget(state);
+  const progress = progressTargetMode === 'relative'
+    ? computeRelativeProgressTarget(state)
+    : computeProgressTarget(state);
   if (rankWeight <= 0) return progress;
   const rank = computeRankTarget(state);
   if (rank === null) return progress;
@@ -578,7 +608,7 @@ for (let i = 0; i < gameCount; i++) {
       p: number;
       visits?: Record<string, number>;
       meta: SampleMeta & {
-        targetVersion: 'rank_progress_blend_v1';
+        targetVersion: string;
         complete: boolean;
         stopReason: string;
         finalRounds: number;
@@ -594,7 +624,7 @@ for (let i = 0; i < gameCount; i++) {
       p: s.p,
       meta: {
         ...s.meta,
-        targetVersion: 'rank_progress_blend_v1',
+        targetVersion: `rank_progress_blend_v1:${progressTargetMode}`,
         complete,
         stopReason,
         finalRounds: rounds,
