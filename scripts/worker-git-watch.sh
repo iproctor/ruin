@@ -119,6 +119,8 @@ while true; do
     export RUIN_PRESSURE_LAMBDA
     RUIN_PRESSURE_MAX_ROUND=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('ruin_pressure_max_round',3))" "$CONFIG_PATH" 2>/dev/null || echo 3)
     export RUIN_PRESSURE_MAX_ROUND
+    XARM_TARGET_MODE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_target_mode','inherit'))" "$CONFIG_PATH" 2>/dev/null || echo inherit)
+    export XARM_TARGET_MODE
   else
     TASK="collect"
     XARM_SUPPRESSION_LAMBDA=0
@@ -131,6 +133,8 @@ while true; do
     export RUIN_PRESSURE_LAMBDA
     RUIN_PRESSURE_MAX_ROUND=3
     export RUIN_PRESSURE_MAX_ROUND
+    XARM_TARGET_MODE=inherit
+    export XARM_TARGET_MODE
   fi
 
   BATCH_COUNTER=$((BATCH_COUNTER + 1))

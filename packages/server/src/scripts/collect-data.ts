@@ -119,6 +119,17 @@ if (progressTargetMode !== 'absolute') {
   console.log(`[target] progress target mode = ${progressTargetMode}`);
 }
 
+// Per-power xarm target override. 'inherit' (default) uses the shared target
+// formula; 'rank' replaces xarm's value-head target with the final-placement
+// rank value (1.0 / 0.66 / 0.33 / 0.0). Motivation: xarm wins by dial-clock,
+// not by progress, so progress-based targets understate xarm wins. Plain rank
+// gives xarm a clean "I won / I didn't" signal without disturbing the other
+// powers' progress signals.
+const xarmTargetMode = (process.env.XARM_TARGET_MODE ?? 'inherit').toLowerCase();
+if (xarmTargetMode !== 'inherit') {
+  console.log(`[target] xarm target mode = ${xarmTargetMode}`);
+}
+
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
 // Snapshot the live per-power models (loaded by loadLearnedModelIfPresent)
@@ -272,12 +283,19 @@ function computeBlendedTarget(state: GameState, rankWeight: number): number[] {
   const progress = progressTargetMode === 'relative'
     ? computeRelativeProgressTarget(state)
     : computeProgressTarget(state);
-  if (rankWeight <= 0) return progress;
-  const rank = computeRankTarget(state);
-  if (rank === null) return progress;
+  const rank = (rankWeight > 0 || xarmTargetMode === 'rank')
+    ? computeRankTarget(state)
+    : null;
   const out = new Array<number>(progress.length);
   for (let i = 0; i < progress.length; i++) {
-    out[i] = rankWeight * rank[i]! + (1 - rankWeight) * progress[i]!;
+    out[i] = rankWeight > 0 && rank !== null
+      ? rankWeight * rank[i]! + (1 - rankWeight) * progress[i]!
+      : progress[i]!;
+  }
+  // Per-power xarm override: replace xarm's slot with pure rank value.
+  if (xarmTargetMode === 'rank' && rank !== null) {
+    const xarmIdx = POWERS.indexOf('xarm');
+    if (xarmIdx >= 0) out[xarmIdx] = rank[xarmIdx]!;
   }
   return out;
 }

@@ -77,6 +77,12 @@ RUIN_PRESSURE_LAMBDA=${RUIN_PRESSURE_LAMBDA:-0.08}
 RUIN_PRESSURE_MAX_ROUND=${RUIN_PRESSURE_MAX_ROUND:-3}
 export RUIN_PRESSURE_LAMBDA
 export RUIN_PRESSURE_MAX_ROUND
+# Per-power xarm value-head target. 'rank' replaces xarm's slot in the target
+# array with the final-placement rank value (1.0 winner / 0.66 / 0.33 / 0.0),
+# decoupling its training signal from progress-mode saturation. Other powers
+# keep PROGRESS_TARGET_MODE. 'inherit' = no override.
+XARM_TARGET_MODE=${XARM_TARGET_MODE:-rank}
+export XARM_TARGET_MODE
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -140,7 +146,8 @@ print(json.dumps({
   "progress_target_mode": sys.argv[8],
   "ruin_pressure_lambda": float(sys.argv[9]),
   "ruin_pressure_max_round": int(sys.argv[10]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" \
+  "xarm_target_mode": sys.argv[11],
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" \
     > "$DATA_DIR/worker_config.json"
 }
 
