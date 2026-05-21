@@ -97,6 +97,7 @@ mkdir -p "$INBOX" "$ARCHIVE"
 H2H_ENABLE=${H2H_ENABLE:-1}            # h2h benches on by default; gated by
                                        # H2H_AFTER_ITERS to give training a
                                        # warm-up window before testing
+H2H_EVERY_N=${H2H_EVERY_N:-3}          # run h2h every Nth iter; train-only between
 H2H_AFTER_ITERS=${H2H_AFTER_ITERS:-5}  # skip h2h for the first N iters of
                                        # this coord run (relative to
                                        # START_ITER) to let demos + reset
@@ -403,7 +404,7 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   H2H_REVERT_DELTA=${H2H_REVERT_DELTA:-0.02}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
-  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
+  if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ] && [ "$((ITER % H2H_EVERY_N))" -eq 0 ]; then
     # 3f.0. Ensure baseline exists. Distributed: workers + coord all
     # contribute to bench_inbox_baseline/, coord aggregates.
     if [ ! -f "$REF_BASELINE_FILE" ]; then
@@ -508,7 +509,7 @@ print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*1
     fi
   fi
 
-  if [ "$H2H_ENABLE" = "1" ] && [ -f "$REF_BASELINE_FILE" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ]; then
+  if [ "$H2H_ENABLE" = "1" ] && [ -f "$REF_BASELINE_FILE" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ] && [ "$((ITER % H2H_EVERY_N))" -eq 0 ]; then
     echo "[iter $ITER] h2h cycle (target=${H2H_TARGET_GAMES}/power, iter=${H2H_ITER})" | tee -a "$LOG_FILE"
     for POWER in "${ALL_POWERS[@]}"; do
       BENCH_INBOX="$DATA_DIR/bench_inbox_${POWER}"
