@@ -271,7 +271,7 @@ function optimisticDac(
       else if (power === 'tenzen') {
         const ms = region.chaosCards.filter(c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId)).length;
         const cs = region.tokens.filter(t => t === 'chaos_stone').length;
-        const fatespinner = state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+        const fatespinner = (state.powers['tenzen']?.upgradesInPlay.includes('tenzen_fatespinner_up') ?? false) &&
           rFigs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
         if (ms + cs + fatespinner >= 2) count++;
       } else if (power === 'lasha' && region.tokens.some(t => t === 'noble' || t === 'hero')) count++;
@@ -414,7 +414,7 @@ function expectedDac(
       else if (power === 'tenzen') {
         const ms = region.chaosCards.filter(c => c !== null && MAGIC_SYMBOL_CARDS.has(c.cardId)).length;
         const cs = region.tokens.filter(t => t === 'chaos_stone').length;
-        const fatespinner = state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+        const fatespinner = (state.powers['tenzen']?.upgradesInPlay.includes('tenzen_fatespinner_up') ?? false) &&
           figs.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
         if (ms + cs + fatespinner >= 2) count++;
       } else if (power === 'lasha' && region.tokens.some(t => t === 'noble' || t === 'hero')) count++;
@@ -610,7 +610,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     for (const t of TOKEN_TYPES) {
       let count = region.tokens.filter(x => x === t).length;
       if (t === 'chaos_stone' &&
-          state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+          (state.powers['tenzen']?.upgradesInPlay.includes('tenzen_fatespinner_up') ?? false) &&
           regionFigs[r]!.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped)) {
         count += 2;
       }
@@ -732,7 +732,7 @@ export function extractFeatures(state: GameState, viewpoint: Power): Float32Arra
     const corrTokens = Object.values(region.corruptionTokens).reduce((a, b) => a + b, 0);
     const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
     const fatespinnerBonus =
-      state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
+      (state.powers['tenzen']?.upgradesInPlay.includes('tenzen_fatespinner_up') ?? false) &&
       regionFigs[r]!.some(f => f.class === 'incarnation' && f.power === 'tenzen' && !f.tipped) ? 2 : 0;
     out[i++] = (corrTokens + chaosStones + fatespinnerBonus + potentialPerRegion[ri]!) >= 12 ? 1 : 0;
   }

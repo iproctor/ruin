@@ -43,12 +43,12 @@ export function isPointlessAction(state: GameState, action: Action): boolean {
   // Xarm's first figure on the board should never start at an edge region.
   // Edges are too far from the action — xarm wants central where piles form.
   if (action.kind === 'summoning_summon_figure' && action.power === 'xarm') {
-    const xarmOnBoard = state.powers['xarm']!.followers.some(f => f.regionId !== null);
+    const xarmOnBoard = state.powers['xarm']?.followers.some(f => f.regionId !== null) ?? false;
     if (!xarmOnBoard) {
       // Only restrict when the board is also empty of enemies — once anyone
       // has committed figures, xarm may legitimately need to chase them.
       const anyEnemyOnBoard = (['gormen','tenzen','lasha'] as const).some(
-        p => state.powers[p]!.followers.some(f => f.regionId !== null)
+        p => state.powers[p]?.followers.some(f => f.regionId !== null) ?? false
       );
       if (!anyEnemyOnBoard) {
         const INTERIOR = new Set(['mittelreich', 'normagne', 'toscavar', 'volensk']);
