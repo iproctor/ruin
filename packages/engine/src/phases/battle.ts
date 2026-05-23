@@ -136,9 +136,9 @@ function resumeBattle(state: GameState): { state: GameState; log: GameLog } {
   // figures won't be visible to the normal runPostNormal DAC check).
   if (nextStep.type === 'normal_battle' && nextStep.clearTipped) {
     const tipped = followersInRegion(s, regionId).filter(f => f.tipped);
-    const xarmPresent = s.activePowers.includes('xarm') &&
-      followersInRegion(s, regionId).some(f => (f.controlledBy ?? f.power) === 'xarm');
-    const enemyKilledByFrenzy = xarmPresent &&
+    // War Frenzy supplies its own attack via the card's dice, so a frenzy
+    // kill earns Xarm the DAC even with no Xarm figures in the region.
+    const enemyKilledByFrenzy = s.activePowers.includes('xarm') &&
       tipped.some(f => (f.controlledBy ?? f.power) !== 'xarm');
     for (const f of tipped) {
       s = removeFigureFromBoard(s, regionId, f.id, log).state;

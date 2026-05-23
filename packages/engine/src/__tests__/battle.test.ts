@@ -515,6 +515,27 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     expect(found).toBe(true);
   });
 
+  test('War Frenzy kill earns Xarm a dial counter even with no Xarm figures in the region (regression)', () => {
+    // The card supplies its own dice, so a frenzy kill earns the DAC regardless
+    // of whether Xarm has any figures present in the region.
+    let found = false;
+    for (let seed = 0; seed < 500; seed++) {
+      let s = makeState({ phase: 'battle', pendingAction: null, rngSeed: seed });
+      // No Xarm figures — only the War Frenzy card and an enemy.
+      s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+      s = placeCard(s, 'xarm_war_frenzy', 'xarm', 'norrsund');
+      const { log } = autoResolveBattle(resolveBattlePhase(s));
+      const frenzyEntry = log.entries.find(l => l.includes('War Frenzy'));
+      const killEntry = log.entries.find(l => l.includes('kills'));
+      if (frenzyEntry && killEntry) {
+        expect(log.entries.some(l => l.includes('earns DAC'))).toBe(true);
+        found = true;
+        break;
+      }
+    }
+    expect(found).toBe(true);
+  });
+
   test('War Frenzy + normal battle kills earn at most one DAC per region (regression)', () => {
     // If War Frenzy kills an enemy AND Xarm also kills an enemy in the normal
     // battle of the same region, Xarm should earn exactly one DAC — not two.
