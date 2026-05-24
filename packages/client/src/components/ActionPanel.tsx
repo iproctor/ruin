@@ -1515,6 +1515,36 @@ function WorldCardEffectPanel({
     );
   }
 
+  if (cardId === 'eastern_armistice') {
+    const regionId = context['regionId'] as RegionId | undefined;
+    const figures = regionId && state.regions[regionId]
+      ? followersInRegion(state, regionId, myPower)
+      : [];
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.8rem', color: ERROR }}>
+          Eastern Armistice — choose 1 figure to remove{regionId ? ` from ${REGION_LABELS[regionId]}` : ''}:
+        </div>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          {figures.length === 0 && (
+            <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No figures to remove.</span>
+          )}
+          {figures.map(f => (
+            <button
+              key={f.id}
+              className="danger"
+              onClick={() => onAction({ kind: 'world_card_effect', power: myPower, cardId, choices: { followerId: f.id } })}
+              style={{ fontSize: '0.8rem' }}
+            >
+              {formatId(f.class)}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function handleSubmit() {
     if (!selectedRegion) return;
     onAction({

@@ -8,6 +8,7 @@ import {
   giveCards, withUpgrade, setPP,
 } from './helpers.js';
 import type { Power } from '../types.js';
+import { followersInRegion } from '../helpers.js';
 
 // ─── No pending action ────────────────────────────────────────────────────────
 
@@ -153,6 +154,23 @@ describe('world_card_effect', () => {
     expect(actions).toHaveLength(2);
     expect(actions.some(a => (a as any).choices.cardId === 'xarm_war_cry')).toBe(true);
     expect(actions.some(a => (a as any).choices.cardId === 'xarm_war_frenzy')).toBe(true);
+  });
+
+  test('Eastern Armistice enumerates removable figures in the pending region', () => {
+    let s = placeFollower(makeState(), 'xarm', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    const ids = followersInRegion(s, 'norrsund', 'xarm').map(f => f.id);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'world_card_effect',
+        context: { cardId: 'eastern_armistice', regionId: 'norrsund' },
+      },
+    };
+    const actions = getLegalActions(s, 'xarm').filter(a => a.kind === 'world_card_effect');
+    expect(actions).toHaveLength(2);
+    expect(actions.map(a => (a as any).choices.followerId).sort()).toEqual(ids.sort());
   });
 });
 

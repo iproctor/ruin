@@ -1106,15 +1106,42 @@ describe('Lasha Rapture: release timing', () => {
 // ─── Armistice: remove figures from event regions post-battle ────────────────
 
 describe('Armistice (remove 1 figure per event region post-battle)', () => {
-  test('each player removes 1 figure from event region after battle', () => {
+  test('each player chooses 1 figure to remove from event region after battle', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = setWorldCard(s, 'eastern_armistice');
     s = addToken(s, 'norrsund', 'event');
     s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
+    s = placeFollower(s, 'xarm', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
-    const { state, log } = autoResolveBattle(resolveBattlePhase(s));
+    const xarmTarget = followersInRegion(s, 'norrsund', 'xarm')[1]!.id;
+    const gormenTarget = followersInRegion(s, 'norrsund', 'gormen')[0]!.id;
+
+    const first = resolveBattlePhase(s).state;
+    expect(first.pendingAction?.actionKind).toBe('world_card_effect');
+    expect(first.pendingAction?.waitingFor).toBe('xarm');
+    expect(first.pendingAction?.context.cardId).toBe('eastern_armistice');
+    expect(first.pendingAction?.context.regionId).toBe('norrsund');
+
+    const second = applyActionForPreview(first, {
+      kind: 'world_card_effect',
+      power: 'xarm',
+      cardId: 'eastern_armistice',
+      choices: { followerId: xarmTarget },
+    }).state;
+    expect(second.pendingAction?.waitingFor).toBe('gormen');
+    expect(followersInRegion(second, 'norrsund').some(f => f.id === xarmTarget)).toBe(false);
+    expect(followersInRegion(second, 'norrsund', 'xarm')).toHaveLength(1);
+
+    const { state, log } = applyActionForPreview(second, {
+      kind: 'world_card_effect',
+      power: 'gormen',
+      cardId: 'eastern_armistice',
+      choices: { followerId: gormenTarget },
+    });
     expect(log.entries.some(l => l.includes('Armistice'))).toBe(true);
-    expect(followersInRegion(state, 'norrsund').length).toBeLessThan(2);
+    expect(state.phase).toBe('corruption');
+    expect(state.pendingAction).toBeNull();
+    expect(followersInRegion(state, 'norrsund').some(f => f.id === gormenTarget)).toBe(false);
   });
 });
 

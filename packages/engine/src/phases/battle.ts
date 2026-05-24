@@ -1,7 +1,7 @@
 import type {
   GameState, Power, RegionId, FollowerInstance,
   CorruptionHarvestChoiceAction, BattleNextStep, BattleHitAssignmentAction,
-  CompanionDiceRollAction, RaptureChoiceAction,
+  CompanionDiceRollAction, RaptureChoiceAction, WorldCardEffectAction,
 } from '../types.js';
 import {
   CARD_BY_ID, REGION_ORDER, FOLLOWERS, UPGRADES, UPGRADE_BY_ID, WORLD_CARD_BY_ID,
@@ -1035,23 +1035,19 @@ function finalizeBattle(
   state: GameState,
   log: GameLog,
 ): { state: GameState; log: GameLog } {
-  let s = state;
-
   // Armistice end-of-battle: each player removes 1 figure per event-token region
-  if (isWorldCardActive(s, 'eastern_armistice')) {
-    for (const regionId of REGION_ORDER) {
-      if (!s.regions[regionId]!.tokens.includes('event')) continue;
-      for (const power of s.activePowers) {
-        const figures = followersInRegion(s, regionId, power);
-        if (figures.length === 0) continue;
-        // Auto-remove weakest figure
-        const target = figures.sort((a, b) =>
-          classRank(a.class) - classRank(b.class)
-        )[0]!;
-        s = log.apply(s, { type: 'world_card_effect', subtype: 'eastern_armistice', power, regionId, followerClass: target.class, followerId: target.id });
-      }
-    }
+  if (isWorldCardActive(state, 'eastern_armistice')) {
+    return pauseForEasternArmisticeRemoval(state, easternArmisticeRemovals(state), log);
   }
+
+  return finalizeBattleAfterArmistice(state, log);
+}
+
+function finalizeBattleAfterArmistice(
+  state: GameState,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  let s = state;
 
   // Clear per-round flags: protected (Fate's Aegis).
   // NOTE: Rapture-granted control is NOT released here — per the upgrade text
@@ -1076,6 +1072,91 @@ function finalizeBattle(
   };
 
   return { state: s, log };
+}
+
+interface EasternArmisticeRemoval {
+  power: Power;
+  regionId: RegionId;
+}
+
+function easternArmisticeRemovals(state: GameState): EasternArmisticeRemoval[] {
+  const removals: EasternArmisticeRemoval[] = [];
+  for (const regionId of REGION_ORDER) {
+    if (!state.regions[regionId]!.tokens.includes('event')) continue;
+    for (const power of state.activePowers) {
+      if (followersInRegion(state, regionId, power).length > 0) {
+        removals.push({ power, regionId });
+      }
+    }
+  }
+  return removals;
+}
+
+function pauseForEasternArmisticeRemoval(
+  state: GameState,
+  removals: EasternArmisticeRemoval[],
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  const [next, ...remaining] = removals;
+  if (!next) return finalizeBattleAfterArmistice(state, log);
+
+  const context = {
+    cardId: 'eastern_armistice',
+    regionId: next.regionId,
+    remainingRemovals: remaining,
+  };
+  const s: GameState = {
+    ...state,
+    pendingAction: {
+      waitingFor: next.power,
+      actionKind: 'world_card_effect',
+      context,
+    },
+  };
+  log.emit({
+    type: 'awaiting_action',
+    power: next.power,
+    actionKind: 'world_card_effect',
+    context,
+    description: `${next.power} must remove a figure in ${next.regionId} for Eastern Armistice.`,
+  });
+  return { state: s, log };
+}
+
+export function applyEasternArmisticeChoice(
+  state: GameState,
+  action: WorldCardEffectAction,
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  const ctx = state.pendingAction?.context ?? {};
+  if (action.cardId !== 'eastern_armistice' || ctx['cardId'] !== 'eastern_armistice') {
+    return { state: { ...state, pendingAction: null }, log };
+  }
+  if (state.pendingAction?.waitingFor !== action.power) {
+    throw new Error(`Eastern Armistice choice from ${action.power} but waiting for ${state.pendingAction?.waitingFor}`);
+  }
+
+  const regionId = ctx['regionId'] as RegionId | undefined;
+  const followerId = action.choices['followerId'];
+  if (!regionId || !state.regions[regionId]) throw new Error('Eastern Armistice requires a valid regionId');
+  if (typeof followerId !== 'string') throw new Error('Eastern Armistice requires choices.followerId');
+
+  const figure = followersInRegion(state, regionId, action.power).find(f => f.id === followerId);
+  if (!figure) throw new Error(`${action.power} cannot remove ${followerId} from ${regionId}`);
+
+  let s: GameState = { ...state, pendingAction: null };
+  s = log.apply(s, {
+    type: 'world_card_effect',
+    subtype: 'eastern_armistice',
+    power: action.power,
+    regionId,
+    followerClass: figure.class,
+    followerId,
+  });
+
+  const remaining = ((ctx['remainingRemovals'] as EasternArmisticeRemoval[] | undefined) ?? [])
+    .filter(removal => followersInRegion(s, removal.regionId, removal.power).length > 0);
+  return pauseForEasternArmisticeRemoval(s, remaining, log);
 }
 
 // ─── Attack value calculation ─────────────────────────────────────────────────

@@ -257,6 +257,16 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
           choices: { cardId: '?' },
         } satisfies WorldCardEffectAction];
       }
+      if (cardId === 'eastern_armistice') {
+        const regionId = state.pendingAction.context['regionId'] as RegionId | undefined;
+        if (!regionId || !state.regions[regionId]) return [];
+        return followersInRegion(state, regionId, power).map(f => ({
+          kind: 'world_card_effect' as const,
+          power,
+          cardId,
+          choices: { followerId: f.id },
+        } satisfies WorldCardEffectAction));
+      }
       return [{ kind: 'world_card_effect' as const, power, cardId: cardId ?? '', choices: {} }];
     }
 
