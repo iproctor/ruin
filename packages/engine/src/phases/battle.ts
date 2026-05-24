@@ -304,6 +304,7 @@ export function applyBattleHitAssignment(
   // that the caller misjudged as defense 1).
   const hitsRemaining = (ctx['hitsRemaining'] as number | undefined) ?? Infinity;
   let hitsLeft = hitsRemaining - peasantsToTake;
+  let xarmKilledEnemy = false;
   for (const fId of followerIds) {
     // Find figure in powers
     let figure: FollowerInstance | undefined;
@@ -316,6 +317,9 @@ export function applyBattleHitAssignment(
     const defense = effectiveDefense(s, regionId, figure, attacker);
     if (hitsLeft < defense) continue; // not enough hits — skip this kill
     hitsLeft -= defense;
+    if (attacker === 'xarm' && (figure.controlledBy ?? figure.power) !== 'xarm') {
+      xarmKilledEnemy = true;
+    }
 
     // Mark as tipped (battle_kill event sets tipped=true in applyEvent)
     s = log.apply(s, { type: 'battle_kill', regionId, attacker, targetPower: figure.power as Power, targetClass: figure.class, targetId: fId });
@@ -341,6 +345,10 @@ export function applyBattleHitAssignment(
         }
       }
     }
+  }
+
+  if (xarmKilledEnemy && !s.powers['xarm']!.dacRegionsThisPhase.includes(regionId)) {
+    s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
   }
 
   return { state: s, log };
@@ -400,8 +408,11 @@ function resolveRegion(
     return { state: s, log };
   }
 
+  // Detect card effects (Changer of Fate cancels all other card text).
+  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
+
   // Check if any power can roll dice (attack > 0 or War Frenzy present)
-  const hasWarFrenzy = regionCardActive(s, regionId, 'xarm_war_frenzy');
+  const hasWarFrenzy = !changerOfFateActive && regionCardActive(s, regionId, 'xarm_war_frenzy');
   const xarmPresent = powersPresent.includes('xarm');
 
   // War Frenzy fires even if xarm has no figures in the region — the card
@@ -410,24 +421,22 @@ function resolveRegion(
     ? [...powersPresent, 'xarm' as const]
     : powersPresent;
 
+  const hasPeasants = region.tokens.includes('peasant');
+  const hasEnemyTargets = (attacker: Power) =>
+    getEnemyFigures(s, regionId, attacker, changerOfFateActive).length > 0;
+
   const powersThatCanRoll = effectivePowers.filter(p => {
     const totalAttack = getTotalAttack(s, regionId, p);
-    return totalAttack > 0 || (p === 'xarm' && hasWarFrenzy);
+    return (totalAttack > 0 || (p === 'xarm' && hasWarFrenzy)) &&
+      (hasPeasants || hasEnemyTargets(p));
   });
 
   // Battle occurs if someone can roll and there are targets
-  const hasPeasants = region.tokens.includes('peasant');
-  const hasEnemyTargets = (attacker: Power) =>
-    powersPresent.some(p => p !== attacker) || hasPeasants;
-
-  const battleOccurs = powersThatCanRoll.some(p => hasEnemyTargets(p));
+  const battleOccurs = powersThatCanRoll.length > 0;
   if (!battleOccurs) return { state: s, log };
 
   // Emit region start event
   log.emit({ type: 'battle_region_start', regionId });
-
-  // Detect card effects (Null Weave cancels all other card text)
-  const changerOfFateActive = regionCardActive(s, regionId, 'tenzen_changer_of_fate');
 
   // ── Beginning-of-battle: Rapture upgrade (Lasha) ─────────────────────────
   // Pause for player choice when 2+ enemy Cultists/Warriors are eligible;
@@ -477,6 +486,17 @@ function resolveRegionAfterRapture(
   // Undying Fury (gated below). Computed up-front so the War Frenzy block
   // can also check it.
   const euphoricHaze = !changerOfFateActive && regionCardActive(s, regionId, 'lasha_ecstasy');
+
+  const hasPeasants = region.tokens.includes('peasant');
+  const hasAnyNormalTarget = powersPresent.some(p =>
+    getTotalAttack(s, regionId, p) > 0 &&
+    (hasPeasants || getEnemyFigures(s, regionId, p, changerOfFateActive).length > 0)
+  );
+  const hasWarFrenzyTarget = !changerOfFateActive && hasWarFrenzy &&
+    (hasPeasants || getEnemyFigures(s, regionId, 'xarm', changerOfFateActive).length > 0);
+  if (!hasAnyNormalTarget && !hasWarFrenzyTarget) {
+    return { state: s, log };
+  }
 
   // ── Beginning-of-battle: War Frenzy ──────────────────────────────────────
   if (!changerOfFateActive && !euphoricHaze && hasWarFrenzy && powersPresent.some(p => p !== 'xarm')) {
@@ -637,6 +657,10 @@ function runNormalBattle(
 
     const totalAttack = getTotalAttack(s, regionId, power);
     if (totalAttack === 0) continue;
+    const peasantsAvailableBeforeRoll = s.regions[regionId]!.tokens.includes('peasant');
+    if (!peasantsAvailableBeforeRoll && getEnemyFigures(s, regionId, power, changerOfFateActive).length === 0) {
+      continue;
+    }
 
     const diceCap = chokepoint ? 1 : totalAttack;
     let hits: number;
@@ -671,7 +695,8 @@ function runNormalBattle(
         const isLastPower = i === activePowers.length - 1 ||
           !activePowers.slice(i + 1).some(p => {
             const pp = followersInRegion(s, regionId, p).length > 0;
-            return pp && getTotalAttack(s, regionId, p) > 0;
+            return pp && getTotalAttack(s, regionId, p) > 0 &&
+              (peasantsAvailable > 0 || getEnemyFigures(s, regionId, p, changerOfFateActive).length > 0);
           });
         const nextStep: BattleNextStep = isLastPower
           ? { type: 'post_normal' }
@@ -695,23 +720,10 @@ function runPostNormal(
   // ── Remove tipped figures ─────────────────────────────────────────────────
   const postNormalFigs = followersInRegion(s, regionId);
   const tipped = postNormalFigs.filter(f => f.tipped);
-  const xarmPresent = s.activePowers.includes('xarm') &&
-    postNormalFigs.some(f => (f.controlledBy ?? f.power) === 'xarm');
-  const enemiesKilledByXarm = xarmPresent &&
-    tipped.some(f => (f.controlledBy ?? f.power) !== 'xarm') &&
-    getTotalAttack(state, regionId, 'xarm') > 0;
 
   for (const f of tipped) {
     const r = removeFigureFromBoard(s, regionId, f.id, log);
     s = r.state;
-  }
-
-  // Xarm dial advancement — at most once per (region, phase). The dial_counter
-  // event handler appends this region to xarm.dacRegionsThisPhase, so a
-  // second kill in the same region (e.g. War Frenzy then normal battle) won't
-  // double-award.
-  if (enemiesKilledByXarm && !s.powers['xarm']!.dacRegionsThisPhase.includes(regionId)) {
-    s = log.apply(s, { type: 'dial_counter', regionId, power: 'xarm' as Power });
   }
 
   // ── Undying Fury ─────────────────────────────────────────────────────────
@@ -738,6 +750,10 @@ function runUndyingFury(
     const power = activePowers[i]!;
     const totalAttack = getTotalAttack(s, regionId, power);
     if (totalAttack === 0) continue;
+    const peasantsAvailableBeforeRoll = s.regions[regionId]!.tokens.includes('peasant');
+    if (!peasantsAvailableBeforeRoll && getEnemyFigures(s, regionId, power, changerOfFateActive).length === 0) {
+      continue;
+    }
 
     const diceCap = chokepoint ? 1 : totalAttack;
     let hits: number;
@@ -768,7 +784,10 @@ function runUndyingFury(
       const canKillUF = enemiesUF.some((e) => e.defense <= hits);
       if (peasantsAvailableUF > 0 || canKillUF) {
         const isLastPower = i === activePowers.length - 1 ||
-          !activePowers.slice(i + 1).some(p => getTotalAttack(s, regionId, p) > 0);
+          !activePowers.slice(i + 1).some(p =>
+            getTotalAttack(s, regionId, p) > 0 &&
+            (peasantsAvailableUF > 0 || getEnemyFigures(s, regionId, p, changerOfFateActive).length > 0)
+          );
         const nextStep: BattleNextStep = isLastPower
           ? { type: 'post_undying' }
           : { type: 'undying_fury', powerIndex: i + 1 };

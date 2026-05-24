@@ -1461,6 +1461,60 @@ function WorldCardEffectPanel({
   const [selectedRegion, setSelectedRegion] = useState<RegionId | null>(null);
   const cardId = (context['cardId'] as string | undefined) ?? '';
 
+  if (cardId === 'normagne_heir') {
+    const freePlay = !!state.companionOptions?.humanPlaysFree && state.powers[myPower]?.playerType === 'human';
+    const hand = state.powers[myPower]?.hand ?? [];
+    if (freePlay) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ fontSize: '0.8rem', color: ERROR }}>
+            Normagne Heir — discard 1 card from your physical hand.
+          </div>
+          <button
+            className="danger"
+            onClick={() => onAction({ kind: 'world_card_effect', power: myPower, cardId, choices: { cardId: '?' } })}
+          >
+            Discard 1
+          </button>
+        </div>
+      );
+    }
+
+    const visibleEntries = hand
+      .map((discardId, i) => ({ discardId, i }))
+      .filter(e => e.discardId !== '?')
+      .sort((a, b) => {
+        const ca = CARD_BY_ID[a.discardId];
+        const cb = CARD_BY_ID[b.discardId];
+        const costA = ca?.cost ?? 0;
+        const costB = cb?.cost ?? 0;
+        if (costA !== costB) return costA - costB;
+        const nameA = ca?.shortName ?? ca?.name ?? a.discardId;
+        const nameB = cb?.shortName ?? cb?.name ?? b.discardId;
+        return nameA.localeCompare(nameB);
+      });
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ fontSize: '0.8rem', color: ERROR }}>
+          Normagne Heir — choose 1 card to discard:
+        </div>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+          {visibleEntries.map(({ discardId, i }) => (
+            <button
+              key={i}
+              className="danger"
+              onClick={() => onAction({ kind: 'world_card_effect', power: myPower, cardId, choices: { cardId: discardId } })}
+              style={{ fontSize: '0.8rem' }}
+            >
+              {formatId(discardId)}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   function handleSubmit() {
     if (!selectedRegion) return;
     onAction({

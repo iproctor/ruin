@@ -4,7 +4,7 @@ import type {
   TenzenDiscardAction, WorldChoiceAction, CorruptionHarvestChoiceAction,
   UpgradeChoiceAction, CardOnPlayChoiceAction, TokenType, BattleHitAssignmentAction,
   DialPlaceTokenAction, DialRemoveCorruptionAction, DialRemoveWorldTokenAction,
-  HeroRemovalAction, RaptureChoiceAction,
+  HeroRemovalAction, RaptureChoiceAction, WorldCardEffectAction,
 } from './types.js';
 import { REGION_ORDER, CARD_BY_ID, UPGRADES, ADJACENCY, FOLLOWERS } from './constants.js';
 import {
@@ -240,9 +240,25 @@ export function getLegalActions(state: GameState, power: Power): Action[] {
         } satisfies HeroRemovalAction));
     }
 
-    case 'world_card_effect':
-      // No interactive choice needed — submit empty choices
-      return [{ kind: 'world_card_effect' as const, power, cardId: '', choices: {} }];
+    case 'world_card_effect': {
+      const cardId = state.pendingAction.context['cardId'] as string | undefined;
+      if (cardId === 'normagne_heir') {
+        const hand = state.powers[power]!.hand;
+        const choices = [...new Set(hand)].map(discardId => ({
+          kind: 'world_card_effect' as const,
+          power,
+          cardId,
+          choices: { cardId: discardId },
+        } satisfies WorldCardEffectAction));
+        return choices.length > 0 ? choices : [{
+          kind: 'world_card_effect' as const,
+          power,
+          cardId,
+          choices: { cardId: '?' },
+        } satisfies WorldCardEffectAction];
+      }
+      return [{ kind: 'world_card_effect' as const, power, cardId: cardId ?? '', choices: {} }];
+    }
 
     default:
       return [];

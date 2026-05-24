@@ -1,4 +1,4 @@
-import type { GameState, Power, RegionId, DialPendingReward } from '../types.js';
+import type { GameState, Power, RegionId, DialPendingReward, WorldCardEffectAction } from '../types.js';
 import { GameLog } from '../gameLog.js';
 import {
   CARD_BY_ID, REGION_ORDER, RUINATION_CARDS, THREAT_DIALS, UPGRADES, WORLD_CARD_BY_ID,
@@ -30,6 +30,17 @@ export function resolveEndPhase(
 
   // Step 3: Resolve World Cards persistent effects
   ({ state: s } = resolveWorldCardEffects(s, log));
+  if (s.pendingAction !== null) return { state: s, log };
+
+  // Step 4: Score ruined regions (for cards placed this round = still faceup ruination cards)
+  return continueEndPhaseAfterWorldEffects(s, log);
+}
+
+function continueEndPhaseAfterWorldEffects(
+  state: GameState,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  let s = state;
 
   // Step 4: Score ruined regions (for cards placed this round = still faceup ruination cards)
   ({ state: s } = scoreRuinedRegions(s, log));
@@ -54,6 +65,17 @@ export function resolveEndPhase(
   }
 
   return finalizeEndPhase(s, log);
+}
+
+function continueEndPhaseFromWorldSlot(
+  state: GameState,
+  nextSlotIndex: number,
+  log: GameLog,
+): { state: GameState; log: GameLog } {
+  let s = state;
+  ({ state: s } = resolveWorldCardEffects(s, log, nextSlotIndex));
+  if (s.pendingAction !== null) return { state: s, log };
+  return continueEndPhaseAfterWorldEffects(s, log);
 }
 
 /**
@@ -268,13 +290,17 @@ function resolveHeroTokens(
 function resolveWorldCardEffects(
   state: GameState,
   log: GameLog,
+  startSlotIndex = 0,
 ): { state: GameState } {
   let s = state;
+  const slotCards = [s.worldTrack.slot1, s.worldTrack.slot2];
 
   // Process slot1 first, then slot2
-  for (const slotCard of [s.worldTrack.slot1, s.worldTrack.slot2]) {
+  for (let slotIndex = startSlotIndex; slotIndex < slotCards.length; slotIndex++) {
+    const slotCard = slotCards[slotIndex];
     if (!slotCard) continue;
-    ({ state: s } = applyWorldCardPersistentEffect(s, slotCard, log));
+    ({ state: s } = applyWorldCardPersistentEffect(s, slotCard, slotIndex, log));
+    if (s.pendingAction !== null) break;
   }
 
   return { state: s };
@@ -283,6 +309,7 @@ function resolveWorldCardEffects(
 function applyWorldCardPersistentEffect(
   state: GameState,
   cardId: string,
+  slotIndex: number,
   log: GameLog,
 ): { state: GameState } {
   let s = state;
@@ -291,15 +318,7 @@ function applyWorldCardPersistentEffect(
   switch (cardId) {
     case 'normagne_heir': {
       // Each player with 1+ figures on Normagne discards a chaos card
-      for (const power of s.activePowers) {
-        const hasFigures = followersInRegion(s, 'normagne', power).length > 0;
-        if (hasFigures && s.powers[power]!.hand.length > 0) {
-          // Auto-discard: discard last card in hand (TODO: interactive)
-          const card = s.powers[power]!.hand[s.powers[power]!.hand.length - 1]!;
-          s = log.apply(s, { type: 'world_card_effect', subtype: 'normagne_heir_discard', power, cardId: card });
-        }
-      }
-      break;
+      return pauseForNormagneHeirDiscard(s, slotIndex, eligibleNormagneHeirPowers(s), log);
     }
 
     case 'northern_heir': {
@@ -431,6 +450,78 @@ function applyWorldCardPersistentEffect(
   }
 
   return { state: s };
+}
+
+function eligibleNormagneHeirPowers(state: GameState): Power[] {
+  return state.activePowers.filter(power =>
+    followersInRegion(state, 'normagne', power).length > 0 &&
+    state.powers[power]!.hand.length > 0
+  );
+}
+
+function pauseForNormagneHeirDiscard(
+  state: GameState,
+  slotIndex: number,
+  remainingPowers: Power[],
+  log: GameLog,
+): { state: GameState } {
+  const [power, ...rest] = remainingPowers;
+  if (!power) return { state };
+
+  const context = {
+    cardId: 'normagne_heir',
+    slotIndex,
+    remainingPowers: rest,
+    handSize: state.powers[power]!.hand.length,
+  };
+  const s: GameState = {
+    ...state,
+    pendingAction: {
+      waitingFor: power,
+      actionKind: 'world_card_effect',
+      context,
+    },
+  };
+  log.emit({
+    type: 'awaiting_action',
+    power,
+    actionKind: 'world_card_effect',
+    context,
+    description: `${power} must discard a Chaos card for ${WORLD_CARD_BY_ID['normagne_heir']!.name}.`,
+  });
+  return { state: s };
+}
+
+export function applyWorldCardEffectChoice(
+  state: GameState,
+  action: WorldCardEffectAction,
+): { state: GameState; log: GameLog } {
+  const log = new GameLog();
+  const ctx = state.pendingAction?.context ?? {};
+  if (action.cardId !== 'normagne_heir' || ctx['cardId'] !== 'normagne_heir') {
+    return { state: { ...state, pendingAction: null }, log };
+  }
+  if (state.pendingAction?.waitingFor !== action.power) {
+    throw new Error(`Normagne Heir discard from ${action.power} but waiting for ${state.pendingAction?.waitingFor}`);
+  }
+
+  const p = state.powers[action.power]!;
+  const chosen = action.choices['cardId'];
+  if (typeof chosen !== 'string') throw new Error('Normagne Heir requires choices.cardId');
+  if (!p.hand.includes(chosen) && !p.hand.includes('?')) {
+    throw new Error(`${action.power} cannot discard ${chosen}`);
+  }
+
+  let s: GameState = { ...state, pendingAction: null };
+  s = log.apply(s, { type: 'world_card_effect', subtype: 'normagne_heir_discard', power: action.power, cardId: chosen });
+
+  const slotIndex = (ctx['slotIndex'] as number | undefined) ?? 0;
+  const remainingPowers = ((ctx['remainingPowers'] as Power[] | undefined) ?? [])
+    .filter(power => followersInRegion(s, 'normagne', power).length > 0 && s.powers[power]!.hand.length > 0);
+  ({ state: s } = pauseForNormagneHeirDiscard(s, slotIndex, remainingPowers, log));
+  if (s.pendingAction !== null) return { state: s, log };
+
+  return continueEndPhaseFromWorldSlot(s, slotIndex + 1, log);
 }
 
 // ─── Step 4: Score ruined regions ────────────────────────────────────────────

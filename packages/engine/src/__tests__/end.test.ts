@@ -12,6 +12,7 @@ import {
 } from './helpers.js';
 import { BASE_POWER_POINTS } from '../constants.js';
 import { followersInRegion } from '../helpers.js';
+import { applyAction } from '../reducers.js';
 
 // ─── Chaos card removal ───────────────────────────────────────────────────────
 
@@ -265,14 +266,59 @@ describe('threat dial advancement', () => {
 // ─── World card persistent effects ───────────────────────────────────────────
 
 describe('world card persistent effects during end phase', () => {
-  test('Strategic Vanguard: players with figures on Normagne discard a card', () => {
+  test('Strategic Vanguard: players with figures on Normagne choose a card to discard', () => {
     let s = makeState({ phase: 'end', pendingAction: null });
     s = setWorldCard(s, 'normagne_heir');
     s = placeFollower(s, 'xarm', 'cultist', 'normagne');
-    s = giveCards(s, 'xarm', ['xarm_war_cry']);
-    const { state, log } = resolveEndPhase(s);
+    s = giveCards(s, 'xarm', ['xarm_war_cry', 'xarm_war_frenzy']);
+    const { state: pending } = resolveEndPhase(s);
+    expect(pending.pendingAction?.actionKind).toBe('world_card_effect');
+    expect(pending.pendingAction?.waitingFor).toBe('xarm');
+    expect(pending.pendingAction?.context.cardId).toBe('normagne_heir');
+
+    const { state, log } = applyAction(pending, {
+      kind: 'world_card_effect',
+      power: 'xarm',
+      cardId: 'normagne_heir',
+      choices: { cardId: 'xarm_war_cry' },
+    });
     expect(log.entries.some(l => l.includes('Normagne Heir'))).toBe(true);
     expect(state.powers.xarm!.hand).not.toContain('xarm_war_cry');
+    expect(state.powers.xarm!.hand).toContain('xarm_war_frenzy');
+    expect(state.powers.xarm!.discardIds).toContain('xarm_war_cry');
+  });
+
+  test('Strategic Vanguard queues each eligible player then resumes later world effects', () => {
+    let s = makeState({ phase: 'end', pendingAction: null });
+    s = setWorldCard(s, 'normagne_heir', 'slot1');
+    s = setWorldCard(s, 'diplomatic_envoy', 'slot2');
+    s = placeFollower(s, 'xarm', 'cultist', 'normagne');
+    s = placeFollower(s, 'gormen', 'cultist', 'normagne');
+    s = addToken(s, 'norrsund', 'hero');
+    s = giveCards(s, 'xarm', ['xarm_war_cry', 'xarm_war_frenzy']);
+    s = giveCards(s, 'gormen', ['gormen_pandemic', 'gormen_decay']);
+
+    const first = resolveEndPhase(s).state;
+    expect(first.pendingAction?.waitingFor).toBe('xarm');
+
+    const second = applyAction(first, {
+      kind: 'world_card_effect',
+      power: 'xarm',
+      cardId: 'normagne_heir',
+      choices: { cardId: 'xarm_war_frenzy' },
+    }).state;
+    expect(second.pendingAction?.waitingFor).toBe('gormen');
+    expect(second.powers.xarm!.hand).toEqual(['xarm_war_cry']);
+
+    const final = applyAction(second, {
+      kind: 'world_card_effect',
+      power: 'gormen',
+      cardId: 'normagne_heir',
+      choices: { cardId: 'gormen_decay' },
+    }).state;
+    expect(final.pendingAction).toBeNull();
+    expect(final.powers.gormen!.hand).toEqual(['gormen_pandemic']);
+    expect(final.regions.norrsund!.tokens).not.toContain('hero');
   });
 
   test('Cleansing Wave: removes all corruption from event regions', () => {

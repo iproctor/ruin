@@ -565,6 +565,34 @@ describe('War Frenzy (2 pre-rolls at start of battle)', () => {
     expect(found).toBe(true);
   });
 
+  test('enemy killed by another power does not award Xarm DAC', () => {
+    let s = makeState({ phase: 'battle', pendingAction: null });
+    s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'warrior', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    const tenzenId = followersInRegion(s, 'norrsund', 'tenzen')[0]!.id;
+    s = {
+      ...s,
+      battleState: {
+        regionOrder: [...REGION_ORDER],
+        currentRegionIndex: REGION_ORDER.indexOf('norrsund'),
+        log: [],
+        nextStep: { type: 'post_normal' },
+      },
+      powers: {
+        ...s.powers,
+        tenzen: {
+          ...s.powers.tenzen!,
+          followers: s.powers.tenzen!.followers.map(f => f.id === tenzenId ? { ...f, tipped: true } : f),
+        },
+      },
+    };
+
+    const { state, log } = resolveBattlePhase(s);
+    expect(log.entries.some(l => l.includes('Xarm earns DAC'))).toBe(false);
+    expect(state.powers.xarm!.dialCounters).toBe(0);
+  });
+
   test('War Frenzy is cancelled by Null Weave', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
@@ -654,6 +682,7 @@ describe('Undying Fury (second battle round)', () => {
   test('Undying Fury extra battle log appears after auto-resolve', () => {
     let s = makeState({ phase: 'battle', pendingAction: null });
     s = placeFollower(s, 'xarm', 'warrior', 'norrsund');
+    s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeFollower(s, 'gormen', 'cultist', 'norrsund');
     s = placeCard(s, 'xarm_bloody_rebirth', 'xarm', 'norrsund');
     const { log } = autoResolveBattle(resolveBattlePhase(s));

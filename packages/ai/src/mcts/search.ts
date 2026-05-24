@@ -78,6 +78,8 @@ export interface MctsOptions {
   ruinPressureLambda?: number;
   /** Apply ruinPressureLambda only through this round. Default: all rounds. */
   ruinPressureMaxRound?: number;
+  /** Probe-only: record the root child backed up for the first N iterations. */
+  traceIterations?: number;
 }
 
 // Iteration cap is effectively only a safety net — time cap governs in
@@ -334,6 +336,7 @@ type MctsRunResult =
       sumLeafDepth: number;
       leafCount: number;
       maxDepth: number;
+      rootTrace: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }>;
     };
 
 function runMctsCore(
@@ -392,6 +395,7 @@ function runMctsCore(
   let sumLeafDepth = 0;
   let leafCount = 0;
   let maxDepth = 0;
+  const rootTrace: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }> = [];
 
   while (iteration < maxIterations && Date.now() < deadline) {
     const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0, forcedRootVisits);
@@ -404,10 +408,23 @@ function runMctsCore(
     sumLeafDepth += depth;
     leafCount += 1;
     if (depth > maxDepth) maxDepth = depth;
-
     const baseScore = expanded.leafScores
       ?? rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
     const score = shapeScoresWithRuinPressure(expanded.state, baseScore, options);
+    if (iteration < (options?.traceIterations ?? 0)) {
+      let rootChild: MctsNode | null = expanded;
+      while (rootChild.parent !== null && rootChild.parent.parent !== null) rootChild = rootChild.parent;
+      if (rootChild.parent === root && rootChild.action !== null) {
+        const path: Action[] = [];
+        let cursor: MctsNode | null = expanded;
+        while (cursor !== null && cursor.parent !== null) {
+          if (cursor.action !== null) path.push(cursor.action);
+          cursor = cursor.parent;
+        }
+        path.reverse();
+        rootTrace.push({ iteration: iteration + 1, action: rootChild.action, leafDepth: depth, score: score[forPower], path });
+      }
+    }
     backpropagate(expanded, score);
     iteration += 1;
   }
@@ -427,6 +444,7 @@ function runMctsCore(
     sumLeafDepth,
     leafCount,
     maxDepth,
+    rootTrace,
   };
 }
 
@@ -443,9 +461,7 @@ export function runMcts(
   const res = runMctsCore(state, forPower, options);
   if (res.forced) return res.action;
 
-  _mctsStats.total++;
-  _mctsStats.iters += res.iteration;
-  if (res.hitTimeCap) _mctsStats.timeCapped++;
+  recordMctsStats(res);
 
   // Visit margin: how decisive was this search?
   const sorted = [...res.root.children].sort((a, b) => b.visits - a.visits);
@@ -459,6 +475,11 @@ export function runMcts(
 
 // Temporary instrumentation — call reportMctsStats() to print
 export const _mctsStats = { total: 0, timeCapped: 0, iters: 0, margins: [] as number[] };
+function recordMctsStats(res: Extract<MctsRunResult, { forced: false }>): void {
+  _mctsStats.total++;
+  _mctsStats.iters += res.iteration;
+  if (res.hitTimeCap) _mctsStats.timeCapped++;
+}
 export function reportMctsStats(): void {
   const { total, timeCapped, iters, margins } = _mctsStats;
   if (total === 0) return;
@@ -480,6 +501,10 @@ export interface MctsStats {
   visitCounts: Array<{ action: Action; visits: number }>;
   /** Raw root visit counts from search, including forced exploration. */
   searchVisitCounts: Array<{ action: Action; visits: number }>;
+  /** Diagnostic root rows: raw visits plus action prior and root-child Q. */
+  searchDebugRows: Array<{ action: Action; visits: number; prior: number; q: number }>;
+  /** Probe-only root child backed up per early iteration. */
+  rootTrace?: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }>;
 }
 
 export function runMctsWithStats(
@@ -490,17 +515,26 @@ export function runMctsWithStats(
   const res = runMctsCore(state, forPower, options);
   if (res.forced) {
     const visitCounts = [{ action: res.action, visits: 1 }];
-    return { action: res.action, visitCounts, searchVisitCounts: visitCounts };
+    const searchDebugRows = [{ action: res.action, visits: 1, prior: NaN, q: NaN }];
+    return { action: res.action, visitCounts, searchVisitCounts: visitCounts, searchDebugRows, rootTrace: [] };
   }
+  recordMctsStats(res);
   const searchVisitCounts: Array<{ action: Action; visits: number }> = [];
+  const searchDebugRows: Array<{ action: Action; visits: number; prior: number; q: number }> = [];
   for (const child of res.root.children) {
     if (child.action !== null) {
       searchVisitCounts.push({ action: child.action, visits: child.visits });
+      searchDebugRows.push({
+        action: child.action,
+        visits: child.visits,
+        prior: res.priors ? res.priors(child.action) : child.prior,
+        q: child.visits > 0 ? child.totalScores[child.action.power] / child.visits : NaN,
+      });
     }
   }
   const action = bestAction(res.root);
   const visitCounts = pruneForcedPolicyTarget(res.root, res.forcedRootVisits);
-  return { action, visitCounts, searchVisitCounts };
+  return { action, visitCounts, searchVisitCounts, searchDebugRows, rootTrace: res.rootTrace };
 }
 
 function pruneForcedPolicyTarget(

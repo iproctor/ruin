@@ -69,6 +69,11 @@ function findLibPath(): string | null {
  */
 export function loadNativeMlp(): NativeMlpForward | null {
   if (cached !== undefined) return cached;
+  if (process.env.RUIN_DISABLE_NATIVE === '1') {
+    cached = null;
+    cachedValueOnly = null;
+    return null;
+  }
   const libPath = findLibPath();
   if (libPath === null) {
     cached = null;

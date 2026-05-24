@@ -4,7 +4,7 @@ import { beginDrawPhase, applyTenzenDiscard, getBasePP } from './phases/draw.js'
 import { applySummonFigure, applyPlayCard, applySummoningPass, applyTenzenApprenticeChoice, advanceSummoningTurn, applyCardOnPlayChoice } from './phases/summoning.js';
 import { resolveBattlePhase, applyCorruptionHarvestChoice, applyBattleHitAssignment, applyCompanionDiceRoll, applyRaptureChoice } from './phases/battle.js';
 import { resolveCorruptionPhase } from './phases/corruption.js';
-import { resolveEndPhase } from './phases/end.js';
+import { resolveEndPhase, applyWorldCardEffectChoice } from './phases/end.js';
 import { checkVictory } from './victory.js';
 import { GameLog } from './gameLog.js';
 
@@ -196,7 +196,7 @@ function applyActionSwitch(s: GameState, action: Action): ApplyResult {
     }
 
     case 'world_card_effect':
-      result = { state: { ...s, pendingAction: null }, log: new GameLog() };
+      result = applyWorldCardEffectChoice(s, action);
       break;
 
     default:

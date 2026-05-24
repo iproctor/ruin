@@ -136,6 +136,26 @@ describe('tenzen_discard', () => {
   });
 });
 
+// ─── World card effects ───────────────────────────────────────────────────────
+
+describe('world_card_effect', () => {
+  test('Normagne Heir enumerates each discard choice in hand', () => {
+    let s = giveCards(makeState(), 'xarm', ['xarm_war_cry', 'xarm_war_frenzy']);
+    s = {
+      ...s,
+      pendingAction: {
+        waitingFor: 'xarm',
+        actionKind: 'world_card_effect',
+        context: { cardId: 'normagne_heir' },
+      },
+    };
+    const actions = getLegalActions(s, 'xarm').filter(a => a.kind === 'world_card_effect');
+    expect(actions).toHaveLength(2);
+    expect(actions.some(a => (a as any).choices.cardId === 'xarm_war_cry')).toBe(true);
+    expect(actions.some(a => (a as any).choices.cardId === 'xarm_war_frenzy')).toBe(true);
+  });
+});
+
 // ─── Upgrade choice ───────────────────────────────────────────────────────────
 
 describe('upgrade_choice', () => {

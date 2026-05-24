@@ -383,7 +383,7 @@ export interface WorldCardEffectAction {
   kind: 'world_card_effect';
   power: Power;
   cardId: string;
-  choices: Record<string, unknown>;
+  choices: Record<string, unknown>; // normagne_heir: { cardId: string }
 }
 
 export interface UpgradeChoiceAction {
