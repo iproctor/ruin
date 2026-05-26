@@ -60,14 +60,15 @@ export XARM_SUPPRESSION_LAMBDA
 # Value-target blend: t = w · final_rank + (1 - w) · progress.
 # Rank target: 1st 1.0 / 2nd 0.66 / 3rd 0.33 / 4th 0.0 (winners outrank
 # non-winners; ties share avg rank value).
-# May 25 2026: rank for ALL powers (w=1.0). The 1833+ cascade was at w=0.75
-# in an xarm-dominated field, where rank slapped 1.0/0.0 onto near-coinflip
-# mid-game states and collapsed close_pct. Field is now balanced (xarm ~37%,
-# g/t/l 19-23%), and the relative-progress target left g/t/l value heads at
-# σ≈0.07 (collapsed to ~0.5, no training headroom). Pure rank restores value
-# variance. Watch close_pct / behind_pct on the first 2-3 h2h cycles; back off
-# to 0 if reverts cascade again. Override (unconditional) survives re-exec.
-RANK_BLEND_WEIGHT=1.0
+# Force-zero (override any pre-set env value). Tried twice now:
+#   - w=0.75 (iter 1833+): revert cascade, close_pct collapsed.
+#   - w=1.0  (iter 1940+, May 25): broke the g/t/l value-loss plateau (loss
+#     descending, σ recovered 0.08→0.30) but h2h results came out bad again.
+# Reverted both times. Restoring value-head variance via the target does NOT
+# translate to h2h gains — the working progress lives in the policy/search
+# channel, not value magnitude (see project_gtl_value_plateau). Staying on
+# relative-progress (w=0); g/t/l value head plateau is accepted as benign.
+RANK_BLEND_WEIGHT=0
 export RANK_BLEND_WEIGHT
 # Progress target geometry. "relative" keeps progress but trains on
 # own-progress-vs-field instead of absolute near-threshold progress, avoiding
