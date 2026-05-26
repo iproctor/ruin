@@ -27,6 +27,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--out", dest="out_path", required=True)
     ap.add_argument("--max-samples", type=int, default=240_000,
                     help="Maximum rows to write. <=0 means keep all rows.")
+    ap.add_argument("--policy-quota-xarm", type=int, default=25_000,
+                    help="Reserve up to this many complete xarm policy rows before other strata.")
+    ap.add_argument("--policy-quota-non-xarm", type=int, default=40_000,
+                    help="Reserve up to this many complete policy rows per non-xarm power before other strata.")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--report", default="",
                     help="Optional path for a JSON coverage report.")
@@ -195,6 +199,23 @@ def main() -> int:
     n = len(rows)
     max_samples = n if args.max_samples <= 0 else min(args.max_samples, n)
     chosen: set[int] = set()
+
+    # Policy rows are the scarce signal for improving play. Reserve them first,
+    # especially for non-xarm powers, then let the existing strata fill value
+    # and coverage rows around that core.
+    for power in POWERS:
+        quota = args.policy_quota_xarm if power == "xarm" else args.policy_quota_non_xarm
+        if quota <= 0:
+            continue
+        candidates = [
+            i for i, info in enumerate(infos)
+            if info["complete"] and info["policy"] and info["power"] == power
+        ]
+        rng.shuffle(candidates)
+        for i in candidates[:max(0, min(quota, max_samples - len(chosen)))]:
+            chosen.add(i)
+        if len(chosen) >= max_samples:
+            break
 
     strata = [
         ("high_info_policy", 0.25),

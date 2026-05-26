@@ -47,6 +47,8 @@ const mctsTimeMs = parseInt(getArg('--time', '60000'), 10);
 // creates labels instead of treating every shallow move distribution as sacred.
 const fullSearchProb = parseFloat(getArg('--full-search-prob', '0.10'));
 const fullSearchImportantBonus = parseFloat(getArg('--full-search-important-bonus', '0.20'));
+const fullSearchProbNonXarm = parseFloat(getArg('--full-search-prob-non-xarm', String(fullSearchProb)));
+const fullSearchImportantBonusNonXarm = parseFloat(getArg('--full-search-important-bonus-non-xarm', String(fullSearchImportantBonus)));
 const fastMctsIterations = parseInt(
   getArg('--fast-iter', String(Math.max(1, Math.floor(mctsIterations * 0.2)))),
   10,
@@ -357,8 +359,10 @@ function tacticalImportance(state: GameState, power: Power): number {
 }
 
 function shouldRunFullSearch(state: GameState, power: Power, rand: () => number): boolean {
-  const p = Math.min(1, Math.max(0, fullSearchProb)
-    + Math.max(0, fullSearchImportantBonus) * tacticalImportance(state, power));
+  const base = power === 'xarm' ? fullSearchProb : fullSearchProbNonXarm;
+  const bonus = power === 'xarm' ? fullSearchImportantBonus : fullSearchImportantBonusNonXarm;
+  const p = Math.min(1, Math.max(0, base)
+    + Math.max(0, bonus) * tacticalImportance(state, power));
   return rand() < p;
 }
 
@@ -616,7 +620,7 @@ function runGame(seed: number): GameResult {
 
 console.log(`\n=== Self-play data collection ===`);
 console.log(`Games: ${gameCount}  |  Base seed: ${baseSeed}  |  Out: ${outPath}\n`);
-console.log(`Search: full ${mctsIterations} iters @ p=${fullSearchProb} (+${fullSearchImportantBonus} tactical), fast ${fastMctsIterations} iters`);
+console.log(`Search: full ${mctsIterations} iters @ xarm p=${fullSearchProb} (+${fullSearchImportantBonus} tactical), non-xarm p=${fullSearchProbNonXarm} (+${fullSearchImportantBonusNonXarm} tactical), fast ${fastMctsIterations} iters`);
 console.log(`Noise: ${dirichletNoise ? `Dirichlet alpha=${dirichletAlpha} weight=${dirichletWeight} on full searches only` : 'off'}\n`);
 
 const startMs = Date.now();

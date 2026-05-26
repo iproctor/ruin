@@ -121,6 +121,10 @@ while true; do
     export RUIN_PRESSURE_MAX_ROUND
     XARM_TARGET_MODE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_target_mode','inherit'))" "$CONFIG_PATH" 2>/dev/null || echo inherit)
     export XARM_TARGET_MODE
+    POLICY_FULL_SEARCH_PROB_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_prob_xarm',0.10))" "$CONFIG_PATH" 2>/dev/null || echo 0.10)
+    POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_important_bonus_xarm',0.20))" "$CONFIG_PATH" 2>/dev/null || echo 0.20)
+    POLICY_FULL_SEARCH_PROB_NON_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_prob_non_xarm',0.22))" "$CONFIG_PATH" 2>/dev/null || echo 0.22)
+    POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_important_bonus_non_xarm',0.35))" "$CONFIG_PATH" 2>/dev/null || echo 0.35)
   else
     TASK="collect"
     XARM_SUPPRESSION_LAMBDA=0
@@ -135,6 +139,10 @@ while true; do
     export RUIN_PRESSURE_MAX_ROUND
     XARM_TARGET_MODE=inherit
     export XARM_TARGET_MODE
+    POLICY_FULL_SEARCH_PROB_XARM=0.10
+    POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM=0.20
+    POLICY_FULL_SEARCH_PROB_NON_XARM=0.22
+    POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM=0.35
   fi
 
   BATCH_COUNTER=$((BATCH_COUNTER + 1))
@@ -150,6 +158,10 @@ while true; do
       if pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
           --workers "$WORKERS" --epsilon 0 --league-size 0 \
           --hof-mix "$HOF_MIX" --dirichlet-weight 0.25 \
+          --full-search-prob "$POLICY_FULL_SEARCH_PROB_XARM" \
+          --full-search-important-bonus "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" \
+          --full-search-prob-non-xarm "$POLICY_FULL_SEARCH_PROB_NON_XARM" \
+          --full-search-important-bonus-non-xarm "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
           --temp-rounds 3 --iter 1000 \
           --out "${DATA_DIR}/training.jsonl" >/dev/null 2>&1 && [ -s "${DATA_DIR}/training.jsonl" ]; then
         mv "${DATA_DIR}/training.jsonl" "$BATCH_FILE"

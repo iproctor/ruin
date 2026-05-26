@@ -29,6 +29,8 @@ const fastIter = getArg('--fast-iter', '');
 const fastTime = getArg('--fast-time', '');
 const fullSearchProb = getArg('--full-search-prob', '');
 const fullSearchImportantBonus = getArg('--full-search-important-bonus', '');
+const fullSearchProbNonXarm = getArg('--full-search-prob-non-xarm', '');
+const fullSearchImportantBonusNonXarm = getArg('--full-search-important-bonus-non-xarm', '');
 const dirichletWeight = getArg('--dirichlet-weight', '');
 const dirichletAlpha = getArg('--dirichlet-alpha', '');
 const hofMix = getArg('--hof-mix', '');
@@ -79,6 +81,8 @@ const processes = slices.map((s, w) =>
       ...(fastTime ? ['--fast-time', fastTime] : []),
       ...(fullSearchProb ? ['--full-search-prob', fullSearchProb] : []),
       ...(fullSearchImportantBonus ? ['--full-search-important-bonus', fullSearchImportantBonus] : []),
+      ...(fullSearchProbNonXarm ? ['--full-search-prob-non-xarm', fullSearchProbNonXarm] : []),
+      ...(fullSearchImportantBonusNonXarm ? ['--full-search-important-bonus-non-xarm', fullSearchImportantBonusNonXarm] : []),
       ...(dirichletWeight ? ['--dirichlet-weight', dirichletWeight] : []),
       ...(dirichletAlpha ? ['--dirichlet-alpha', dirichletAlpha] : []),
       ...(hofMix ? ['--hof-mix', hofMix] : []),

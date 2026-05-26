@@ -49,6 +49,15 @@ TRAIN_MAX_SAMPLES=${TRAIN_MAX_SAMPLES:-240000}
 TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
+# Policy-channel knobs. Non-xarm powers currently learn mostly through sparse
+# MCTS policy labels; keep xarm's collection density stable and spend extra
+# full-search budget on gormen/tenzen/lasha.
+POLICY_FULL_SEARCH_PROB_XARM=${POLICY_FULL_SEARCH_PROB_XARM:-0.10}
+POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM=${POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM:-0.20}
+POLICY_FULL_SEARCH_PROB_NON_XARM=${POLICY_FULL_SEARCH_PROB_NON_XARM:-0.22}
+POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM=${POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM:-0.35}
+POLICY_ALPHA_XARM=${POLICY_ALPHA_XARM:-1.0}
+POLICY_ALPHA_NON_XARM=${POLICY_ALPHA_NON_XARM:-2.0}
 # Auxiliary "suppress xarm" reward shaping at MCTS selection. When > 0 and the
 # acting power is non-xarm, the exploitation Q at each MCTS node becomes
 #   Q = own_avg_progress - λ × xarm_avg_progress
@@ -152,7 +161,11 @@ print(json.dumps({
   "ruin_pressure_lambda": float(sys.argv[9]),
   "ruin_pressure_max_round": int(sys.argv[10]),
   "xarm_target_mode": sys.argv[11],
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" \
+  "policy_full_search_prob_xarm": float(sys.argv[12]),
+  "policy_full_search_important_bonus_xarm": float(sys.argv[13]),
+  "policy_full_search_prob_non_xarm": float(sys.argv[14]),
+  "policy_full_search_important_bonus_non_xarm": float(sys.argv[15]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" "$POLICY_FULL_SEARCH_PROB_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" "$POLICY_FULL_SEARCH_PROB_NON_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
     > "$DATA_DIR/worker_config.json"
 }
 
@@ -184,6 +197,8 @@ write_worker_config "collect" ""
   echo "  TRAIN_THRESHOLD:  $TRAIN_THRESHOLD files in inbox"
   echo "  TARGET_MODE:      $PROGRESS_TARGET_MODE"
   echo "  RUIN_PRESSURE:    λ=$RUIN_PRESSURE_LAMBDA through round $RUIN_PRESSURE_MAX_ROUND"
+  echo "  POLICY_SEARCH:    xarm=$POLICY_FULL_SEARCH_PROB_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM non-xarm=$POLICY_FULL_SEARCH_PROB_NON_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM"
+  echo "  POLICY_ALPHA:     xarm=$POLICY_ALPHA_XARM non-xarm=$POLICY_ALPHA_NON_XARM"
   echo "  starting iter:    $ITER"
   echo "===================================================================="
 } | tee -a "$LOG_FILE"
@@ -230,6 +245,10 @@ while true; do
   if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
+      --full-search-prob "$POLICY_FULL_SEARCH_PROB_XARM" \
+      --full-search-important-bonus "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" \
+      --full-search-prob-non-xarm "$POLICY_FULL_SEARCH_PROB_NON_XARM" \
+      --full-search-important-bonus-non-xarm "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
       --hof-mix 0.15 \
       --temp-rounds 3 \
       --iter 1000 \
@@ -345,13 +364,17 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
       EFFECTIVE_WARM=""
       echo "[iter $ITER] $POWER: fresh init (matched fresh_powers)" | tee -a "$LOG_FILE"
     fi
+    POLICY_ALPHA="$POLICY_ALPHA_XARM"
+    case "$POWER" in
+      gormen|tenzen|lasha) POLICY_ALPHA="$POLICY_ALPHA_NON_XARM" ;;
+    esac
     if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
-        --scalar-value --lr 5e-4 \
+        --scalar-value --lr 5e-4 --policy-alpha "$POLICY_ALPHA" \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
         "${HIDDEN_ARGS[@]}" 2>&1 \
-        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|avg target|--power|warm-)" \
+        | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|policy alpha|avg target|--power|warm-)" \
         | tee -a "$LOG_FILE"; then
       echo "  ! training failed for $POWER" | tee -a "$LOG_FILE"
       TRAIN_OK=0
