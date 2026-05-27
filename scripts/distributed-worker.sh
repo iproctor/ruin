@@ -130,6 +130,10 @@ while true; do
     export RANK_BLEND_WEIGHT
     PROGRESS_TARGET_MODE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('progress_target_mode','absolute'))" "$CONFIG_PATH" 2>/dev/null || echo absolute)
     export PROGRESS_TARGET_MODE
+    XARM_CLOCK_PENALTY=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_clock_penalty',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+    export XARM_CLOCK_PENALTY
+    NON_XARM_FIELD_PENALTY=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('non_xarm_field_penalty',0.125))" "$CONFIG_PATH" 2>/dev/null || echo 0.125)
+    export NON_XARM_FIELD_PENALTY
     RUIN_PRESSURE_LAMBDA=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('ruin_pressure_lambda',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
     export RUIN_PRESSURE_LAMBDA
     RUIN_PRESSURE_MAX_ROUND=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('ruin_pressure_max_round',3))" "$CONFIG_PATH" 2>/dev/null || echo 3)
@@ -149,6 +153,10 @@ while true; do
     export RANK_BLEND_WEIGHT
     PROGRESS_TARGET_MODE=absolute
     export PROGRESS_TARGET_MODE
+    XARM_CLOCK_PENALTY=0
+    export XARM_CLOCK_PENALTY
+    NON_XARM_FIELD_PENALTY=0.125
+    export NON_XARM_FIELD_PENALTY
     RUIN_PRESSURE_LAMBDA=0
     export RUIN_PRESSURE_LAMBDA
     RUIN_PRESSURE_MAX_ROUND=3

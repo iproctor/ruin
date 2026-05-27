@@ -84,6 +84,12 @@ export RANK_BLEND_WEIGHT
 # the late-game target saturation where all four powers sit around 0.8+.
 PROGRESS_TARGET_MODE=${PROGRESS_TARGET_MODE:-relative}
 export PROGRESS_TARGET_MODE
+# Extra non-xarm target penalty for xarm's clock in relative progress mode.
+# g/t/l have been finishing near 50 VP while losing the dial/tie-break race.
+XARM_CLOCK_PENALTY=${XARM_CLOCK_PENALTY:-0.25}
+export XARM_CLOCK_PENALTY
+NON_XARM_FIELD_PENALTY=${NON_XARM_FIELD_PENALTY:-0.125}
+export NON_XARM_FIELD_PENALTY
 # Collection-only MCTS leaf shaping: nudge early/midgame searches toward
 # concentrated pre-ruin corruption projects. H2H does not read this knob.
 RUIN_PRESSURE_LAMBDA=${RUIN_PRESSURE_LAMBDA:-0.08}
@@ -158,14 +164,16 @@ print(json.dumps({
   "xarm_suppression_lambda": float(sys.argv[6]),
   "rank_blend_weight": float(sys.argv[7]),
   "progress_target_mode": sys.argv[8],
-  "ruin_pressure_lambda": float(sys.argv[9]),
-  "ruin_pressure_max_round": int(sys.argv[10]),
-  "xarm_target_mode": sys.argv[11],
-  "policy_full_search_prob_xarm": float(sys.argv[12]),
-  "policy_full_search_important_bonus_xarm": float(sys.argv[13]),
-  "policy_full_search_prob_non_xarm": float(sys.argv[14]),
-  "policy_full_search_important_bonus_non_xarm": float(sys.argv[15]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" "$POLICY_FULL_SEARCH_PROB_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" "$POLICY_FULL_SEARCH_PROB_NON_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
+  "xarm_clock_penalty": float(sys.argv[9]),
+  "non_xarm_field_penalty": float(sys.argv[10]),
+  "ruin_pressure_lambda": float(sys.argv[11]),
+  "ruin_pressure_max_round": int(sys.argv[12]),
+  "xarm_target_mode": sys.argv[13],
+  "policy_full_search_prob_xarm": float(sys.argv[14]),
+  "policy_full_search_important_bonus_xarm": float(sys.argv[15]),
+  "policy_full_search_prob_non_xarm": float(sys.argv[16]),
+  "policy_full_search_important_bonus_non_xarm": float(sys.argv[17]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$XARM_CLOCK_PENALTY" "$NON_XARM_FIELD_PENALTY" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" "$POLICY_FULL_SEARCH_PROB_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" "$POLICY_FULL_SEARCH_PROB_NON_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
     > "$DATA_DIR/worker_config.json"
 }
 
@@ -196,6 +204,7 @@ write_worker_config "collect" ""
   echo "  WORKERS:          $WORKERS"
   echo "  TRAIN_THRESHOLD:  $TRAIN_THRESHOLD files in inbox"
   echo "  TARGET_MODE:      $PROGRESS_TARGET_MODE"
+  echo "  XARM_CLOCK_PEN:   $XARM_CLOCK_PENALTY  field=$NON_XARM_FIELD_PENALTY"
   echo "  RUIN_PRESSURE:    λ=$RUIN_PRESSURE_LAMBDA through round $RUIN_PRESSURE_MAX_ROUND"
   echo "  POLICY_SEARCH:    xarm=$POLICY_FULL_SEARCH_PROB_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM non-xarm=$POLICY_FULL_SEARCH_PROB_NON_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM"
   echo "  POLICY_ALPHA:     xarm=$POLICY_ALPHA_XARM non-xarm=$POLICY_ALPHA_NON_XARM"

@@ -120,6 +120,11 @@ const progressTargetMode = (process.env.PROGRESS_TARGET_MODE ?? 'absolute').toLo
 if (progressTargetMode !== 'absolute') {
   console.log(`[target] progress target mode = ${progressTargetMode}`);
 }
+const xarmClockPenalty = parseFloat(process.env.XARM_CLOCK_PENALTY ?? '0.25');
+const nonXarmFieldPenalty = parseFloat(process.env.NON_XARM_FIELD_PENALTY ?? '0.125');
+if (progressTargetMode === 'relative' && xarmClockPenalty > 0) {
+  console.log(`[target] xarm clock penalty = ${xarmClockPenalty}; non-xarm field penalty = ${nonXarmFieldPenalty}`);
+}
 
 // Per-power xarm target override. 'inherit' (default) uses the shared target
 // formula; 'rank' replaces xarm's value-head target with the final-placement
@@ -239,13 +244,26 @@ function computeProgressTarget(state: GameState): number[] {
 function computeRelativeProgressTarget(state: GameState): number[] {
   const progress = computeProgressTarget(state);
   const target = new Array<number>(progress.length).fill(0.5);
+  const xarmIdx = POWERS.indexOf('xarm');
+  const xarmPressure = xarmIdx >= 0 ? progress[xarmIdx]! : 0;
   for (let i = 0; i < progress.length; i++) {
     let otherSum = 0;
+    let otherCount = 0;
     for (let j = 0; j < progress.length; j++) {
-      if (i !== j) otherSum += progress[j]!;
+      if (i === j) continue;
+      if (i !== xarmIdx && j === xarmIdx && xarmClockPenalty > 0) continue;
+      otherSum += progress[j]!;
+      otherCount++;
     }
-    const otherAvg = otherSum / Math.max(1, progress.length - 1);
-    target[i] = Math.min(Math.max(0.5 + 0.5 * (progress[i]! - otherAvg), 0), 1);
+    const otherAvg = otherSum / Math.max(1, otherCount);
+    const fieldPenalty = i !== xarmIdx && xarmClockPenalty > 0
+      ? nonXarmFieldPenalty
+      : 0.5;
+    let value = 0.5 + 0.5 * progress[i]! - fieldPenalty * otherAvg;
+    if (i !== xarmIdx && xarmClockPenalty > 0) {
+      value -= xarmClockPenalty * xarmPressure;
+    }
+    target[i] = Math.min(Math.max(value, 0), 1);
   }
   return target;
 }
@@ -658,7 +676,7 @@ for (let i = 0; i < gameCount; i++) {
       p: s.p,
       meta: {
         ...s.meta,
-        targetVersion: `rank_progress_blend_v1:${progressTargetMode}`,
+        targetVersion: `rank_progress_blend_v1:${progressTargetMode}:xarm_clock=${xarmClockPenalty}:field=${nonXarmFieldPenalty}`,
         complete,
         stopReason,
         finalRounds: rounds,
