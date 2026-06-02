@@ -136,6 +136,10 @@ const xarmTargetMode = (process.env.XARM_TARGET_MODE ?? 'inherit').toLowerCase()
 if (xarmTargetMode !== 'inherit') {
   console.log(`[target] xarm target mode = ${xarmTargetMode}`);
 }
+const winnerBonusWeight = parseFloat(process.env.WINNER_BONUS_WEIGHT ?? '0.2');
+if (winnerBonusWeight > 0) {
+  console.log(`[target] winner bonus weight = ${winnerBonusWeight}`);
+}
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
 
@@ -307,10 +311,18 @@ function computeBlendedTarget(state: GameState, rankWeight: number): number[] {
     ? computeRankTarget(state)
     : null;
   const out = new Array<number>(progress.length);
+  const winnerSet = state.winners !== null && state.winners.length > 0
+    ? new Set<Power>(state.winners)
+    : null;
+  const winnerWeight = winnerSet !== null
+    ? Math.min(Math.max(winnerBonusWeight, 0), 1)
+    : 0;
   for (let i = 0; i < progress.length; i++) {
-    out[i] = rankWeight > 0 && rank !== null
+    const base = rankWeight > 0 && rank !== null
       ? rankWeight * rank[i]! + (1 - rankWeight) * progress[i]!
       : progress[i]!;
+    const winnerBonus = winnerSet?.has(POWERS[i]!) ? 1 : 0;
+    out[i] = (1 - winnerWeight) * base + winnerWeight * winnerBonus;
   }
   // Per-power xarm override: replace xarm's slot with pure rank value.
   if (xarmTargetMode === 'rank' && rank !== null) {
@@ -676,7 +688,7 @@ for (let i = 0; i < gameCount; i++) {
       p: s.p,
       meta: {
         ...s.meta,
-        targetVersion: `rank_progress_blend_v1:${progressTargetMode}:xarm_clock=${xarmClockPenalty}:field=${nonXarmFieldPenalty}`,
+        targetVersion: `rank_progress_blend_v1:${progressTargetMode}:xarm_clock=${xarmClockPenalty}:field=${nonXarmFieldPenalty}:winner_bonus=${winnerBonusWeight}`,
         complete,
         stopReason,
         finalRounds: rounds,

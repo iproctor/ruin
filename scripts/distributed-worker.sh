@@ -140,6 +140,8 @@ while true; do
     export RUIN_PRESSURE_MAX_ROUND
     XARM_TARGET_MODE=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('xarm_target_mode','inherit'))" "$CONFIG_PATH" 2>/dev/null || echo inherit)
     export XARM_TARGET_MODE
+    WINNER_BONUS_WEIGHT=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('winner_bonus_weight',0))" "$CONFIG_PATH" 2>/dev/null || echo 0)
+    export WINNER_BONUS_WEIGHT
     POLICY_FULL_SEARCH_PROB_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_prob_xarm',0.10))" "$CONFIG_PATH" 2>/dev/null || echo 0.10)
     POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_important_bonus_xarm',0.20))" "$CONFIG_PATH" 2>/dev/null || echo 0.20)
     POLICY_FULL_SEARCH_PROB_NON_XARM=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('policy_full_search_prob_non_xarm',0.22))" "$CONFIG_PATH" 2>/dev/null || echo 0.22)
@@ -163,6 +165,8 @@ while true; do
     export RUIN_PRESSURE_MAX_ROUND
     XARM_TARGET_MODE=inherit
     export XARM_TARGET_MODE
+    WINNER_BONUS_WEIGHT=0
+    export WINNER_BONUS_WEIGHT
     POLICY_FULL_SEARCH_PROB_XARM=0.10
     POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM=0.20
     POLICY_FULL_SEARCH_PROB_NON_XARM=0.22

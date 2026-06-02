@@ -102,6 +102,8 @@ export RUIN_PRESSURE_MAX_ROUND
 # keep PROGRESS_TARGET_MODE. 'inherit' = no override.
 XARM_TARGET_MODE=${XARM_TARGET_MODE:-rank}
 export XARM_TARGET_MODE
+WINNER_BONUS_WEIGHT=${WINNER_BONUS_WEIGHT:-0.2}
+export WINNER_BONUS_WEIGHT
 ALL_POWERS=(xarm gormen tenzen lasha)
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -169,11 +171,12 @@ print(json.dumps({
   "ruin_pressure_lambda": float(sys.argv[11]),
   "ruin_pressure_max_round": int(sys.argv[12]),
   "xarm_target_mode": sys.argv[13],
-  "policy_full_search_prob_xarm": float(sys.argv[14]),
-  "policy_full_search_important_bonus_xarm": float(sys.argv[15]),
-  "policy_full_search_prob_non_xarm": float(sys.argv[16]),
-  "policy_full_search_important_bonus_non_xarm": float(sys.argv[17]),
-}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$XARM_CLOCK_PENALTY" "$NON_XARM_FIELD_PENALTY" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" "$POLICY_FULL_SEARCH_PROB_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" "$POLICY_FULL_SEARCH_PROB_NON_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
+  "winner_bonus_weight": float(sys.argv[14]),
+  "policy_full_search_prob_xarm": float(sys.argv[15]),
+  "policy_full_search_important_bonus_xarm": float(sys.argv[16]),
+  "policy_full_search_prob_non_xarm": float(sys.argv[17]),
+  "policy_full_search_important_bonus_non_xarm": float(sys.argv[18]),
+}, indent=2))' "$task" "$ITER" "$current_power" "$H2H_GAMES_PER_BOX" "$H2H_ITER" "$XARM_SUPPRESSION_LAMBDA" "$RANK_BLEND_WEIGHT" "$PROGRESS_TARGET_MODE" "$XARM_CLOCK_PENALTY" "$NON_XARM_FIELD_PENALTY" "$RUIN_PRESSURE_LAMBDA" "$RUIN_PRESSURE_MAX_ROUND" "$XARM_TARGET_MODE" "$WINNER_BONUS_WEIGHT" "$POLICY_FULL_SEARCH_PROB_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM" "$POLICY_FULL_SEARCH_PROB_NON_XARM" "$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM" \
     > "$DATA_DIR/worker_config.json"
 }
 
@@ -205,6 +208,7 @@ write_worker_config "collect" ""
   echo "  TRAIN_THRESHOLD:  $TRAIN_THRESHOLD files in inbox"
   echo "  TARGET_MODE:      $PROGRESS_TARGET_MODE"
   echo "  XARM_CLOCK_PEN:   $XARM_CLOCK_PENALTY  field=$NON_XARM_FIELD_PENALTY"
+  echo "  WINNER_BONUS:     $WINNER_BONUS_WEIGHT"
   echo "  RUIN_PRESSURE:    λ=$RUIN_PRESSURE_LAMBDA through round $RUIN_PRESSURE_MAX_ROUND"
   echo "  POLICY_SEARCH:    xarm=$POLICY_FULL_SEARCH_PROB_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_XARM non-xarm=$POLICY_FULL_SEARCH_PROB_NON_XARM+$POLICY_FULL_SEARCH_IMPORTANT_BONUS_NON_XARM"
   echo "  POLICY_ALPHA:     xarm=$POLICY_ALPHA_XARM non-xarm=$POLICY_ALPHA_NON_XARM"
