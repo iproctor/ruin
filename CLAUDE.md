@@ -40,8 +40,20 @@ change.
        adds an HOF entry. Revert copies ref → live; rejected iters do
        not compound. Hold leaves `model_<P>.json` as the candidate so the
        next iter continues training from current weights.
-   - Any promotion invalidates the baseline (`rm ref_baseline.json`); next
-     cycle recalibrates against the new ref set.
+     - **Floor**: below `H2H_MIN_GAMES` (default 256) the verdict is
+       **skip** (no promote/revert) — a stalled cluster can't revert a
+       good candidate on near-zero evidence. Same floor gates writing
+       `ref_baseline.json` during calibration.
+     - **Sequential early stop**: each power's bench ends as soon as the
+       verdict is statistically resolved (CI at `H2H_EARLY_STOP_Z`×SE
+       entirely inside one verdict region), once past the floor. Clear
+       promotes/reverts finish in a fraction of `H2H_TARGET_GAMES`.
+   - Any promotion invalidates the baseline (`rm ref_baseline.json`).
+     **Single**-power promotion: the promoted power's h2h aggregate is
+     reused as the new baseline (it measured exactly the new ref set) if
+     it has ≥ `H2H_BASELINE_REUSE_MIN_GAMES` games — skips the ~25 min
+     recalibration. Multi-power promotion or a short early-stopped run
+     recalibrates next cycle.
 
 ### What "iter N" means
 
@@ -54,9 +66,14 @@ change.
 ### Per-game τ-explorer (current self-play regime, May 7 2026)
 
 `packages/server/src/scripts/collect-data.ts`: only one randomly-chosen
-power per game uses τ=1 sampling for the first 3 rounds; other 3 play
-max-visit. Clean loss attribution when only one player explores. Combined
-with 1k MCTS iters, no rollout, no demos, 180-batch training window.
+power per game uses τ=1 sampling for the first `--temp-rounds` rounds;
+other 3 play max-visit. Clean loss attribution when only one player
+explores. Combined with 1k MCTS iters, no rollout, no demos, 180-batch
+training window. Since Jun 10 2026 the explorer always runs a full
+search during its temperature window (previously τ=1 only fired on the
+~15-35% of explorer moves that drew a full search from the playout-cap
+lottery, so exploration coverage was far below what this section
+implied).
 
 ### Key tunables (env vars on coord)
 
@@ -70,6 +87,9 @@ with 1k MCTS iters, no rollout, no demos, 180-batch training window.
 | `H2H_PROMOTE_DELTA_WIN_OTHER` | 0.04 | g/t/l: Δwin ≥ this → promote |
 | `H2H_PROMOTE_DELTA_VP` | 1.0 | g/t/l: Δvp_mean ≥ this → promote |
 | `H2H_REVERT_DELTA` | 0.02 | all powers: Δwin < -this → revert |
+| `H2H_MIN_GAMES` | 256 | verdict/baseline floor: below this, skip (no promote/revert/baseline write) |
+| `H2H_EARLY_STOP_Z` | 2.5 | CI width for sequential early stop of a power's bench |
+| `H2H_BASELINE_REUSE_MIN_GAMES` | 512 | min games to reuse a single-promotion h2h aggregate as baseline |
 | `H2H_ITER` | 1000 | MCTS iters during h2h |
 
 ### Empirical cadence

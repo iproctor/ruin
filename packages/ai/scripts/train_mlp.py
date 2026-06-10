@@ -89,16 +89,19 @@ def parse_args() -> argparse.Namespace:
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 
-def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Returns (X, T, P, has_policy, power_idx):
+    Returns (X, T, P, has_policy, power_idx, game_id):
       X         (N, D)   — features
       T         (N, 4)   — soft value targets
       P         (N, 298) — normalized policy targets (zeros if no visits recorded)
       has_policy(N,)     — bool, True if this row has a real policy target
       power_idx (N,)     — int, acting power index (0-3), or -1 if not tagged
+      game_id   (N,)     — int64, game seed from meta (rows of one game share
+                           it); rows without a seed get a unique negative id
+                           so they form singleton groups
     """
-    xs, ts, ps, mask, pwr = [], [], [], [], []
+    xs, ts, ps, mask, pwr, gid = [], [], [], [], [], []
     max_dim = 0
     with open(path, "r") as f:
         for line in f:
@@ -130,6 +133,8 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
             ps.append(policy)
             mask.append(has)
             pwr.append(obj.get("p", -1))
+            seed = (obj.get("meta") or {}).get("seed")
+            gid.append(int(seed) if seed is not None else -(len(gid) + 1))
     # Right-pad with zeros to max_dim. Lets the pool mix samples from before
     # and after a feature-dim bump (collect-data's FEATURE_DIM grew but
     # archive batches predate the change). Pre-bump samples get zeros for
@@ -145,7 +150,8 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
     P = np.array(ps, dtype=np.float32)
     M = np.array(mask, dtype=bool)
     PI = np.array(pwr, dtype=np.int32)
-    return X, T, P, M, PI
+    G = np.array(gid, dtype=np.int64)
+    return X, T, P, M, PI, G
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
@@ -504,7 +510,7 @@ def main() -> int:
     print()
 
     _t_load = time.time()
-    X, T_value, T_policy, has_policy, power_idx = load_jsonl(args.in_path)
+    X, T_value, T_policy, has_policy, power_idx, game_id = load_jsonl(args.in_path)
     n, d = X.shape
     print(f"loaded {n} samples, feature dim {d}  ({time.time() - _t_load:.1f}s)")
     print(f"policy rows: {int(has_policy.sum())} / {n}  ({100 * has_policy.mean():.1f}%)")
@@ -525,7 +531,7 @@ def main() -> int:
 
     rng = np.random.default_rng(args.seed)
     perm = rng.permutation(n)
-    X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]
+    X = X[perm]; T_value = T_value[perm]; T_policy = T_policy[perm]; has_policy = has_policy[perm]; power_idx = power_idx[perm]; game_id = game_id[perm]
     if args.overfit_batch > 0:
         # Sanity-check mode: take a tiny slice, use it as both train and val.
         # A small net should be able to memorize this batch in a few hundred
@@ -548,7 +554,27 @@ def main() -> int:
         print(f"[overfit-batch] using {ob} samples as both train and val "
               f"(has_policy: {int(has_policy.sum())}/{ob})")
     else:
-        n_val = int(n * args.val)
+        # Game-level split. Every row of a game shares the same value target
+        # and highly correlated features, so a row-level split puts nearly
+        # every game on both sides — val loss then rewards memorizing games,
+        # and early stopping / best-epoch selection key on that contaminated
+        # metric. Assign whole games to val until the row budget is met.
+        target_val = int(n * args.val)
+        uniq, counts = np.unique(game_id, return_counts=True)
+        order = rng.permutation(len(uniq))
+        if target_val > 0:
+            k = int(np.searchsorted(np.cumsum(counts[order]), target_val, side="left")) + 1
+            val_mask = np.isin(game_id, uniq[order[:k]])
+        else:
+            k = 0
+            val_mask = np.zeros(n, dtype=bool)
+        # Reorder so val rows come first; downstream [:n_val] slicing
+        # (e.g. sample_weights) stays valid.
+        reorder = np.concatenate([np.where(val_mask)[0], np.where(~val_mask)[0]])
+        X = X[reorder]; T_value = T_value[reorder]; T_policy = T_policy[reorder]
+        has_policy = has_policy[reorder]; power_idx = power_idx[reorder]; game_id = game_id[reorder]
+        n_val = int(val_mask.sum())
+        print(f"[split] game-level: {k}/{len(uniq)} games -> {n_val} val rows (row target {target_val})")
         X_val,  Tv_val, Tp_val, hp_val, pi_val = X[:n_val], T_value[:n_val], T_policy[:n_val], has_policy[:n_val], power_idx[:n_val]
         X_tr,   Tv_tr,  Tp_tr,  hp_tr,  pi_tr  = X[n_val:], T_value[n_val:], T_policy[n_val:], has_policy[n_val:], power_idx[n_val:]
     # ── Inverse-frequency reweighting ──────────────────────────────────────────

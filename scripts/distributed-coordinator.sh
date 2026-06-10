@@ -442,6 +442,21 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # weights). Same threshold for all powers.
   H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
   H2H_REVERT_DELTA=${H2H_REVERT_DELTA:-0.02}
+  H2H_PROMOTE_DELTA_WIN_OTHER=${H2H_PROMOTE_DELTA_WIN_OTHER:-0.04}
+  H2H_PROMOTE_DELTA_VP=${H2H_PROMOTE_DELTA_VP:-1.0}
+  # Verdict floor: below this many games no promote/revert fires (and no
+  # baseline is written) — a stalled cluster must not revert a good candidate
+  # on near-zero evidence.
+  H2H_MIN_GAMES=${H2H_MIN_GAMES:-256}
+  # Sequential early stop: once past the floor, stop a power's bench as soon
+  # as the verdict is statistically resolved at z× the combined standard
+  # error. Clear promotes/reverts resolve in a fraction of the target games;
+  # only genuinely borderline candidates spend the full budget.
+  H2H_EARLY_STOP_Z=${H2H_EARLY_STOP_Z:-2.5}
+  # After a single-power promotion, the promoted power's h2h aggregate already
+  # measured exactly the new ref set; reuse it as the baseline (skipping the
+  # ~25 min recalibration) if it has at least this many games.
+  H2H_BASELINE_REUSE_MIN_GAMES=${H2H_BASELINE_REUSE_MIN_GAMES:-512}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ] && [ "$((ITER % H2H_EVERY_N))" -eq 0 ]; then
@@ -494,12 +509,15 @@ print(t)" 2>/dev/null || echo 0)
         fi
       done
 
-      # Aggregate baseline shards → ref_baseline.json.
+      # Aggregate baseline shards → ref_baseline.json. Refuses to write below
+      # the H2H_MIN_GAMES floor: a garbage near-zero baseline would make every
+      # subsequent candidate trivially "promote" until a human notices.
       python3 -c "
 import json, glob, sys
 out = sys.argv[1]
 inbox = sys.argv[2]
 itr = int(sys.argv[3])
+min_games = int(sys.argv[4])
 import math
 agg = {'games':0, 'completed':0, 'no_winners':0, 'co_wins':0,
        'wins': {'xarm':0,'gormen':0,'tenzen':0,'lasha':0},
@@ -530,6 +548,9 @@ for f in sorted(glob.glob(f'{inbox}/*.json')):
         agg['shards'].append(f.split('/')[-1])
     except Exception as e:
         print(f'shard {f}: {e}', file=sys.stderr)
+if agg['games'] < min_games:
+    print(f'[baseline] ERROR: only {agg[\"games\"]} games (< {min_games}) — refusing to write baseline')
+    sys.exit(1)
 g = agg['games'] or 1
 agg['win_rates'] = {p: agg['wins'][p]/g for p in agg['wins']}
 agg['vp_mean'] = {p: agg['vp_w'][p]/g for p in agg['vp_w']}
@@ -542,10 +563,18 @@ agg['baseline'] = True
 agg['iter'] = itr
 open(out, 'w').write(json.dumps(agg, indent=2))
 print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*100:.1f}% gormen:{agg[\"win_rates\"][\"gormen\"]*100:.1f}% tenzen:{agg[\"win_rates\"][\"tenzen\"]*100:.1f}% lasha:{agg[\"win_rates\"][\"lasha\"]*100:.1f}% | rounds={agg[\"avg_rounds\"]:.2f} | {len(agg[\"shards\"])} shards')
-" "$REF_BASELINE_FILE" "$BL_INBOX" "$ITER" 2>&1 | tee -a "$LOG_FILE"
+" "$REF_BASELINE_FILE" "$BL_INBOX" "$ITER" "$H2H_MIN_GAMES" 2>&1 | tee -a "$LOG_FILE"
 
       BL_T1=$(date +%s)
       echo "[iter $ITER] baseline calibrated in $((BL_T1 - BL_T0))s" | tee -a "$LOG_FILE"
+    fi
+
+    # If calibration failed (timeout below the floor, aggregation error), the
+    # h2h block below is skipped — make sure workers don't stay stuck grinding
+    # baseline batches forever.
+    if [ ! -f "$REF_BASELINE_FILE" ]; then
+      echo "[iter $ITER] baseline calibration failed — skipping h2h cycle, returning workers to collect" | tee -a "$LOG_FILE"
+      write_worker_config "collect" ""
     fi
   fi
 
@@ -563,17 +592,66 @@ print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*1
 
       # Same loop pattern as baseline: coord keeps producing 16-game batches
       # while workers also upload, instead of running once and idling.
+      # Sequential early stop: poll the running Δwin/Δvp against baseline and
+      # stop as soon as the verdict can no longer change (CI at
+      # H2H_EARLY_STOP_Z × SE entirely inside one verdict region), once past
+      # the H2H_MIN_GAMES floor. The verdict python below recomputes on the
+      # same shards, so the early verdict equals the full-budget verdict.
       WAIT_T0=$(date +%s)
       H2H_BATCH=0
       while true; do
-        TOTAL=$(python3 -c "
-import json, glob
-t = 0
-for f in glob.glob('${BENCH_INBOX}/*.json'):
-  try: t += json.load(open(f)).get('games', 0)
-  except: pass
-print(t)" 2>/dev/null || echo 0)
+        POLL=$(python3 -c "
+import json, glob, math, sys
+inbox, basefile, power = sys.argv[1], sys.argv[2], sys.argv[3]
+min_games, z = int(sys.argv[4]), float(sys.argv[5])
+p_xarm, p_win_other, p_vp, r_thr = map(float, sys.argv[6:10])
+g = 0; wins = 0; vp_w = 0.0; vp_sq = 0.0
+for f in glob.glob(inbox + '/*.json'):
+    try:
+        d = json.load(open(f))
+        g += d['games']; wins += d['wins'].get(power, 0)
+        m = d['vp_mean'].get(power, 0.0); s = d.get('vp_stdev', {}).get(power, 0.0)
+        vp_w += m * d['games']; vp_sq += (s*s + m*m) * d['games']
+    except Exception: pass
+resolved = 0
+if g >= min_games:
+    try:
+        base = json.load(open(basefile))
+        bg = max(1, base.get('games', 1))
+        bw = base['win_rates'].get(power, 0.0)
+        bvp = base.get('vp_mean', {}).get(power, 0.0)
+        bvs = base.get('vp_stdev', {}).get(power, 0.0)
+        cw = wins / g
+        dwin = cw - bw
+        ci_w = z * math.sqrt(cw*(1-cw)/g + bw*(1-bw)/bg)
+        cvp = vp_w / g
+        cvs = math.sqrt(max(0.0, vp_sq/g - cvp*cvp))
+        dvp = cvp - bvp
+        ci_v = z * math.sqrt(cvs*cvs/g + bvs*bvs/bg)
+        promote_thr = p_xarm if power == 'xarm' else p_win_other
+        # Clear promote on either channel ends the bench regardless of the
+        # other thresholds (verdict python checks promote first too).
+        clear_promote = (dwin - ci_w >= promote_thr) or (power != 'xarm' and dvp - ci_v >= p_vp)
+        # Otherwise every threshold the verdict consults must be resolved:
+        # the CI sits entirely on one side of it.
+        win_side = (dwin - ci_w >= promote_thr) or (dwin + ci_w < promote_thr)
+        revert_side = (dwin - ci_w >= -r_thr) or (dwin + ci_w < -r_thr)
+        vp_side = power == 'xarm' or (dvp - ci_v >= p_vp) or (dvp + ci_v < p_vp)
+        resolved = 1 if (clear_promote or (win_side and revert_side and vp_side)) else 0
+    except Exception:
+        resolved = 0
+print(f'{g} {resolved}')" \
+          "$BENCH_INBOX" "$REF_BASELINE_FILE" "$POWER" \
+          "$H2H_MIN_GAMES" "$H2H_EARLY_STOP_Z" \
+          "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" \
+          2>/dev/null || echo "0 0")
+        TOTAL=$(echo "$POLL" | awk '{print $1}')
+        RESOLVED=$(echo "$POLL" | awk '{print $2}')
         [ "$TOTAL" -ge "$H2H_TARGET_GAMES" ] && break
+        if [ "$RESOLVED" = "1" ]; then
+          echo "  · h2h ${POWER}: early stop at ${TOTAL} games — verdict resolved at z=${H2H_EARLY_STOP_Z}" | tee -a "$LOG_FILE"
+          break
+        fi
         WAITED=$(($(date +%s) - WAIT_T0))
         if [ "$WAITED" -gt "$H2H_WAIT_SECS" ]; then
           echo "  ! h2h ${POWER}: timeout at ${TOTAL}/${H2H_TARGET_GAMES} games (waited ${WAITED}s)" | tee -a "$LOG_FILE"
@@ -663,9 +741,8 @@ print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][pow
     # improvement that doesn't yet beat xarm's dial timing.
     #
     # Revert is win-rate based for all powers (Δwin < -H2H_REVERT_DELTA).
-    H2H_PROMOTE_DELTA_WIN_OTHER=${H2H_PROMOTE_DELTA_WIN_OTHER:-0.04}
-    H2H_PROMOTE_DELTA_VP=${H2H_PROMOTE_DELTA_VP:-1.0}
     ANY_PROMOTED=0
+    PROMOTED_POWERS=()
     for POWER in "${ALL_POWERS[@]}"; do
       AGG_OUT="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${POWER}.json"
       [ ! -f "$AGG_OUT" ] && continue
@@ -678,6 +755,8 @@ promote_thr_xarm = float(sys.argv[4])
 promote_thr_win_other = float(sys.argv[5])
 promote_thr_vp = float(sys.argv[6])
 revert_thr = float(sys.argv[7])
+min_games = int(sys.argv[8])
+games = int(agg.get('games', 0))
 cur = agg['win_rates'].get(power, 0.0)
 bl = base['win_rates'].get(power, 0.0)
 delta = cur - bl
@@ -688,14 +767,18 @@ if power == 'xarm':
     promote = delta >= promote_thr_xarm
 else:
     promote = (delta >= promote_thr_win_other) or (delta_vp >= promote_thr_vp)
-if promote:
+if games < min_games:
+    # Too few games for any verdict — never promote or (worse) revert a
+    # candidate on a stalled cluster's near-zero sample.
+    verdict = 'SKIP'
+elif promote:
     verdict = 'PROMOTE'
 elif delta < -revert_thr:
     verdict = 'REVERT'
 else:
     verdict = 'HOLD'
-print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delta_vp:+.2f}')
-" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" 2>/dev/null)
+print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delta_vp:+.2f}|{games}')
+" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" "$H2H_MIN_GAMES" 2>>"$LOG_FILE")
       VERDICT=$(echo "$DECISION" | cut -d'|' -f1)
       CUR=$(echo "$DECISION" | cut -d'|' -f2)
       BL=$(echo "$DECISION" | cut -d'|' -f3)
@@ -703,10 +786,19 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
       CUR_VP=$(echo "$DECISION" | cut -d'|' -f5)
       BL_VP=$(echo "$DECISION" | cut -d'|' -f6)
       DELTA_VP=$(echo "$DECISION" | cut -d'|' -f7)
-      if [ "$VERDICT" = "PROMOTE" ]; then
+      CUR_GAMES=$(echo "$DECISION" | cut -d'|' -f8)
+      if [ -z "$VERDICT" ]; then
+        # Decision script crashed (corrupt baseline/aggregate). Hold the
+        # candidate but say so loudly — a silent empty verdict here used to
+        # disable the entire gate until a human noticed.
+        echo "[iter $ITER] ERROR ${POWER}: verdict computation failed (see log for python stderr) — holding candidate" | tee -a "$LOG_FILE"
+      elif [ "$VERDICT" = "SKIP" ]; then
+        echo "[iter $ITER] skip ${POWER}: only ${CUR_GAMES} games (< ${H2H_MIN_GAMES}) — no verdict, holding candidate" | tee -a "$LOG_FILE"
+      elif [ "$VERDICT" = "PROMOTE" ]; then
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
-        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → ref updated" | tee -a "$LOG_FILE"
+        echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, ${CUR_GAMES}g) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
+        PROMOTED_POWERS+=("$POWER")
 
         # HOF entry: only h2h-promoted models. Use the h2h win rate as the
         # rank, --min-rank 0.0 so the gate is purely the h2h verdict above.
@@ -736,7 +828,37 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
         cp "$REF_BASELINE_FILE" "$DATA_DIR/ref_baseline_iter_$(printf '%04d' "$BL_ITER").json"
       fi
       rm -f "$REF_BASELINE_FILE"
-      echo "[iter $ITER] ref set updated — baseline archived as iter ${BL_ITER:-?}, will recalibrate next cycle" | tee -a "$LOG_FILE"
+
+      # Single-power promotion: the promoted power's h2h aggregate measured
+      # candidate-P against the 3 unchanged refs — exactly the population the
+      # new ref set forms — so it IS the new ref-vs-ref baseline. Reuse it
+      # (skipping ~25 min of recalibration) when it has enough games; an
+      # early-stopped short run or a multi-power promotion still recalibrates.
+      if [ "${#PROMOTED_POWERS[@]}" -eq 1 ]; then
+        PROMOTED_P="${PROMOTED_POWERS[0]}"
+        PROMOTED_AGG="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${PROMOTED_P}.json"
+        python3 -c "
+import json, sys
+src, out = sys.argv[1], sys.argv[2]
+itr, min_games = int(sys.argv[3]), int(sys.argv[4])
+agg = json.load(open(src))
+if agg.get('games', 0) < min_games:
+    print(f'[baseline] promoted aggregate has only {agg.get(\"games\", 0)} games (< {min_games}) — will recalibrate')
+    sys.exit(0)
+agg.pop('current_power', None)
+agg['baseline'] = True
+agg['baseline_source'] = src.split('/')[-1]
+agg['iter'] = itr
+open(out, 'w').write(json.dumps(agg, indent=2))
+print(f'[baseline] reused {agg[\"games\"]}-game h2h aggregate as new baseline')
+" "$PROMOTED_AGG" "$REF_BASELINE_FILE" "$ITER" "$H2H_BASELINE_REUSE_MIN_GAMES" 2>&1 | tee -a "$LOG_FILE"
+      fi
+
+      if [ -f "$REF_BASELINE_FILE" ]; then
+        echo "[iter $ITER] ref set updated — baseline archived as iter ${BL_ITER:-?}, reused ${PROMOTED_POWERS[0]} h2h aggregate as new baseline" | tee -a "$LOG_FILE"
+      else
+        echo "[iter $ITER] ref set updated — baseline archived as iter ${BL_ITER:-?}, will recalibrate next cycle" | tee -a "$LOG_FILE"
+      fi
     fi
 
     # Return workers to collect mode.

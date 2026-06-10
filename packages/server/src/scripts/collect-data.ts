@@ -11,7 +11,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
   createInitialState, applyAction, autoAdvance, GameLog,
-  getLegalActions,
+  getLegalActions, THREAT_DIALS,
   type GameState, type Action, type Power,
 } from '@ruin/engine';
 import {
@@ -221,9 +221,22 @@ interface SampleMeta {
   threat: Record<Power, number>;
 }
 
+// Per-power threat normalizer: the last numeric dial position before the
+// 'victory' slot (xarm 32, gormen 34, tenzen 29, lasha 27). A flat /35
+// understated lasha's dial progress relative to gormen's by ~20%, skewing
+// every cross-power progress comparison (field penalty, rank tiebreaks,
+// xarm-clock pressure). threatValue is capped at this position, so 1.0 means
+// "one tick from dial victory" — no headroom needed, unlike VP's /55.
+const THREAT_MAX: Record<Power, number> = Object.fromEntries(
+  (Object.keys(THREAT_DIALS) as Power[]).map(p => [
+    p,
+    Math.max(...THREAT_DIALS[p].map(d => (typeof d.threat === 'number' ? d.threat : 0))),
+  ]),
+) as Record<Power, number>;
+
 /**
- * Per-power value target: continuous progress = max(vp/55, threat/35), clipped
- * to 1.0. VP normalizer is 55 (not 50) so overshoot-in-ties produces a
+ * Per-power value target: continuous progress = max(vp/55, threat/threat_max),
+ * clipped to 1.0. VP normalizer is 55 (not 50) so overshoot-in-ties produces a
  * non-saturated signal. Replaces the prior rank-decay scheme — winners reach
  * 1.0 naturally by hitting a threshold, losers' targets reflect actual
  * proximity to victory rather than a comparative ranking.
@@ -231,9 +244,10 @@ interface SampleMeta {
 function computeProgressTarget(state: GameState): number[] {
   const target = new Array<number>(POWERS.length).fill(0);
   for (let i = 0; i < POWERS.length; i++) {
-    const ps = state.powers[POWERS[i]!];
+    const power = POWERS[i]!;
+    const ps = state.powers[power];
     const vpProgress = ps.victoryPoints / 55;
-    const threatProgress = ps.threatValue / 35;
+    const threatProgress = ps.threatValue / THREAT_MAX[power];
     target[i] = Math.min(Math.max(vpProgress, threatProgress), 1.0);
   }
   return target;
@@ -285,7 +299,7 @@ function computeRankTarget(state: GameState): number[] | null {
   const winnerSet = new Set<Power>(state.winners);
   const scores = POWERS.map((p, i) => {
     const ps = state.powers[p];
-    const progress = Math.max(ps.victoryPoints / 55, ps.threatValue / 35);
+    const progress = Math.max(ps.victoryPoints / 55, ps.threatValue / THREAT_MAX[p]);
     return { i, score: (winnerSet.has(p) ? 1000 : 0) + progress };
   });
   scores.sort((a, b) => b.score - a.score);
@@ -535,7 +549,15 @@ function runGame(seed: number): GameResult {
     try {
       if (pending.actionKind === 'summoning_action') {
         legalCountForSample = getLegalActions(state, pending.waitingFor).length;
-        const fullSearch = shouldRunFullSearch(state, pending.waitingFor, rand);
+        // The explorer always gets a full search during its temperature
+        // window: τ=1 sampling needs a real visit distribution, and gating it
+        // on the playout-cap lottery meant exploration only fired on the
+        // ~15-35% of explorer moves that happened to draw a full search.
+        // (shouldRunFullSearch is still called first so the rand() stream is
+        // consumed identically for explorers and non-explorers.)
+        const explorerTempMove = tempRounds > 0 && state.round <= tempRounds
+          && pending.waitingFor === explorerPower;
+        const fullSearch = shouldRunFullSearch(state, pending.waitingFor, rand) || explorerTempMove;
         fullSearchForSample = fullSearch;
         if (fullSearch) {
           const stats = runMctsWithStats(state, pending.waitingFor, {
@@ -552,7 +574,7 @@ function runGame(seed: number): GameResult {
           // win/loss signal rather than noise blurred across all 4 powers.
           // Use raw search counts here; stats.visitCounts is the denoised
           // policy target with forced root playouts pruned.
-          action = (tempRounds > 0 && state.round <= tempRounds && pending.waitingFor === explorerPower)
+          action = explorerTempMove
             ? sampleActionByVisits(stats.searchVisitCounts, rand)
             : stats.action;
           // Multiple legal actions can canonicalise to the same slot — sum visits.
