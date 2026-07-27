@@ -456,7 +456,33 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # After a single-power promotion, the promoted power's h2h aggregate already
   # measured exactly the new ref set; reuse it as the baseline (skipping the
   # ~25 min recalibration) if it has at least this many games.
-  H2H_BASELINE_REUSE_MIN_GAMES=${H2H_BASELINE_REUSE_MIN_GAMES:-512}
+  #
+  # DISABLED BY DEFAULT (Jul 27 2026). Baseline reuse installs the *winning*
+  # measurement as the new bar, which is textbook winner's curse: a candidate
+  # promotes partly on upward noise, that inflated number becomes the
+  # baseline, and the next honest measurement regresses to the mean and trips
+  # the revert threshold. Measured on the xarm series (iters 2919-2967): all
+  # 4 promotions were followed by a drop at the very next bench, mean -5.6pp,
+  # against a series whose own SD is 3.05pp. Set to a positive value to
+  # restore the old behaviour.
+  H2H_BASELINE_REUSE_MIN_GAMES=${H2H_BASELINE_REUSE_MIN_GAMES:-0}
+
+  # Observe-only gate. When 1, the h2h cycle still runs, verdicts are still
+  # computed and logged, but NOTHING is copied: no promote, no revert, no HOF
+  # entry, no baseline invalidation. The ref set stays frozen for the whole
+  # run, so every bench measures the live models against the *same* fixed
+  # baseline and the log becomes a learning curve instead of a random walk.
+  #
+  # This is the correct default given the measured noise floor. Bench SD on
+  # ~900 games is 3.05pp (binomial SE is only 1.63pp, so the true spread is
+  # ~1.9x binomial) while the promote/revert thresholds are +/-2pp — i.e. the
+  # decision thresholds sit *inside* the noise. A candidate identical to ref
+  # has roughly a 26% chance of "promote" and 26% of "revert" per bench.
+  # Reverting on that signal destroys real progress about a quarter of the
+  # time it benches, and resets the weights so nothing can accumulate across
+  # iterations. Over iters 2668-2968 the gate produced 27 promotes against
+  # 151 reverts; xarm alone was reverted 81 times vs 10 promotes.
+  H2H_OBSERVE_ONLY=${H2H_OBSERVE_ONLY:-1}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ] && [ "$((ITER % H2H_EVERY_N))" -eq 0 ]; then
@@ -795,6 +821,9 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
       elif [ "$VERDICT" = "SKIP" ]; then
         echo "[iter $ITER] skip ${POWER}: only ${CUR_GAMES} games (< ${H2H_MIN_GAMES}) — no verdict, holding candidate" | tee -a "$LOG_FILE"
       elif [ "$VERDICT" = "PROMOTE" ]; then
+        if [ "$H2H_OBSERVE_ONLY" = "1" ]; then
+          echo "[iter $ITER] OBSERVE promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, ${CUR_GAMES}g) → ref NOT touched" | tee -a "$LOG_FILE"
+        else
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
         echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, ${CUR_GAMES}g) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
@@ -809,9 +838,14 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
             --min-rank 0.0 \
             --data-dir "$DATA_DIR" 2>&1 | tee -a "$LOG_FILE"
         fi
+        fi
       elif [ "$VERDICT" = "REVERT" ]; then
+        if [ "$H2H_OBSERVE_ONLY" = "1" ]; then
+          echo "[iter $ITER] OBSERVE revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → candidate KEPT" | tee -a "$LOG_FILE"
+        else
         cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
         echo "[iter $ITER] revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → reverted to ref" | tee -a "$LOG_FILE"
+        fi
       else
         # HOLD: candidate stayed close to baseline. Keep it live so training
         # continues from current weights instead of snapping back to ref.
@@ -834,7 +868,7 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
       # new ref set forms — so it IS the new ref-vs-ref baseline. Reuse it
       # (skipping ~25 min of recalibration) when it has enough games; an
       # early-stopped short run or a multi-power promotion still recalibrates.
-      if [ "${#PROMOTED_POWERS[@]}" -eq 1 ]; then
+      if [ "${#PROMOTED_POWERS[@]}" -eq 1 ] && [ "$H2H_BASELINE_REUSE_MIN_GAMES" -gt 0 ]; then
         PROMOTED_P="${PROMOTED_POWERS[0]}"
         PROMOTED_AGG="$DATA_DIR/bench_h2h_iter_${ITER_TAG}_${PROMOTED_P}.json"
         python3 -c "
@@ -842,7 +876,7 @@ import json, sys
 src, out = sys.argv[1], sys.argv[2]
 itr, min_games = int(sys.argv[3]), int(sys.argv[4])
 agg = json.load(open(src))
-if agg.get('games', 0) < min_games:
+if min_games <= 0 or agg.get('games', 0) < min_games:
     print(f'[baseline] promoted aggregate has only {agg.get(\"games\", 0)} games (< {min_games}) — will recalibrate')
     sys.exit(0)
 agg.pop('current_power', None)
