@@ -73,11 +73,39 @@ export XARM_SUPPRESSION_LAMBDA
 #   - w=0.75 (iter 1833+): revert cascade, close_pct collapsed.
 #   - w=1.0  (iter 1940+, May 25): broke the g/t/l value-loss plateau (loss
 #     descending, σ recovered 0.08→0.30) but h2h results came out bad again.
-# Reverted both times. Restoring value-head variance via the target does NOT
-# translate to h2h gains — the working progress lives in the policy/search
-# channel, not value magnitude (see project_gtl_value_plateau). Staying on
-# relative-progress (w=0); g/t/l value head plateau is accepted as benign.
-RANK_BLEND_WEIGHT=0
+# Reverted both times.
+#
+# RETRACTED Jul 28 2026. The old conclusion here — "restoring value-head
+# variance does NOT translate to h2h gains, the plateau is benign" — was drawn
+# from a broken instrument. The w=1.0 run lasted iters 1939-1947 and was judged
+# on EXACTLY ONE h2h cycle (iter 1947), through a gate whose +/-0.02 thresholds
+# sat inside a 0.0305 bench SD, against a baseline biased upward by the
+# promotion that set it. All four powers "reverted" on that single cycle, which
+# is also what a coin flip produces. See project_h2h_gate_broken.
+#
+# Measured Jul 28 2026 over 320 games of archived self-play, the value TARGET
+# variance per power (and what each model actually fits):
+#
+#   power    tgt mean   tgt SD   tgt range      model pred SD   var explained
+#   xarm       0.671    0.360    0.000-1.000        0.235            65%
+#   gormen     0.491    0.131    0.222-0.840        0.082            63%
+#   tenzen     0.475    0.128    0.150-0.819        0.086            67%
+#   lasha      0.525    0.154    0.227-0.908        0.117            76%
+#
+# All four fit ~65-75% of their target's variance — the g/t/l models are NOT
+# failing to learn. The target itself is compressed ~2.7x versus xarm's rank
+# target and never reaches 0 or 1: a crushed gormen still scores 0.222, a
+# dominant one 0.840. With a per-power model loaded rolloutDepth is -1, so the
+# value head IS the entire MCTS leaf signal — and PUCT's First-Play Urgency
+# offset (parent_avg - 0.1) is LARGER than gormen's whole value spread
+# (sigma 0.082). Search for g/t/l is driven by exploration constants rather
+# than by position evaluation.
+#
+# Note the May run already reported sigma recovering 0.08 -> 0.30 under w=1.0,
+# i.e. it fixed exactly this. Rank does not discard VP: computeRankTarget puts
+# winners first and orders non-winners BY vp/threat progress. It ranks by VP
+# while using the full [0,1] range instead of compressing it.
+RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-0}
 export RANK_BLEND_WEIGHT
 # Progress target geometry. "relative" keeps progress but trains on
 # own-progress-vs-field instead of absolute near-threshold progress, avoiding
