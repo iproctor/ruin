@@ -52,7 +52,8 @@ TRAIN_EPOCHS=${TRAIN_EPOCHS:-3}
 # Value target = (1-Q_BLEND)*outcome + Q_BLEND*root-search value, for rows that
 # carry a recorded root Q (collection since Sep 25 2026). Outcome targets have
 # R^2 ~0.3-0.5 against the model; the search value is far lower variance.
-Q_BLEND=${Q_BLEND:-0.5}
+# Off until tested in isolation (was 0.5 during the rejected iters 4137-4157).
+Q_BLEND=${Q_BLEND:-0}
 # bf16 trunk weights for all MCTS in collection / h2h (see distributed-worker.sh).
 RUIN_MLP_BF16=${RUIN_MLP_BF16:-1}
 export RUIN_MLP_BF16
@@ -123,7 +124,9 @@ export XARM_SUPPRESSION_LAMBDA
 # SD ~0.13 and predictions SD ~0.08 — too compressed for search to separate
 # moves. Rank uses the full [0,1] range and still orders non-winners by
 # progress (see the Jul 28 note above).
-RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-1.0}
+# Reverted to 0 at iter ~4158: rank-for-all + improved policy targets
+# regressed gormen -9.1 VP (5 sigma) and xarm -14pp vs the iter-4134 anchor.
+RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-0}
 export RANK_BLEND_WEIGHT
 # Progress target geometry. "relative" keeps progress but trains on
 # own-progress-vs-field instead of absolute near-threshold progress, avoiding

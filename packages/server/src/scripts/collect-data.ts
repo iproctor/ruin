@@ -68,7 +68,11 @@ const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 // counts under PUCT mostly echo the prior when move values are close, so the
 // policy was largely learning its own guesses; this target moves mass toward
 // moves the search actually valued higher.
-const policyTarget = getArg('--policy-target', 'improved');
+// Default back to 'visits' (Sep 25 2026): the improved target together with
+// the rank value target regressed xarm -14pp and gormen -9 VP by iter 4157 vs
+// the iter-4134 anchor. Not isolated which part did it; 'improved' stays
+// available for a single-variable retest.
+const policyTarget = getArg('--policy-target', 'visits');
 // 'gumbel' = the Gumbel MuZero scale (50 + max root visits) * 0.1 (~50 at our
 // visit counts). Tried Sep 25 2026 iters 4137-4150: targets went to top-move
 // share ~0.9 and policy val loss started rising after ~iter 4146 (xarm 1.82 ->
