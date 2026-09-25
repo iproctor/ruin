@@ -1,5 +1,5 @@
 import { FEATURE_DIM, POWERS } from './features.js';
-import { loadNativeMlp, loadNativeMlpValueOnly, type NativeMlpForward, type NativeMlpValueOnly } from './native-mlp.js';
+import { loadNativeMlp, loadNativeMlpValueOnly, loadNativeMlpBf16, toBf16, type NativeMlpForward, type NativeMlpValueOnly } from './native-mlp.js';
 
 /**
  * MLP inference (pure TS, single-example forward pass).
@@ -79,6 +79,15 @@ export interface LinearJson {
 
 export type ModelJson = MlpJson | DualHeadMlpJson | MultiPolicyMlpJson | PerPowerBundleJson | LinearJson;
 
+const FLT_MIN = 1.1754943508222875e-38;
+
+function flushDenormals(w: Float32Array): void {
+  for (let i = 0; i < w.length; i++) {
+    const v = w[i]!;
+    if (v !== 0 && v < FLT_MIN && v > -FLT_MIN) w[i] = 0;
+  }
+}
+
 interface CompiledLayer {
   W: Float32Array;    // flat row-major, length inDim*outDim; row i starts at i*outDim
   outDim: number;
@@ -149,6 +158,15 @@ export class Mlp {
     this.layers = layers;
     this.policyChain = policyChain;
     this.perPowerPolicyHeads = perPowerPolicyHeads;
+    // Flush denormal weights to zero. L2 decay leaves a large share of dead
+    // weights in the denormal range (38% of xarm's W1 at iter 4134); on Intel
+    // every multiply by one takes a microcode assist, which made the native
+    // forward ~13x slower on the i9 coordinator than on the Ryzen workers.
+    // Their contribution to any output is ~1e-38, so zeroing them is exact
+    // in practice.
+    for (const l of layers) flushDenormals(l.W);
+    for (const l of policyChain) flushDenormals(l.W);
+    if (perPowerPolicyHeads) for (const l of perPowerPolicyHeads.values()) flushDenormals(l.W);
     let maxDim = 0;
     for (const l of layers) if (l.outDim > maxDim) maxDim = l.outDim;
     for (const l of policyChain) if (l.outDim > maxDim) maxDim = l.outDim;
@@ -170,6 +188,20 @@ export class Mlp {
       && this.policyChain.length <= 1
       && (this.perPowerPolicyHeads === null || this.perPowerPolicyHeads.size === 0)
     );
+    // bf16 trunk: keep a bf16 copy of W1/W2 and route both native entry
+    // points through the bf16 kernels. The fp32 W1/W2 are still what the
+    // wrappers receive; they're ignored in favour of the bf16 copies.
+    const bf16 = this.nativeOk ? loadNativeMlpBf16() : null;
+    if (bf16 !== null) {
+      const W1h = toBf16(this.layers[0]!.W);
+      const W2h = toBf16(this.layers[1]!.W);
+      this.native = ((_W1, b1, _W2, b2, Wv, bv, Wp, bp, input, h1Buf, h2Buf, valueOut, policyOut, inDim, h1, h2, valueDim, policyDim) => {
+        bf16.forward(W1h, b1, W2h, b2, Wv, bv, Wp, bp, input, h1Buf, h2Buf, valueOut, policyOut, inDim, h1, h2, valueDim, policyDim);
+      }) as NativeMlpForward;
+      this.nativeValueOnly = ((_W1, b1, _W2, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim) =>
+        bf16.valueOnly(W1h, b1, W2h, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim)
+      ) as NativeMlpValueOnly;
+    }
   }
 
   /**

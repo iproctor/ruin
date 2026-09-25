@@ -4,7 +4,7 @@ import {
   sampleLegalSummoningAction,
 } from '@ruin/engine';
 import { appendFileSync } from 'node:fs';
-import { type MctsNode, createNode, ucb1, puct, puctForUntriedAction } from './node.js';
+import { type MctsNode, type QBounds, createNode, ucb1, puct, puctForUntriedAction, childQBounds } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
 import {
@@ -21,6 +21,23 @@ export interface MctsOptions {
   timeMs?: number;
   /** UCB1 exploration constant (default √2 ≈ 1.414). */
   explorationC?: number;
+  /**
+   * Node-local min-max Q normalization for PUCT (MuZero-style). When set,
+   * each AZ-style selection rescales the acting power's child Qs to [0,1]
+   * using the min/max over visited siblings (span floored at this value), so
+   * the exploration constant is independent of how compressed a power's
+   * value head is. Defaults to DEFAULT_Q_NORM_MIN_SPAN; 0 = off (raw Q).
+   */
+  normalizeQMinSpan?: number;
+  /**
+   * Determinized search (hidden information + chance). 0 = search the true
+   * state (sees every hand, deck order and the real future dice). K >= 1 =
+   * run K independent trees, each on its own determinization of what
+   * `forPower` cannot know (fresh dice seed, opponents' hands re-dealt from
+   * hand+deck, every deck and the world deck shuffled), splitting the
+   * iteration/time budget evenly, then merge root statistics.
+   */
+  determinizations?: number;
   /** Override rollout depth. 0 = pure value head at leaf (no rollout). */
   rolloutDepth?: number;
   /**
@@ -88,12 +105,28 @@ export interface MctsOptions {
 const DEFAULT_ITERATIONS = 100000;
 const DEFAULT_TIME_MS = 400;
 const DEFAULT_EXPLORATION_C = Math.SQRT2;
+// Node-local min-max Q normalization (see MctsOptions.normalizeQMinSpan).
+// Sep 25 2026 paired-seed bench (~100 games/arm, one power switched on,
+// others off): positive for all four powers — xarm +9.6pp win, gormen +5.2 VP
+// (3.3 sigma), tenzen +1.5 VP, lasha +0.8 VP. Raw g/t/l value spreads (~0.08)
+// were smaller than PUCT's exploration term, so search mostly echoed priors.
+const DEFAULT_Q_NORM_MIN_SPAN = 0.05;
+// Determinized search by default. Until Sep 25 2026 search ran on the true
+// state: it saw every opponent's hand, all deck orders and the real future
+// dice (dice are f(rngSeed, actionCount)), so move values for anything
+// touching battle were single clairvoyant samples — and the browser bot saw
+// the human's hand. Paired-seed bench, one power fair vs 3 clairvoyant:
+// K=1 worst (xarm -15pp, lasha -19pp), K=4 best of the fair variants
+// (xarm -3.5pp, lasha -14pp), K=8 ~K=4. Set 0 for the legacy true-state search.
+const DEFAULT_DETERMINIZATIONS = 4;
 const DEFAULT_FORCED_PLAYOUT_FACTOR = 2.0;
 const DEFAULT_FORCED_PLAYOUT_MAX = 16;
 const DEFAULT_FORCED_PLAYOUT_MIN_NOISE = 0.002;
 
 interface RootPriorInfo {
   priors: (action: Action) => number;
+  /** Priors before Dirichlet noise (what the policy head actually said). */
+  cleanPriors: (action: Action) => number;
   noisePriors: ((action: Action) => number) | null;
 }
 
@@ -151,6 +184,7 @@ function makeRootPriorInfoFromRaw(
     }
   }
 
+  const cleanPriors = actionPriors.slice();
   // 3. Dirichlet noise per legal action (NOT per slot — per-slot noise
   // duplicates mass across same-slot actions and inflates effective noise).
   if (dirichlet && N > 0) {
@@ -200,8 +234,11 @@ function makeRootPriorInfoFromRaw(
     for (let i = 0; i < N; i++) noiseByAction.set(rootActions[i]!, noisePriors[i]!);
   }
 
+  const cleanByAction = new Map<Action, number>();
+  for (let i = 0; i < N; i++) cleanByAction.set(rootActions[i]!, cleanPriors[i]!);
   return {
     priors: (action: Action) => priorByAction.get(action) ?? (1 / N),
+    cleanPriors: (action: Action) => cleanByAction.get(action) ?? (1 / N),
     noisePriors: noisePriors
       ? (action: Action) => noiseByAction.get(action) ?? 0
       : null,
@@ -327,6 +364,7 @@ type MctsRunResult =
       root: MctsNode;
       legalRoot: Action[];
       priors: ((a: Action) => number) | null;
+      cleanPriors: ((a: Action) => number) | null;
       forcedRootVisits: ((a: Action) => number) | null;
       usePuct: boolean;
       iteration: number;
@@ -373,13 +411,11 @@ function runMctsCore(
 
   // Policy head guides PUCT to focus search across the full legal-action space.
   const rawPolicy = policyForState(state, forPower);
-  const root = createNode(state, null, null, null, forPower, [...legalRoot]);
   const rootPriorInfo = rawPolicy !== null
     ? makeRootPriorInfoFromRaw(rawPolicy, state, legalRoot, forPower, options?.dirichletNoise)
     : null;
   const priors = rootPriorInfo?.priors ?? null;
-  const forcedRootVisits = makeForcedRootVisits(rootPriorInfo?.noisePriors ?? null, maxIterations, options);
-  root.childPriors = priors;
+  const cleanPriors = rootPriorInfo?.cleanPriors ?? null;
   const usePuct = priors !== null;
 
   // Default to r0 (-1, skip rollout) when a per-power model is loaded —
@@ -390,7 +426,69 @@ function runMctsCore(
     modelForPowerLoaded(forPower) ? -1 : rolloutDepthForRound(state.round)
   );
   const t0 = Date.now();
-  const deadline = t0 + maxTimeMs;
+  const K = Math.max(0, Math.floor(options?.determinizations ?? DEFAULT_DETERMINIZATIONS));
+  if (K === 0) {
+    const forcedRootVisits = makeForcedRootVisits(rootPriorInfo?.noisePriors ?? null, maxIterations, options);
+    const root = createNode(state, null, null, null, forPower, [...legalRoot]);
+    root.childPriors = priors;
+    const r = searchTree(root, forPower, maxIterations, t0 + maxTimeMs, explorationC, usePuct, forcedRootVisits, rolloutDepth, options);
+    return {
+      forced: false, root, legalRoot, priors, cleanPriors, forcedRootVisits, usePuct,
+      iteration: r.iteration, elapsed: Date.now() - t0,
+      hitTimeCap: r.iteration < maxIterations, hitIterCap: r.iteration >= maxIterations,
+      sumLeafDepth: r.sumLeafDepth, leafCount: r.leafCount, maxDepth: r.maxDepth, rootTrace: r.rootTrace,
+    };
+  }
+
+  // Determinized: K trees over sampled hidden info + dice, same root actions
+  // (the mover's own options don't depend on anything hidden from it).
+  const perTree = Math.max(1, Math.floor(maxIterations / K));
+  const perTreeForced = makeForcedRootVisits(rootPriorInfo?.noisePriors ?? null, perTree, options);
+  const rng = Math.random;
+  const trees: MctsNode[] = [];
+  let iteration = 0, sumLeafDepth = 0, leafCount = 0, maxDepth = 0;
+  let rootTrace: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }> = [];
+  for (let k = 0; k < K; k++) {
+    const det = determinizeForViewer(state, forPower, rng);
+    const tree = createNode(det, null, null, null, forPower, [...legalRoot]);
+    tree.childPriors = priors;
+    const r = searchTree(tree, forPower, perTree, t0 + (maxTimeMs * (k + 1)) / K, explorationC, usePuct, perTreeForced, rolloutDepth, options);
+    trees.push(tree);
+    iteration += r.iteration; sumLeafDepth += r.sumLeafDepth; leafCount += r.leafCount;
+    if (r.maxDepth > maxDepth) maxDepth = r.maxDepth;
+    if (k === 0) rootTrace = r.rootTrace;
+  }
+  const root = mergeRoots(state, forPower, legalRoot, trees, priors);
+  const forcedRootVisits = perTreeForced ? (a: Action) => K * perTreeForced(a) : null;
+  return {
+    forced: false, root, legalRoot, priors, cleanPriors, forcedRootVisits, usePuct,
+    iteration, elapsed: Date.now() - t0,
+    hitTimeCap: iteration < perTree * K, hitIterCap: iteration >= perTree * K,
+    sumLeafDepth, leafCount, maxDepth, rootTrace,
+  };
+}
+
+interface TreeSearchResult {
+  iteration: number;
+  sumLeafDepth: number;
+  leafCount: number;
+  maxDepth: number;
+  rootTrace: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }>;
+}
+
+/** Run MCTS iterations on one tree until the iteration or time cap. */
+function searchTree(
+  root: MctsNode,
+  forPower: Power,
+  maxIterations: number,
+  deadline: number,
+  explorationC: number,
+  usePuct: boolean,
+  forcedRootVisits: ((a: Action) => number) | null,
+  rolloutDepth: number,
+  options?: MctsOptions,
+): TreeSearchResult {
+  const state = root.state;
   let iteration = 0;
   let sumLeafDepth = 0;
   let leafCount = 0;
@@ -398,7 +496,7 @@ function runMctsCore(
   const rootTrace: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }> = [];
 
   while (iteration < maxIterations && Date.now() < deadline) {
-    const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0, forcedRootVisits);
+    const selected = select(root, explorationC, usePuct, options?.xarmSuppression ?? 0, forcedRootVisits, options?.normalizeQMinSpan ?? DEFAULT_Q_NORM_MIN_SPAN);
     const expanded = expand(selected, forPower, rolloutDepth < 0);
     // Track depth so probeMctsSearch can report tree shape. Cheap (one
     // pointer walk per iter); always-on rather than conditional.
@@ -428,24 +526,74 @@ function runMctsCore(
     backpropagate(expanded, score);
     iteration += 1;
   }
-  const elapsed = Date.now() - t0;
+  return { iteration, sumLeafDepth, leafCount, maxDepth, rootTrace };
+}
 
-  return {
-    forced: false,
-    root,
-    legalRoot,
-    priors,
-    forcedRootVisits,
-    usePuct,
-    iteration,
-    elapsed,
-    hitTimeCap: iteration < maxIterations,
-    hitIterCap: iteration >= maxIterations,
-    sumLeafDepth,
-    leafCount,
-    maxDepth,
-    rootTrace,
+/**
+ * Sample one world consistent with what `viewer` can see: a fresh dice/draw
+ * seed, every other power's hand re-dealt from its hand+deck pool (hand size
+ * is public, contents are not), and all deck orders plus the world deck
+ * shuffled. Discards, board and the viewer's own hand are public/known.
+ */
+export function determinizeForViewer(state: GameState, viewer: Power, rng: () => number): GameState {
+  const shuffled = <T>(arr: readonly T[]): T[] => {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const t = a[i]!; a[i] = a[j]!; a[j] = t;
+    }
+    return a;
   };
+  const powers = { ...state.powers };
+  for (const p of state.activePowers) {
+    const ps = state.powers[p];
+    if (p === viewer) {
+      powers[p] = { ...ps, deckIds: shuffled(ps.deckIds) };
+    } else {
+      const pool = shuffled([...ps.hand, ...ps.deckIds]);
+      powers[p] = { ...ps, hand: pool.slice(0, ps.hand.length), deckIds: pool.slice(ps.hand.length) };
+    }
+  }
+  return {
+    ...state,
+    powers,
+    worldDeck: shuffled(state.worldDeck),
+    rngSeed: Math.floor(rng() * 0x100000000) >>> 0,
+  };
+}
+
+/** Sum K determinized trees' root statistics into one synthetic root. */
+function mergeRoots(
+  state: GameState,
+  forPower: Power,
+  legalRoot: Action[],
+  trees: MctsNode[],
+  priors: ((a: Action) => number) | null,
+): MctsNode {
+  const root = createNode(state, null, null, null, forPower, []);
+  root.childPriors = priors;
+  const byAction = new Map<Action, MctsNode>();
+  for (const tree of trees) {
+    root.visits += tree.visits;
+    for (const p of ALL_POWERS) root.totalScores[p] += tree.totalScores[p];
+    for (const child of tree.children) {
+      if (child.action === null) continue;
+      let m = byAction.get(child.action);
+      if (!m) {
+        m = createNode(child.state, child.action, child.power, root, forPower, [], child.prior);
+        byAction.set(child.action, m);
+      }
+      m.visits += child.visits;
+      for (const p of ALL_POWERS) m.totalScores[p] += child.totalScores[p];
+    }
+  }
+  // Keep legal-root order so ties in bestAction resolve deterministically.
+  for (const a of legalRoot) {
+    const m = byAction.get(a);
+    if (m) root.children.push(m);
+    else root.untriedActions.push(a);
+  }
+  return root;
 }
 
 /**
@@ -503,6 +651,13 @@ export interface MctsStats {
   searchVisitCounts: Array<{ action: Action; visits: number }>;
   /** Diagnostic root rows: raw visits plus action prior and root-child Q. */
   searchDebugRows: Array<{ action: Action; visits: number; prior: number; q: number }>;
+  /**
+   * Visit-weighted mean backed-up value at the root, per power (the search's
+   * own estimate of each power's outcome from this state). Absent for forced
+   * single-action roots. Recorded in self-play so training can blend the
+   * noisy game-outcome value target with this lower-variance estimate.
+   */
+  rootQ?: Record<Power, number>;
   /** Probe-only root child backed up per early iteration. */
   rootTrace?: Array<{ iteration: number; action: Action; leafDepth: number; score: number; path: Action[] }>;
 }
@@ -527,14 +682,23 @@ export function runMctsWithStats(
       searchDebugRows.push({
         action: child.action,
         visits: child.visits,
-        prior: res.priors ? res.priors(child.action) : child.prior,
+        prior: res.cleanPriors ? res.cleanPriors(child.action) : child.prior,
         q: child.visits > 0 ? child.totalScores[child.action.power] / child.visits : NaN,
       });
     }
   }
+  // Unexpanded root actions (visits 0) so consumers building targets from
+  // priors + Q see every legal move, not only the ones search reached.
+  for (const a of res.root.untriedActions) {
+    searchDebugRows.push({ action: a, visits: 0, prior: res.cleanPriors ? res.cleanPriors(a) : NaN, q: NaN });
+  }
   const action = bestAction(res.root);
   const visitCounts = pruneForcedPolicyTarget(res.root, res.forcedRootVisits);
-  return { action, visitCounts, searchVisitCounts, searchDebugRows, rootTrace: res.rootTrace };
+  const rv = Math.max(1, res.root.visits);
+  const rootQ = Object.fromEntries(
+    (Object.keys(res.root.totalScores) as Power[]).map(p => [p, res.root.totalScores[p] / rv]),
+  ) as Record<Power, number>;
+  return { action, visitCounts, searchVisitCounts, searchDebugRows, rootQ, rootTrace: res.rootTrace };
 }
 
 function pruneForcedPolicyTarget(
@@ -759,6 +923,7 @@ function select(
   usePuct: boolean,
   xarmSup: number,
   forcedRootVisits: ((action: Action) => number) | null = null,
+  normMinSpan: number = 0,
 ): MctsNode {
   const useAzStyle = modelForPowerLoaded(node.forPower);
   let current = node;
@@ -789,10 +954,11 @@ function select(
     }
 
     // AZ-style: score children + untried jointly.
+    const bounds: QBounds = usePuct && normMinSpan > 0 ? childQBounds(current, xarmSup, normMinSpan) : null;
     let bestChildScore = -Infinity;
     let bestChild: MctsNode | null = null;
     for (const child of current.children) {
-      const s = usePuct ? puct(child, explorationC, xarmSup) : ucb1(child, explorationC, xarmSup);
+      const s = usePuct ? puct(child, explorationC, xarmSup, bounds) : ucb1(child, explorationC, xarmSup);
       if (s > bestChildScore) { bestChildScore = s; bestChild = child; }
     }
 
@@ -808,7 +974,7 @@ function select(
         for (let i = 0; i < current.untriedActions.length; i++) {
           const action = current.untriedActions[i]!;
           const prior = current.childPriors !== null ? current.childPriors(action) : fallbackPrior;
-          const s = puctForUntriedAction(current, action, prior, explorationC, xarmSup);
+          const s = puctForUntriedAction(current, action, prior, explorationC, xarmSup, bounds);
           if (s > bestUntriedScore) { bestUntriedScore = s; bestUntriedIdx = i; }
         }
       } else {

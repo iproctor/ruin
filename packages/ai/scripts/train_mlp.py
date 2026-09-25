@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--policy-hidden", type=int, default=0,
                     help="Width of optional ReLU hidden layer between trunk and final policy projection. 0 = single linear projection (legacy).")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--q-blend", type=float, default=0.0,
+                    help="Blend weight toward each row's recorded root search value (row['q']). 0 = pure outcome target.")
     ap.add_argument("--policy-alpha", type=float, default=1.0,
                     help="Weight on policy loss (relative to value loss).")
     ap.add_argument("--reweight-cap", type=float, default=1.5,
@@ -89,8 +91,12 @@ def parse_args() -> argparse.Namespace:
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 
-def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def load_jsonl(path: str, q_blend: float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
+    q_blend: when > 0 and a row carries "q" (root search value per power),
+    the value target becomes (1 - q_blend) * t + q_blend * q. Rows without
+    "q" keep the pure outcome target.
+
     Returns (X, T, P, has_policy, power_idx, game_id):
       X         (N, D)   — features
       T         (N, 4)   — soft value targets
@@ -114,7 +120,11 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
                 max_dim = len(x)
             xs.append(x)
             if "t" in obj:
-                ts.append(obj["t"])
+                t = obj["t"]
+                q = obj.get("q")
+                if q_blend > 0 and q is not None and len(q) == len(t):
+                    t = [(1 - q_blend) * tv + q_blend * qv for tv, qv in zip(t, q)]
+                ts.append(t)
             else:
                 soft = [0.0, 0.0, 0.0, 0.0]
                 soft[int(obj["y"])] = 1.0
@@ -152,6 +162,22 @@ def load_jsonl(path: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarra
     PI = np.array(pwr, dtype=np.int32)
     G = np.array(gid, dtype=np.int64)
     return X, T, P, M, PI, G
+
+
+def flush_denormals(model) -> int:
+    """Zero weights in the float32 denormal range. L2 decay parks dead weights
+    there (38% of xarm's W1 at iter 4134); on Intel each one costs a microcode
+    assist in both numpy matmuls and the native MCTS forward. Returns count."""
+    tiny = np.finfo(np.float32).tiny
+    n = 0
+    for name in list(model._adam.keys()):
+        a = getattr(model, name, None)
+        if a is None:
+            continue
+        m = (a != 0) & (np.abs(a) < tiny)
+        n += int(m.sum())
+        a[m] = 0
+    return n
 
 
 # ── Model ────────────────────────────────────────────────────────────────────
@@ -510,7 +536,7 @@ def main() -> int:
     print()
 
     _t_load = time.time()
-    X, T_value, T_policy, has_policy, power_idx, game_id = load_jsonl(args.in_path)
+    X, T_value, T_policy, has_policy, power_idx, game_id = load_jsonl(args.in_path, args.q_blend)
     n, d = X.shape
     print(f"loaded {n} samples, feature dim {d}  ({time.time() - _t_load:.1f}s)")
     print(f"policy rows: {int(has_policy.sum())} / {n}  ({100 * has_policy.mean():.1f}%)")
@@ -715,6 +741,9 @@ def main() -> int:
                 model._adam[name] = (np.zeros_like(arr), np.zeros_like(arr))
             model._step = 0
             print(f"warm-started from {args.warm_start}{' [' + args.power + ']' if args.power else ''}")
+            nd = flush_denormals(model)
+            if nd:
+                print(f"[warm-start] flushed {nd} denormal weights to zero")
         else:
             print(f"[WARN] warm-start model version {old.get('version')} — skipping")
     n_tr = len(Tv_tr)
@@ -812,9 +841,13 @@ def main() -> int:
         for k, v in best_snap.items():
             setattr(model, k, v)
 
-    Path(args.out_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out_path, "w") as f:
+    flush_denormals(model)
+    out_path = Path(args.out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_out_path = out_path.with_name(f".{out_path.name}.tmp")
+    with open(tmp_out_path, "w") as f:
         json.dump(model.to_json(d, args.hidden1, args.hidden2, 4, ACTION_DIM, iter_num=args.iter), f)
+    os.replace(tmp_out_path, out_path)
     print(f"\nsaved model to {args.out_path}\n")
     return 0
 

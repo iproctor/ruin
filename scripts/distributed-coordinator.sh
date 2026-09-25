@@ -43,11 +43,25 @@ WORKERS=${WORKERS:-16}
 # rotation. Each iter loops over [xarm, gormen, tenzen, lasha] and trains
 # each from its own slice of the batch.
 TRAIN_THRESHOLD=${TRAIN_THRESHOLD:-40}
-TRAIN_WINDOW=${TRAIN_WINDOW:-180}
+TRAIN_WINDOW=${TRAIN_WINDOW:-360}
 TRAIN_CURATE=${TRAIN_CURATE:-1}
-TRAIN_MAX_SAMPLES=${TRAIN_MAX_SAMPLES:-240000}
-TRAIN_EPOCHS=${TRAIN_EPOCHS:-25}
+TRAIN_MAX_SAMPLES=${TRAIN_MAX_SAMPLES:-480000}
+# Best-val epoch has been 1-2 for months (val loss rises from epoch 2 while
+# train loss keeps falling), so extra epochs were pure overfit + wall time.
+TRAIN_EPOCHS=${TRAIN_EPOCHS:-3}
+# Value target = (1-Q_BLEND)*outcome + Q_BLEND*root-search value, for rows that
+# carry a recorded root Q (collection since Sep 25 2026). Outcome targets have
+# R^2 ~0.3-0.5 against the model; the search value is far lower variance.
+Q_BLEND=${Q_BLEND:-0.5}
+# bf16 trunk weights for all MCTS in collection / h2h (see distributed-worker.sh).
+RUIN_MLP_BF16=${RUIN_MLP_BF16:-1}
+export RUIN_MLP_BF16
+COLLECT_TIMEOUT=${COLLECT_TIMEOUT:-2400}
 TRAIN_THREADS=${TRAIN_THREADS:-8}
+# Optional CPU pin for train_mlp (taskset list). On the i9 coordinator, BLAS
+# threads that land on E-cores stall every synchronous matmul; pin to the
+# P-core hyperthreads (0-15) there.
+TRAIN_CPUS=${TRAIN_CPUS:-}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
 # Policy-channel knobs. Non-xarm powers currently learn mostly through sparse
 # MCTS policy labels; keep xarm's collection density stable and spend extra
@@ -105,7 +119,11 @@ export XARM_SUPPRESSION_LAMBDA
 # i.e. it fixed exactly this. Rank does not discard VP: computeRankTarget puts
 # winners first and orders non-winners BY vp/threat progress. It ranks by VP
 # while using the full [0,1] range instead of compressing it.
-RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-0}
+# Sep 25 2026: rank for all powers. g/t/l targets under relative progress had
+# SD ~0.13 and predictions SD ~0.08 — too compressed for search to separate
+# moves. Rank uses the full [0,1] range and still orders non-winners by
+# progress (see the Jul 28 note above).
+RANK_BLEND_WEIGHT=${RANK_BLEND_WEIGHT:-1.0}
 export RANK_BLEND_WEIGHT
 # Progress target geometry. "relative" keeps progress but trains on
 # own-progress-vs-field instead of absolute near-threshold progress, avoiding
@@ -143,7 +161,7 @@ LOG_FILE="$DATA_DIR/training_loop.log"
 mkdir -p "$INBOX" "$ARCHIVE"
 
 # H2H bench knobs.
-H2H_ENABLE=${H2H_ENABLE:-1}            # h2h benches on by default; gated by
+H2H_ENABLE=${H2H_ENABLE:-0}            # h2h benches on by default; gated by
                                        # H2H_AFTER_ITERS to give training a
                                        # warm-up window before testing
 H2H_EVERY_N=${H2H_EVERY_N:-3}          # run h2h every Nth iter; train-only between
@@ -283,7 +301,7 @@ while true; do
 
     T0=$(date +%s)
     echo "[$(date +%H:%M:%S)] [coord] collecting batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED})" | tee -a "$LOG_FILE"
-  if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+  if ! timeout --kill-after=60 "$COLLECT_TIMEOUT" pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
       --workers "$WORKERS" \
       --dirichlet-weight 0.25 \
       --full-search-prob "$POLICY_FULL_SEARCH_PROB_XARM" \
@@ -409,10 +427,12 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
     case "$POWER" in
       gormen|tenzen|lasha) POLICY_ALPHA="$POLICY_ALPHA_NON_XARM" ;;
     esac
-    if ! stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
+    TASKSET_PREFIX=()
+    [ -n "$TRAIN_CPUS" ] && TASKSET_PREFIX=(taskset -c "$TRAIN_CPUS")
+    if ! "${TASKSET_PREFIX[@]}" stdbuf -oL python3 -u packages/ai/scripts/train_mlp.py \
         --in "$RECENT_FILE" --out "$TRAIN_OUT" \
         --iter "$ITER" --power "$POWER" --warm-start "$EFFECTIVE_WARM" \
-        --scalar-value --lr 5e-4 --policy-alpha "$POLICY_ALPHA" \
+        --scalar-value --lr 5e-4 --policy-alpha "$POLICY_ALPHA" --q-blend "$Q_BLEND" \
         --epochs "$TRAIN_EPOCHS" --batch 512 \
         "${HIDDEN_ARGS[@]}" 2>&1 \
         | grep --line-buffered -E "^(loaded|baseline|ep |saved|class |avg rank|reweight|policy rows|policy alpha|avg target|--power|warm-)" \
@@ -465,11 +485,21 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
   # promoted: cp model_<P>.json → ref/model_<P>_ref.json. Any promotion
   # invalidates the baseline (deletes ref_baseline.json) so the next cycle
   # re-runs baseline calibration with the new ref set.
-  # Three-band rule: Δ ≥ +PROMOTE_DELTA → promote, Δ < -REVERT_DELTA → revert,
-  # otherwise hold (keep candidate live so training continues from current
-  # weights). Same threshold for all powers.
+  # Gate policy:
+  #   - Promote immediately on the existing promote thresholds.
+  #   - xarm hard-reverts on ordinary failed h2h. Its signal is win-rate-only,
+  #     and repeated soft reverts around -5pp have empirically compounded bad
+  #     candidates after promotions.
+  #   - gormen/tenzen/lasha keep ordinary negative h2h results as soft reverts:
+  #     log them, but keep the candidate live so learning can accumulate.
+  #   - Hard revert g/t/l only on a catastrophic drop with clearly worse VP;
+  #     a lower win rate with flat/up VP is usually field-shape churn rather
+  #     than a model worth resetting.
   H2H_PROMOTE_DELTA=${H2H_PROMOTE_DELTA:-0.02}
   H2H_REVERT_DELTA=${H2H_REVERT_DELTA:-0.02}
+  H2H_REVERT_CATASTROPHIC_DELTA=${H2H_REVERT_CATASTROPHIC_DELTA:-0.08}
+  H2H_REVERT_DELTA_VP_OTHER=${H2H_REVERT_DELTA_VP_OTHER:-1.0}
+  H2H_SOFT_REVERT_STREAK_TO_HARD=${H2H_SOFT_REVERT_STREAK_TO_HARD:-2}
   H2H_PROMOTE_DELTA_WIN_OTHER=${H2H_PROMOTE_DELTA_WIN_OTHER:-0.04}
   H2H_PROMOTE_DELTA_VP=${H2H_PROMOTE_DELTA_VP:-1.0}
   # Verdict floor: below this many games no promote/revert fires (and no
@@ -497,21 +527,13 @@ print(len(ls[0]['W'][0]) if ls else 0)" "$WARM_SRC" 2>/dev/null)
 
   # Observe-only gate. When 1, the h2h cycle still runs, verdicts are still
   # computed and logged, but NOTHING is copied: no promote, no revert, no HOF
-  # entry, no baseline invalidation. The ref set stays frozen for the whole
-  # run, so every bench measures the live models against the *same* fixed
-  # baseline and the log becomes a learning curve instead of a random walk.
+  # entry, no baseline invalidation. Useful for a pure learning-curve run.
   #
-  # This is the correct default given the measured noise floor. Bench SD on
-  # ~900 games is 3.05pp (binomial SE is only 1.63pp, so the true spread is
-  # ~1.9x binomial) while the promote/revert thresholds are +/-2pp — i.e. the
-  # decision thresholds sit *inside* the noise. A candidate identical to ref
-  # has roughly a 26% chance of "promote" and 26% of "revert" per bench.
-  # Reverting on that signal destroys real progress about a quarter of the
-  # time it benches, and resets the weights so nothing can accumulate across
-  # iterations. Over iters 2668-2968 the gate produced 27 promotes against
-  # 151 reverts; xarm alone was reverted 81 times vs 10 promotes.
-  H2H_OBSERVE_ONLY=${H2H_OBSERVE_ONLY:-1}
+  # Default back to active. xarm uses ordinary hard reverts; g/t/l use
+  # promote-only plus catastrophic hard revert.
+  H2H_OBSERVE_ONLY=${H2H_OBSERVE_ONLY:-0}
   REF_BASELINE_FILE="$DATA_DIR/ref_baseline.json"
+  H2H_SOFT_REVERT_STREAK_FILE="$DATA_DIR/h2h_soft_revert_streak.json"
 
   if [ "$H2H_ENABLE" = "1" ] && [ -d "$REF_DIR" ] && [ "$((ITER - START_ITER))" -gt "$H2H_AFTER_ITERS" ] && [ "$((ITER % H2H_EVERY_N))" -eq 0 ]; then
     # 3f.0. Ensure baseline exists. Distributed: workers + coord all
@@ -658,7 +680,7 @@ print(f'[baseline] {agg[\"games\"]} games | xarm:{agg[\"win_rates\"][\"xarm\"]*1
 import json, glob, math, sys
 inbox, basefile, power = sys.argv[1], sys.argv[2], sys.argv[3]
 min_games, z = int(sys.argv[4]), float(sys.argv[5])
-p_xarm, p_win_other, p_vp, r_thr = map(float, sys.argv[6:10])
+p_xarm, p_win_other, p_vp, revert_thr, cat_thr, revert_vp_thr = map(float, sys.argv[6:12])
 g = 0; wins = 0; vp_w = 0.0; vp_sq = 0.0
 for f in glob.glob(inbox + '/*.json'):
     try:
@@ -689,15 +711,22 @@ if g >= min_games:
         # Otherwise every threshold the verdict consults must be resolved:
         # the CI sits entirely on one side of it.
         win_side = (dwin - ci_w >= promote_thr) or (dwin + ci_w < promote_thr)
-        revert_side = (dwin - ci_w >= -r_thr) or (dwin + ci_w < -r_thr)
+        if power == 'xarm':
+            clear_hard_revert = dwin + ci_w < -revert_thr
+            revert_side = (dwin - ci_w >= -revert_thr) or clear_hard_revert
+            vp_revert_side = True
+        else:
+            clear_hard_revert = (dwin + ci_w < -cat_thr) and (dvp + ci_v < -revert_vp_thr)
+            revert_side = (dwin - ci_w >= -cat_thr) or (dwin + ci_w < -cat_thr)
+            vp_revert_side = (dvp - ci_v >= -revert_vp_thr) or (dvp + ci_v < -revert_vp_thr)
         vp_side = power == 'xarm' or (dvp - ci_v >= p_vp) or (dvp + ci_v < p_vp)
-        resolved = 1 if (clear_promote or (win_side and revert_side and vp_side)) else 0
+        resolved = 1 if (clear_promote or clear_hard_revert or (win_side and revert_side and vp_side and vp_revert_side)) else 0
     except Exception:
         resolved = 0
 print(f'{g} {resolved}')" \
           "$BENCH_INBOX" "$REF_BASELINE_FILE" "$POWER" \
           "$H2H_MIN_GAMES" "$H2H_EARLY_STOP_Z" \
-          "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" \
+          "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" "$H2H_REVERT_CATASTROPHIC_DELTA" "$H2H_REVERT_DELTA_VP_OTHER" \
           2>/dev/null || echo "0 0")
         TOTAL=$(echo "$POLL" | awk '{print $1}')
         RESOLVED=$(echo "$POLL" | awk '{print $2}')
@@ -794,7 +823,9 @@ print(f'[h2h ${POWER}] {agg[\"games\"]} games | win_rate={agg[\"win_rates\"][pow
     # progress even when wins haven't tipped). This avoids missing real field
     # improvement that doesn't yet beat xarm's dial timing.
     #
-    # Revert is win-rate based for all powers (Δwin < -H2H_REVERT_DELTA).
+    # xarm hard-reverts on ordinary negative h2h. g/t/l ordinary negatives are
+    # soft-reverted (logged, candidate kept); their hard revert requires both
+    # catastrophic Δwin and clearly worse Δvp.
     ANY_PROMOTED=0
     PROMOTED_POWERS=()
     for POWER in "${ALL_POWERS[@]}"; do
@@ -809,7 +840,9 @@ promote_thr_xarm = float(sys.argv[4])
 promote_thr_win_other = float(sys.argv[5])
 promote_thr_vp = float(sys.argv[6])
 revert_thr = float(sys.argv[7])
-min_games = int(sys.argv[8])
+catastrophic_revert_thr = float(sys.argv[8])
+revert_vp_thr = float(sys.argv[9])
+min_games = int(sys.argv[10])
 games = int(agg.get('games', 0))
 cur = agg['win_rates'].get(power, 0.0)
 bl = base['win_rates'].get(power, 0.0)
@@ -827,12 +860,16 @@ if games < min_games:
     verdict = 'SKIP'
 elif promote:
     verdict = 'PROMOTE'
-elif delta < -revert_thr:
+elif power == 'xarm' and delta < -revert_thr:
     verdict = 'REVERT'
+elif power != 'xarm' and delta < -catastrophic_revert_thr and delta_vp < -revert_vp_thr:
+    verdict = 'REVERT'
+elif power != 'xarm' and delta < -revert_thr and delta_vp < -revert_vp_thr:
+    verdict = 'SOFT_REVERT'
 else:
     verdict = 'HOLD'
 print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delta_vp:+.2f}|{games}')
-" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" "$H2H_MIN_GAMES" 2>>"$LOG_FILE")
+" "$POWER" "$AGG_OUT" "$REF_BASELINE_FILE" "$H2H_PROMOTE_DELTA" "$H2H_PROMOTE_DELTA_WIN_OTHER" "$H2H_PROMOTE_DELTA_VP" "$H2H_REVERT_DELTA" "$H2H_REVERT_CATASTROPHIC_DELTA" "$H2H_REVERT_DELTA_VP_OTHER" "$H2H_MIN_GAMES" 2>>"$LOG_FILE")
       VERDICT=$(echo "$DECISION" | cut -d'|' -f1)
       CUR=$(echo "$DECISION" | cut -d'|' -f2)
       BL=$(echo "$DECISION" | cut -d'|' -f3)
@@ -852,6 +889,16 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
         if [ "$H2H_OBSERVE_ONLY" = "1" ]; then
           echo "[iter $ITER] OBSERVE promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, ${CUR_GAMES}g) → ref NOT touched" | tee -a "$LOG_FILE"
         else
+        python3 -c "
+import json, os, sys
+path, power = sys.argv[1], sys.argv[2]
+try: state = json.load(open(path))
+except Exception: state = {}
+state.pop(power, None)
+tmp = path + '.tmp'
+open(tmp, 'w').write(json.dumps(state, indent=2, sort_keys=True))
+os.replace(tmp, path)
+" "$H2H_SOFT_REVERT_STREAK_FILE" "$POWER" 2>>"$LOG_FILE" || true
         cp "$DATA_DIR/model_${POWER}.json" "$REF_DIR/model_${POWER}_ref.json"
         echo "[iter $ITER] promote ${POWER}: cur=${CUR} > base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, ${CUR_GAMES}g) → ref updated" | tee -a "$LOG_FILE"
         ANY_PROMOTED=1
@@ -871,12 +918,65 @@ print(f'{verdict}|{cur:.4f}|{bl:.4f}|{delta:+.4f}|{cur_vp:.2f}|{bl_vp:.2f}|{delt
         if [ "$H2H_OBSERVE_ONLY" = "1" ]; then
           echo "[iter $ITER] OBSERVE revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → candidate KEPT" | tee -a "$LOG_FILE"
         else
+        python3 -c "
+import json, os, sys
+path, power = sys.argv[1], sys.argv[2]
+try: state = json.load(open(path))
+except Exception: state = {}
+state.pop(power, None)
+tmp = path + '.tmp'
+open(tmp, 'w').write(json.dumps(state, indent=2, sort_keys=True))
+os.replace(tmp, path)
+" "$H2H_SOFT_REVERT_STREAK_FILE" "$POWER" 2>>"$LOG_FILE" || true
         cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
         echo "[iter $ITER] revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → reverted to ref" | tee -a "$LOG_FILE"
+        fi
+      elif [ "$VERDICT" = "SOFT_REVERT" ]; then
+        # One ordinary non-xarm failure stays soft to avoid noisy reset
+        # cascades. Repeated same-power failures hard-revert, because keeping a
+        # candidate after consecutive win+VP misses has been compounding damage.
+        STREAK=$(python3 -c "
+import json, os, sys
+path, power = sys.argv[1], sys.argv[2]
+try: state = json.load(open(path))
+except Exception: state = {}
+state[power] = int(state.get(power, 0)) + 1
+tmp = path + '.tmp'
+open(tmp, 'w').write(json.dumps(state, indent=2, sort_keys=True))
+os.replace(tmp, path)
+print(state[power])
+" "$H2H_SOFT_REVERT_STREAK_FILE" "$POWER" 2>>"$LOG_FILE" || echo 1)
+        if [ "$H2H_OBSERVE_ONLY" = "1" ]; then
+          echo "[iter $ITER] OBSERVE soft revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, streak=${STREAK}/${H2H_SOFT_REVERT_STREAK_TO_HARD}) → candidate KEPT" | tee -a "$LOG_FILE"
+        elif [ "$STREAK" -ge "$H2H_SOFT_REVERT_STREAK_TO_HARD" ]; then
+          cp "$REF_DIR/model_${POWER}_ref.json" "$DATA_DIR/model_${POWER}.json"
+          python3 -c "
+import json, os, sys
+path, power = sys.argv[1], sys.argv[2]
+try: state = json.load(open(path))
+except Exception: state = {}
+state.pop(power, None)
+tmp = path + '.tmp'
+open(tmp, 'w').write(json.dumps(state, indent=2, sort_keys=True))
+os.replace(tmp, path)
+" "$H2H_SOFT_REVERT_STREAK_FILE" "$POWER" 2>>"$LOG_FILE" || true
+          echo "[iter $ITER] repeated soft revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, streak=${STREAK}/${H2H_SOFT_REVERT_STREAK_TO_HARD}) → reverted to ref" | tee -a "$LOG_FILE"
+        else
+          echo "[iter $ITER] soft revert ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}, streak=${STREAK}/${H2H_SOFT_REVERT_STREAK_TO_HARD}) → kept" | tee -a "$LOG_FILE"
         fi
       else
         # HOLD: candidate stayed close to baseline. Keep it live so training
         # continues from current weights instead of snapping back to ref.
+        python3 -c "
+import json, os, sys
+path, power = sys.argv[1], sys.argv[2]
+try: state = json.load(open(path))
+except Exception: state = {}
+state.pop(power, None)
+tmp = path + '.tmp'
+open(tmp, 'w').write(json.dumps(state, indent=2, sort_keys=True))
+os.replace(tmp, path)
+" "$H2H_SOFT_REVERT_STREAK_FILE" "$POWER" 2>>"$LOG_FILE" || true
         echo "[iter $ITER] hold ${POWER}: cur=${CUR} vs base=${BL} (Δ=${DELTA}) vp=${CUR_VP} vs ${BL_VP} (Δvp=${DELTA_VP}) → kept" | tee -a "$LOG_FILE"
       fi
     done

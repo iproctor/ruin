@@ -48,6 +48,16 @@ export TEMP_ROUNDS
 XARM_SUPPRESSION_LAMBDA=${XARM_SUPPRESSION_LAMBDA:-0}
 export XARM_SUPPRESSION_LAMBDA
 
+# bf16 trunk weights in the native MLP: ~1.5x collection throughput on the
+# bandwidth-bound Ryzen boxes, outputs within ~1e-3 of fp32.
+RUIN_MLP_BF16=${RUIN_MLP_BF16:-1}
+export RUIN_MLP_BF16
+# Hard wall-clock cap per collection batch. A collect-parallel that hangs
+# never exits, so the retry below never fired: hetz5 sat wedged for 74 days
+# (May-Jul 2026) and hetz4 for 54 days (Aug-Sep 2026). A healthy 16-game
+# batch takes a few minutes.
+COLLECT_TIMEOUT=${COLLECT_TIMEOUT:-2400}
+
 LOCAL_ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DATA_DIR="$LOCAL_ROOT/packages/ai/data"
 SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new"
@@ -211,7 +221,7 @@ while true; do
       rm -f "${DATA_DIR}/training.jsonl"
       echo "[$(date +%H:%M:%S)] collect batch ${BATCH_COUNTER} (${GAMES_PER_BATCH} games, seed ${SEED}, iter ${CONFIG_ITER})..."
       T0=$(date +%s)
-      if ! pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
+      if ! timeout --kill-after=60 "$COLLECT_TIMEOUT" pnpm collect:parallel --games "$GAMES_PER_BATCH" --seed "$SEED" \
           --workers "$WORKERS" --epsilon 0 \
           --league-size 0 \
           --hof-mix "$HOF_MIX" \

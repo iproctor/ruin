@@ -131,12 +131,41 @@ export const FPU_REDUCTION = 0.1;
  * Untried child has no Q; we estimate Q via FPU from the parent's average
  * score *from the action's actor's perspective* (not paranoid-flipped).
  */
+/** Min-max bounds for node-local Q normalization (see MctsOptions.normalizeQ). */
+export type QBounds = { lo: number; span: number } | null;
+
+function normQ(q: number, b: QBounds): number {
+  if (b === null) return q;
+  return Math.min(1, Math.max(0, (q - b.lo) / b.span));
+}
+
+/**
+ * Min-max bounds over the visited children of `parent`, from the acting
+ * power's perspective. Span is floored at `minSpan` so a node whose children
+ * all evaluate within noise of each other isn't blown up into a full [0,1]
+ * spread. Returns null with fewer than two visited children.
+ */
+export function childQBounds(parent: MctsNode, xarmSuppression: number, minSpan: number): QBounds {
+  let lo = Infinity, hi = -Infinity, n = 0;
+  for (const child of parent.children) {
+    if (child.visits === 0) continue;
+    const q = effectiveQ(child.totalScores, child.visits, actingPowerForChild(child), xarmSuppression);
+    if (q < lo) lo = q;
+    if (q > hi) hi = q;
+    n++;
+  }
+  if (n < 2) return null;
+  const span = Math.max(hi - lo, minSpan);
+  return { lo: lo - (span - (hi - lo)) / 2, span };
+}
+
 export function puctForUntriedAction(
   parent: MctsNode,
   action: Action,
   prior: number,
   explorationC: number,
   xarmSuppression: number = 0,
+  bounds: QBounds = null,
 ): number {
   const parentVisits = Math.max(1, parent.visits);
   const acting = action.power as Power;
@@ -144,7 +173,9 @@ export function puctForUntriedAction(
   let exploitation: number;
   if (parent.visits > 0) {
     const parentAvg = effectiveQ(parent.totalScores, parent.visits, acting, xarmSuppression);
-    exploitation = Math.max(0, parentAvg - FPU_REDUCTION);
+    exploitation = bounds === null
+      ? Math.max(0, parentAvg - FPU_REDUCTION)
+      : normQ(parentAvg, bounds) - FPU_REDUCTION * 2;
   } else {
     exploitation = 0.5;
   }
@@ -153,17 +184,19 @@ export function puctForUntriedAction(
   return exploitation + exploration;
 }
 
-export function puct(node: MctsNode, explorationC: number, xarmSuppression: number = 0): number {
+export function puct(node: MctsNode, explorationC: number, xarmSuppression: number = 0, bounds: QBounds = null): number {
   const parent = node.parent;
   const parentVisits = parent !== null ? Math.max(1, parent.visits) : Math.max(1, node.visits);
   const acting = actingPowerForChild(node);
 
   let exploitation: number;
   if (node.visits > 0) {
-    exploitation = effectiveQ(node.totalScores, node.visits, acting, xarmSuppression);
+    exploitation = normQ(effectiveQ(node.totalScores, node.visits, acting, xarmSuppression), bounds);
   } else if (parent !== null && parent.visits > 0) {
     const parentAvg = effectiveQ(parent.totalScores, parent.visits, acting, xarmSuppression);
-    exploitation = Math.max(0, parentAvg - FPU_REDUCTION);
+    exploitation = bounds === null
+      ? Math.max(0, parentAvg - FPU_REDUCTION)
+      : normQ(parentAvg, bounds) - FPU_REDUCTION * 2;
   } else {
     exploitation = 0.5;
   }

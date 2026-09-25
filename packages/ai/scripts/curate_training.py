@@ -12,6 +12,7 @@ collection metadata becomes available.
 import argparse
 import json
 import math
+import os
 import random
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -258,16 +259,22 @@ def main() -> int:
         rng.shuffle(rest)
         chosen.update(rest[:max_samples - len(chosen)])
 
-    Path(args.out_path).parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out_path, "w") as f:
+    out_path = Path(args.out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_out_path = out_path.with_name(f".{out_path.name}.tmp")
+    with open(tmp_out_path, "w") as f:
         for i in sorted(chosen):
             f.write(rows[i] + "\n")
+    os.replace(tmp_out_path, out_path)
 
     report = make_report(infos, chosen)
     if args.report:
-        Path(args.report).parent.mkdir(parents=True, exist_ok=True)
-        with open(args.report, "w") as f:
+        report_path = Path(args.report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_report_path = report_path.with_name(f".{report_path.name}.tmp")
+        with open(tmp_report_path, "w") as f:
             json.dump(report, f, indent=2, sort_keys=True)
+        os.replace(tmp_report_path, report_path)
 
     s = report["selected"]
     print(

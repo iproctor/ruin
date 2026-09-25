@@ -41,7 +41,25 @@ export interface NativeMlpValueOnly {
   ): number;
 }
 
+/** bf16-trunk variants: W1/W2 are bfloat16 (upper half of fp32) as Uint16Array. */
+export interface NativeMlpBf16 {
+  forward: (
+    W1: Uint16Array, b1: Float32Array, W2: Uint16Array, b2: Float32Array,
+    Wv: Float32Array, bv: Float32Array, Wp: Float32Array | null, bp: Float32Array | null,
+    input: Float32Array, h1Buf: Float32Array, h2Buf: Float32Array,
+    valueOut: Float32Array, policyOut: Float32Array | null,
+    inDim: number, h1: number, h2: number, valueDim: number, policyDim: number,
+  ) => void;
+  valueOnly: (
+    W1: Uint16Array, b1: Float32Array, W2: Uint16Array, b2: Float32Array,
+    Wv: Float32Array, bv: Float32Array, input: Float32Array,
+    h1Buf: Float32Array, h2Buf: Float32Array, valueOut: Float32Array,
+    inDim: number, h1: number, h2: number, valueDim: number,
+  ) => number;
+}
+
 let cached: NativeMlpForward | null | undefined = undefined;
+let cachedBf16: NativeMlpBf16 | null | undefined = undefined;
 let cachedValueOnly: NativeMlpValueOnly | null | undefined = undefined;
 
 function findLibPath(): string | null {
@@ -94,6 +112,13 @@ export function loadNativeMlp(): NativeMlpForward | null {
     cachedValueOnly = ((W1, b1, W2, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim) =>
       valueFn(W1, b1, W2, b2, Wv, bv, input, h1Buf, h2Buf, valueOut, inDim, h1, h2, valueDim)
     ) as NativeMlpValueOnly;
+    try {
+      const fwd16 = lib.func('void mlp_forward_bf16(uint16_t*, float*, uint16_t*, float*, float*, float*, float*, float*, float*, float*, float*, float*, float*, int, int, int, int, int)');
+      const val16 = lib.func('float mlp_value_only_bf16(uint16_t*, float*, uint16_t*, float*, float*, float*, float*, float*, float*, float*, int, int, int, int)');
+      cachedBf16 = { forward: fwd16, valueOnly: val16 } as NativeMlpBf16;
+    } catch {
+      cachedBf16 = null; // older libmlp without bf16 symbols
+    }
     console.log(`[ai] native MLP loaded: ${libPath}`);
     return cached;
   } catch (err) {
@@ -108,4 +133,25 @@ export function loadNativeMlpValueOnly(): NativeMlpValueOnly | null {
   if (cachedValueOnly !== undefined) return cachedValueOnly;
   if (cached === undefined) loadNativeMlp();
   return cachedValueOnly ?? null;
+}
+
+/**
+ * bf16 trunk entry points, or null when disabled / unavailable. Opt-in via
+ * RUIN_MLP_BF16=1 so the fp32 path stays the default until benched.
+ */
+export function loadNativeMlpBf16(): NativeMlpBf16 | null {
+  if (process.env.RUIN_MLP_BF16 !== '1') return null;
+  if (cached === undefined) loadNativeMlp();
+  return cachedBf16 ?? null;
+}
+
+/** fp32 → bfloat16 with round-to-nearest-even (NaN-safe enough for weights). */
+export function toBf16(src: Float32Array): Uint16Array {
+  const u32 = new Uint32Array(src.buffer, src.byteOffset, src.length);
+  const out = new Uint16Array(src.length);
+  for (let i = 0; i < src.length; i++) {
+    const u = u32[i]!;
+    out[i] = ((u + 0x7fff + ((u >>> 16) & 1)) >>> 16) & 0xffff;
+  }
+  return out;
 }

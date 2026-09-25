@@ -61,6 +61,18 @@ const fastMctsTimeMs = parseInt(getArg('--fast-time', String(mctsTimeMs)), 10);
 const allRolloutZero = !process.argv.includes('--no-rollout-zero');
 const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 
+// Policy target. 'visits' = root visit counts (legacy). 'improved' = a
+// Gumbel-MuZero-style improved policy: softmax(log prior + beta * q_hat),
+// where q_hat is each root move's search value (shrunk toward the root value
+// when thinly visited) min-max normalized across the visited moves. Visit
+// counts under PUCT mostly echo the prior when move values are close, so the
+// policy was largely learning its own guesses; this target moves mass toward
+// moves the search actually valued higher.
+const policyTarget = getArg('--policy-target', 'improved');
+// 'gumbel' = the Gumbel MuZero scale (50 + max root visits) * 0.1.
+const improvedBetaArg = getArg('--improved-beta', 'gumbel');
+const improvedShrinkVisits = parseFloat(getArg('--improved-shrink', '5'));
+
 // Dirichlet noise on root priors (training-time exploration). Weight 0
 // disables — useful for canary runs that isolate noise as a variable.
 const dirichletWeight = parseFloat(getArg('--dirichlet-weight', '0.35'));
@@ -185,6 +197,7 @@ interface Sample {
   x: number[];                     // feature vector
   p: number;                       // acting power index (0-3) — routes policy targets
   visits?: Record<string, number>; // sparse visit counts per canonical action slot
+  q?: number[];                    // root search value per power (POWERS order)
   meta: SampleMeta;
 }
 
@@ -448,6 +461,37 @@ function visitStats(visits: Record<string, number> | undefined): { entropy: numb
   return { entropy, top1Share: top / total };
 }
 
+/**
+ * Improved policy target from root priors and search values (see
+ * --policy-target). Returns pseudo visit counts (probabilities x 1000) so the
+ * existing slot aggregation and trainer normalisation apply unchanged.
+ */
+function improvedPolicyTarget(
+  rows: Array<{ action: Action; visits: number; prior: number; q: number }>,
+  rootValue: number,
+): Array<{ action: Action; visits: number }> {
+  const usable = rows.filter(r => r.prior > 0 && Number.isFinite(r.prior));
+  if (usable.length === 0) return rows.filter(r => r.visits > 0).map(r => ({ action: r.action, visits: r.visits }));
+  // Completed, shrunk Q: unvisited moves take the root value; thin visits are
+  // pulled toward it so a 1-visit fluke can't dominate the target.
+  const qs = usable.map(r => r.visits > 0 && Number.isFinite(r.q)
+    ? (r.visits * r.q + improvedShrinkVisits * rootValue) / (r.visits + improvedShrinkVisits)
+    : rootValue);
+  const visitedQs = qs.filter((_, i) => usable[i]!.visits > 0);
+  const lo = visitedQs.length > 0 ? Math.min(...visitedQs) : rootValue;
+  const hi = visitedQs.length > 0 ? Math.max(...visitedQs) : rootValue;
+  const span = Math.max(hi - lo, 0.05);
+  const maxN = Math.max(...usable.map(r => r.visits));
+  const beta = improvedBetaArg === 'gumbel' ? (50 + maxN) * 0.1 : parseFloat(improvedBetaArg);
+  const logits = usable.map((r, i) => Math.log(r.prior) + beta * Math.min(1, Math.max(0, (qs[i]! - lo) / span)));
+  const m = Math.max(...logits);
+  const ex = logits.map(l => Math.exp(l - m));
+  const z = ex.reduce((a, b) => a + b, 0);
+  return usable
+    .map((r, i) => ({ action: r.action, visits: Math.round((ex[i]! / z) * 1000) }))
+    .filter(r => r.visits > 0);
+}
+
 // ── Subaction kinds that go through MCTS (anything strategic, not stylistic) ─
 
 const MCTS_SUBACTION_KINDS = new Set<string>([
@@ -546,6 +590,8 @@ function runGame(seed: number): GameResult {
     let visitsForSample: Record<string, number> | undefined;
     let legalCountForSample = 0;
     let fullSearchForSample = false;
+    let rootQForSample: number[] | undefined;
+    let debugVisitTarget: Record<string, number> | undefined;
     try {
       if (pending.actionKind === 'summoning_action') {
         legalCountForSample = getLegalActions(state, pending.waitingFor).length;
@@ -577,24 +623,38 @@ function runGame(seed: number): GameResult {
           action = explorerTempMove
             ? sampleActionByVisits(stats.searchVisitCounts, rand)
             : stats.action;
+          if (stats.rootQ) rootQForSample = ALL_POWERS.map(p => stats.rootQ![p]);
           // Multiple legal actions can canonicalise to the same slot — sum visits.
           const slotVisits: Record<string, number> = {};
-          for (const { action: a, visits } of stats.visitCounts) {
+          const targetRows = policyTarget === 'improved' && stats.rootQ
+            ? improvedPolicyTarget(stats.searchDebugRows, stats.rootQ[pending.waitingFor])
+            : stats.visitCounts;
+          for (const { action: a, visits } of targetRows) {
             const idx = canonicalActionIndex(a, state);
             if (idx >= 0 && idx < ACTION_DIM) {
               slotVisits[String(idx)] = (slotVisits[String(idx)] ?? 0) + visits;
             }
           }
           visitsForSample = slotVisits;
+          if (process.env.COLLECT_DEBUG_TARGETS === '1') {
+            const raw: Record<string, number> = {};
+            for (const { action: a2, visits } of stats.visitCounts) {
+              const idx = canonicalActionIndex(a2, state);
+              if (idx >= 0 && idx < ACTION_DIM) raw[String(idx)] = (raw[String(idx)] ?? 0) + visits;
+            }
+            debugVisitTarget = raw;
+          }
           policySamples++;
         } else {
-          action = runMcts(state, pending.waitingFor, {
+          const fast = runMctsWithStats(state, pending.waitingFor, {
             iterations: fastMctsIterations,
             timeMs: fastMctsTimeMs,
             ...(rolloutDepth !== undefined ? { rolloutDepth } : {}),
             ...(xarmSuppression > 0 ? { xarmSuppression } : {}),
             ...(ruinPressureLambda > 0 ? { ruinPressureLambda, ruinPressureMaxRound } : {}),
           });
+          action = fast.action;
+          if (fast.rootQ) rootQForSample = ALL_POWERS.map(p => fast.rootQ![p]);
         }
       } else if (MCTS_SUBACTION_KINDS.has(pending.actionKind)) {
         action = runMcts(state, pending.waitingFor, {
@@ -638,6 +698,8 @@ function runGame(seed: number): GameResult {
         },
       };
       if (visitsForSample) sample.visits = visitsForSample;
+      if (rootQForSample) sample.q = rootQForSample.map(v => Math.round(v * 10000) / 10000);
+      if (debugVisitTarget) (sample.meta as unknown as Record<string, unknown>).visitTarget = debugVisitTarget;
       samples.push(sample);
     }
 
@@ -693,6 +755,7 @@ for (let i = 0; i < gameCount; i++) {
       t: number[];
       p: number;
       visits?: Record<string, number>;
+      q?: number[];
       meta: SampleMeta & {
         targetVersion: string;
         complete: boolean;
@@ -722,6 +785,7 @@ for (let i = 0; i < gameCount; i++) {
       },
     };
     if (s.visits && Object.keys(s.visits).length > 0) row.visits = s.visits;
+    if (s.q) row.q = s.q;
     fs.writeSync(out, JSON.stringify(row) + '\n');
   }
 
