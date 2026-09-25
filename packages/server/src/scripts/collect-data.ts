@@ -69,8 +69,13 @@ const rolloutDepth: number | undefined = allRolloutZero ? -1 : undefined;
 // policy was largely learning its own guesses; this target moves mass toward
 // moves the search actually valued higher.
 const policyTarget = getArg('--policy-target', 'improved');
-// 'gumbel' = the Gumbel MuZero scale (50 + max root visits) * 0.1.
-const improvedBetaArg = getArg('--improved-beta', 'gumbel');
+// 'gumbel' = the Gumbel MuZero scale (50 + max root visits) * 0.1 (~50 at our
+// visit counts). Tried Sep 25 2026 iters 4137-4150: targets went to top-move
+// share ~0.9 and policy val loss started rising after ~iter 4146 (xarm 1.82 ->
+// 2.04, top-1 46% -> 40%) — too sharp for our noisy move values. Fixed beta 10
+// keeps targets about as sharp as raw visits while still re-ranking ~12% of
+// top moves by search value.
+const improvedBetaArg = getArg('--improved-beta', '10');
 const improvedShrinkVisits = parseFloat(getArg('--improved-shrink', '5'));
 
 // Dirichlet noise on root priors (training-time exploration). Weight 0
