@@ -42,6 +42,8 @@ export interface MctsNode {
   childPriors: ((action: Action) => number) | null;
   /** Cached value-head scores for pure value-leaf (r0) searches. */
   leafScores: Record<Power, number> | null;
+  /** True once leafScores has been blended with the round-end evaluation. */
+  roundEndApplied?: boolean;
 }
 
 const ZERO_SCORES: Record<Power, number> = { xarm: 0, gormen: 0, tenzen: 0, lasha: 0 };

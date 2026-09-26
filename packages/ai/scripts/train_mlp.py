@@ -316,6 +316,7 @@ class DualHeadMLP:
         policy_alpha: float,
         sample_weights: 'np.ndarray | None' = None,
         power_idx: 'np.ndarray | None' = None,
+        extra_grad_a2: 'np.ndarray | None' = None,
     ) -> dict:
         n = T_value.shape[0]
         v_probs = cache["v_probs"]
@@ -373,6 +374,9 @@ class DualHeadMLP:
         grads["Wv"] = cache["a2"].T @ grad_zv + l2 * self.Wv
         grads["bv"] = grad_zv.sum(axis=0)
         grad_a2 = grad_zv @ self.Wv.T + grad_a2_policy
+        if extra_grad_a2 is not None:
+            # Gradient from auxiliary heads attached to the trunk (ablations).
+            grad_a2 = grad_a2 + extra_grad_a2
         grad_z2 = grad_a2 * (cache["z2"] > 0)
 
         grad_W2 = cache["a1"].T @ grad_z2 + l2 * self.W2

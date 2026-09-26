@@ -38,6 +38,22 @@ export interface MctsOptions {
    * iteration/time budget evenly, then merge root statistics.
    */
   determinizations?: number;
+  /**
+   * Round-end leaf evaluation. When > 0, a leaf reached during the summoning
+   * phase is fast-forwarded: every remaining player passes, the engine
+   * resolves battle / corruption / end phase (and the next world + draw
+   * phase), and the value head scores the next round's first summoning
+   * decision. Leaf value = (1 - blend) * value-now + blend * value-after.
+   * Card and figure effects then reach the search through the rules engine
+   * instead of having to be predicted by the value head. 0 = off.
+   */
+  roundEndBlend?: number;
+  /**
+   * With roundEndBlend: how many summoning actions the fast-forward plays
+   * (each acting power's top policy choice) before everyone passes. 0 =
+   * pure pass-out.
+   */
+  roundEndPolicyActions?: number;
   /** Override rollout depth. 0 = pure value head at leaf (no rollout). */
   rolloutDepth?: number;
   /**
@@ -119,6 +135,13 @@ const DEFAULT_Q_NORM_MIN_SPAN = 0.05;
 // K=1 worst (xarm -15pp, lasha -19pp), K=4 best of the fair variants
 // (xarm -3.5pp, lasha -14pp), K=8 ~K=4. Set 0 for the legacy true-state search.
 const DEFAULT_DETERMINIZATIONS = 4;
+// Round-end leaf evaluation (MctsOptions.roundEndBlend). Sep 26 2026 paired
+// bench, 152 games/arm, one power switched on: blend 0.5 won for all four —
+// xarm +5.9pp/+1.8VP, gormen +5.9pp/+3.0VP, tenzen +2.6pp/+3.1VP, lasha
+// +7.9pp/+2.6VP — and cut no-payoff fighter summons (xarm 43->39%, gormen
+// 21->16%, tenzen 27->20%). Blend 1.0 was weaker. Costs ~1.6x time per move.
+const DEFAULT_ROUND_END_BLEND = 0.5;
+const DEFAULT_ROUND_END_POLICY_ACTIONS = 0;
 const DEFAULT_FORCED_PLAYOUT_FACTOR = 2.0;
 const DEFAULT_FORCED_PLAYOUT_MAX = 16;
 const DEFAULT_FORCED_PLAYOUT_MIN_NOISE = 0.002;
@@ -506,6 +529,19 @@ function searchTree(
     sumLeafDepth += depth;
     leafCount += 1;
     if (depth > maxDepth) maxDepth = depth;
+    const blend = options?.roundEndBlend ?? DEFAULT_ROUND_END_BLEND;
+    if (blend > 0 && expanded.leafScores !== null && !expanded.roundEndApplied) {
+      expanded.roundEndApplied = true;
+      if (expanded.state.phase === 'summoning') {
+        const resolved = fastForwardRound(expanded.state, options?.roundEndPolicyActions ?? DEFAULT_ROUND_END_POLICY_ACTIONS);
+        if (resolved !== null) {
+          const after = isTerminal(resolved) ? terminalScores(resolved) : evaluateAllPowers(resolved);
+          for (const p of ALL_POWERS) {
+            expanded.leafScores[p] = (1 - blend) * expanded.leafScores[p] + blend * after[p];
+          }
+        }
+      }
+    }
     const baseScore = expanded.leafScores
       ?? rollout(expanded.state, forPower, state.rngSeed + iteration, rolloutDepth, options?.rolloutPolicy ?? 'off');
     const score = shapeScoresWithRuinPressure(expanded.state, baseScore, options);
@@ -1214,6 +1250,21 @@ function computeRuinPressure(state: GameState): Record<Power, number> {
  * null if no policy head is loaded for the acting power (caller falls back
  * to biased-random). Skips filterPointlessActions per AI CLAUDE.md invariant.
  */
+/** Highest-prior legal summoning action from the actor's policy head. */
+function greedyPolicyAction(state: GameState, waitingFor: Power): Action | undefined {
+  const raw = policyForState(state, waitingFor);
+  if (raw === null) return undefined;
+  const legal = getLegalActions(state, waitingFor);
+  let best: Action | undefined;
+  let bestP = -1;
+  for (const a of legal) {
+    const idx = canonicalActionIndex(a, state);
+    const p = idx >= 0 ? raw[idx]! : 0;
+    if (p > bestP) { bestP = p; best = a; }
+  }
+  return best;
+}
+
 function samplePolicyAction(state: GameState, waitingFor: Power, rng: () => number): Action | undefined {
   const raw = policyForState(state, waitingFor);
   if (raw === null) return undefined;
@@ -1292,6 +1343,62 @@ function rollout(
   }
 
   return evaluateAllPowers(current);
+}
+
+/**
+ * Pass-out fast-forward for round-end leaf evaluation (MctsOptions.roundEndBlend).
+ * Everyone passes the rest of the summoning phase; other decisions (hit
+ * assignment, hero removal, dial rewards, world choices) take the first legal
+ * option. Stops at the next round's first summoning decision, or at game end.
+ * Returns null if the engine rejects an action or the cap is hit.
+ */
+function fastForwardRound(state: GameState, policyActions: number = 0): GameState | null {
+  const startRound = state.round;
+  let current = state;
+  let policyLeft = policyActions;
+  for (let steps = 0; steps < 600; steps++) {
+    if (isTerminal(current)) return current;
+    const pending = current.pendingAction;
+    if (pending === null) return null;
+    if (current.round !== startRound && pending.actionKind === 'summoning_action') return current;
+    const who = pending.waitingFor;
+    let candidates: Action[];
+    if (pending.actionKind === 'summoning_action') {
+      const pick = current.round === startRound && policyLeft > 0 ? greedyPolicyAction(current, who) : undefined;
+      if (pick !== undefined) policyLeft -= 1;
+      candidates = pick !== undefined
+        ? [pick, { kind: 'summoning_pass', power: who } as Action]
+        : [{ kind: 'summoning_pass', power: who } as Action];
+    } else if (pending.actionKind === 'battle_hit_assignment') {
+      // Some enumerated strategies under-allocate hits for the current board;
+      // take the first one the engine accepts.
+      candidates = [...enumerateBattleHitStrategies(current, who), ...enumerateKillActions(current, who)];
+    } else {
+      candidates = getLegalActions(current, who);
+    }
+    let next: GameState | null = null;
+    for (const action of candidates) {
+      try {
+        next = applyAction(current, action).state;
+        break;
+      } catch {
+        // try the next candidate
+      }
+    }
+    if (next === null) return null;
+    current = next;
+  }
+  return null;
+}
+
+function terminalScores(state: GameState): Record<Power, number> {
+  const w = state.winners ?? [];
+  return {
+    xarm: w.includes('xarm') ? 1 : 0,
+    gormen: w.includes('gormen') ? 1 : 0,
+    tenzen: w.includes('tenzen') ? 1 : 0,
+    lasha: w.includes('lasha') ? 1 : 0,
+  };
 }
 
 /**

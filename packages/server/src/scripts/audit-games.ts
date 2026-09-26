@@ -42,6 +42,14 @@ const qnormOverride: Partial<Record<string, number>> = Object.fromEntries(
 const detOverride: Partial<Record<string, number>> = Object.fromEntries(
   getArg('--det', '').split(',').filter(Boolean).map(kv => { const [p, v] = kv.split('='); return [p!, parseInt(v!, 10)]; }),
 );
+// Per-power round-end leaf blend, e.g. --reb gormen=1
+const rebOverride: Partial<Record<string, number>> = Object.fromEntries(
+  getArg('--reb', '').split(',').filter(Boolean).map(kv => { const [p, v] = kv.split('='); return [p!, parseFloat(v!)]; }),
+);
+// Per-power round-end fast-forward policy actions, e.g. --rep gormen=8
+const repOverride: Partial<Record<string, number>> = Object.fromEntries(
+  getArg('--rep', '').split(',').filter(Boolean).map(kv => { const [p, v] = kv.split('='); return [p!, parseInt(v!, 10)]; }),
+);
 const cOverride: Partial<Record<string, number>> = Object.fromEntries(
   getArg('--c', '').split(',').filter(Boolean).map(kv => { const [p, v] = kv.split('='); return [p!, parseFloat(v!)]; }),
 );
@@ -92,7 +100,7 @@ for (let g = 0; g < games; g++) {
     let action: Action;
     if (pending.actionKind === 'summoning_action' || SUB.has(pending.actionKind)) {
       const c = cOverride[pending.waitingFor];
-      action = runMcts(state, pending.waitingFor, { iterations: itersOverride[pending.waitingFor] ?? iters, timeMs: 60000, rolloutDepth: -1, ...(c !== undefined ? { explorationC: c } : {}), ...(qnormOverride[pending.waitingFor] ? { normalizeQMinSpan: qnormOverride[pending.waitingFor] } : {}), ...(detOverride[pending.waitingFor] !== undefined ? { determinizations: detOverride[pending.waitingFor] } : {}) });
+      action = runMcts(state, pending.waitingFor, { iterations: itersOverride[pending.waitingFor] ?? iters, timeMs: 60000, rolloutDepth: -1, ...(c !== undefined ? { explorationC: c } : {}), ...(qnormOverride[pending.waitingFor] ? { normalizeQMinSpan: qnormOverride[pending.waitingFor] } : {}), ...(detOverride[pending.waitingFor] !== undefined ? { determinizations: detOverride[pending.waitingFor] } : {}), ...(rebOverride[pending.waitingFor] !== undefined ? { roundEndBlend: rebOverride[pending.waitingFor] } : {}), ...(repOverride[pending.waitingFor] !== undefined ? { roundEndPolicyActions: repOverride[pending.waitingFor] } : {}) });
     } else {
       action = greedyAction(state, pending.waitingFor);
     }
