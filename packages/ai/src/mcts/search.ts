@@ -3,7 +3,7 @@ import {
   applyAction, getLegalActions, enumerateBattleHitStrategies, makeRng,
   sampleLegalSummoningAction,
 } from '@ruin/engine';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, statSync } from 'node:fs';
 import { type MctsNode, type QBounds, createNode, ucb1, puct, puctForUntriedAction, childQBounds } from './node.js';
 import { filterPointlessActions, isZeroCostCardPlay, isUrgentRetreatFromXarm } from './filter-actions.js';
 import { enumerateKillActions } from './hit-allocation.js';
@@ -1103,12 +1103,17 @@ function expand(node: MctsNode, forPower: Power, cacheLeafScores: boolean): Mcts
     // that getLegalActions reports as legal but applyAction rejects.
     const e = err as Error;
     try {
-      {
+      // Cap the log: it records the full game state per throw, and on the
+      // RAM-backed rescue boxes it once grew to 23GB (May 2026) and ate half
+      // of each worker's memory. A few hundred MB of repros is plenty.
+      let size = 0;
+      try { size = statSync(EXPAND_THROW_LOG).size; } catch { /* no file yet */ }
+      if (size < EXPAND_THROW_LOG_MAX_BYTES) {
         // Full serialized state so a tiny repro script can do:
         //   const r = JSON.parse(fs.readFileSync('record.json', 'utf-8'));
         //   applyAction(r.state, r.action);
         // …without needing to replay from a seed.
-        appendFileSync('/tmp/mcts-expand-throws.log', JSON.stringify({
+        appendFileSync(EXPAND_THROW_LOG, JSON.stringify({
           ts: new Date().toISOString(),
           round: node.state.round,
           phase: node.state.phase,
@@ -1170,6 +1175,8 @@ function expand(node: MctsNode, forPower: Power, cacheLeafScores: boolean): Mcts
  * very-long rollouts in busy late-game states.
  */
 const HARD_ROLLOUT_CAP = 120;
+const EXPAND_THROW_LOG = '/tmp/mcts-expand-throws.log';
+const EXPAND_THROW_LOG_MAX_BYTES = 200 * 1024 * 1024;
 
 /** Per-power leaf evaluation: each power's value-head score for the state.
  *  Used for MaxN backup so each tree node tracks values for all four powers
