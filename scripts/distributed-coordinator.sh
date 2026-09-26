@@ -63,6 +63,11 @@ TRAIN_THREADS=${TRAIN_THREADS:-8}
 # threads that land on E-cores stall every synchronous matmul; pin to the
 # P-core hyperthreads (0-15) there.
 TRAIN_CPUS=${TRAIN_CPUS:-}
+# Comma-separated powers whose model_<P>.json is left untouched (frozen) while
+# the others keep training. Sep 26 2026: gormen frozen at iter 4134 — under
+# fair-search self-play it drifted to early passes with PP left (1.6/game vs
+# 0.3) and lost 7-9 VP in paired benches, in two separate runs.
+SKIP_TRAIN_POWERS=${SKIP_TRAIN_POWERS:-}
 BENCH_WORKERS=${BENCH_WORKERS:-14}
 # Policy-channel knobs. Non-xarm powers currently learn mostly through sparse
 # MCTS policy labels; keep xarm's collection density stable and spend extra
@@ -389,6 +394,10 @@ while true; do
   DATA_GEN_ITER=$((ITER - 1))
   TRAIN_OK=1
   for POWER in "${ALL_POWERS[@]}"; do
+    if [[ " ${SKIP_TRAIN_POWERS//,/ } " == *" $POWER "* ]]; then
+      echo "[iter $ITER] $POWER: frozen (SKIP_TRAIN_POWERS)" | tee -a "$LOG_FILE"
+      continue
+    fi
     T2=$(date +%s)
     TRAIN_OUT="$DATA_DIR/model_${POWER}.json"
     WARM_SRC="$DATA_DIR/model_${POWER}.json"
