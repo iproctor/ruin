@@ -31,6 +31,7 @@ import {
   type StreamEvent,
 } from '../api/sse.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { worldCardArt } from '../lib/art.js';
 import './LobbyPage.css';
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
@@ -295,6 +296,7 @@ export default function MultiplayerLobbyPage() {
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <main className="lobby">
+      <div className="lobby-backdrop" aria-hidden="true" style={worldCardArt('grand_muster') ? { backgroundImage: `url(${worldCardArt('grand_muster')})` } : undefined} />
       <div className="lobby-grain" aria-hidden="true" />
       <div className="lobby-vignette" aria-hidden="true" />
 

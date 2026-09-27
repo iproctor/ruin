@@ -897,3 +897,14 @@
   .lobby-chat-body { grid-template-columns: 1fr; }
   .lobby-online { border-right: none; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; padding-right: 0; }
 }
+
+/* Faint painted muster behind the lobby */
+.lobby-backdrop {
+  position: fixed;
+  inset: 0;
+  background-size: cover;
+  background-position: center 30%;
+  opacity: 0.14;
+  filter: saturate(0.6) sepia(0.35) blur(1px);
+  pointer-events: none;
+}

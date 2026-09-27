@@ -26,13 +26,23 @@ const DEFAULTS: Settings = {
 
 const STORAGE_KEY = 'ruin_settings_v1';
 
+function defaults(): Settings {
+  // Respect an OS-level request for less motion.
+  try {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return { ...DEFAULTS, cinematics: false, animSpeed: 'fast' };
+    }
+  } catch { /* matchMedia unavailable */ }
+  return DEFAULTS;
+}
+
 function load(): Settings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULTS;
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (!raw) return defaults();
+    return { ...defaults(), ...(JSON.parse(raw) as Partial<Settings>) };
   } catch {
-    return DEFAULTS;
+    return defaults();
   }
 }
 

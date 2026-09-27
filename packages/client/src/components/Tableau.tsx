@@ -77,7 +77,9 @@ function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, o
       onMouseMove={(e) => onHover(cardId, e.clientX, e.clientY)}
       onMouseLeave={() => onHover(null, 0, 0)}
     >
-      <GameCard cardId={cardId} size="sm" />
+      <div className="hand-card-deal" style={{ animationDelay: `${handIndex * 70}ms` }}>
+        <GameCard cardId={cardId} size="sm" />
+      </div>
       {isPending && <div className="hand-card-staged">Staged</div>}
     </div>
   );
@@ -178,6 +180,13 @@ export default function Tableau({ state, displayState, myPower, selectedCardId, 
     return nameA.localeCompare(nameB);
   });
   const isSummoningTurn = !!onEndTurn;
+  // Stable keys (card id + occurrence) so only genuinely new cards animate in.
+  const seen = new Map<string, number>();
+  const handKeys = hand.map((id) => {
+    const n = seen.get(id) ?? 0;
+    seen.set(id, n + 1);
+    return `${id}#${n}`;
+  });
 
   // Enter confirms the staged action (never an accidental Pass; ignored while typing).
   useEffect(() => {
@@ -261,7 +270,7 @@ export default function Tableau({ state, displayState, myPower, selectedCardId, 
         <div className="tab-hand">
           {hand.map((cardId, i) => (
             <HandCard
-              key={`${cardId}_${i}`}
+              key={handKeys[i]}
               cardId={cardId}
               handIndex={i}
               handSize={hand.length}

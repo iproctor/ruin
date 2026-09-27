@@ -253,3 +253,13 @@
   animation: waiting 2.4s ease-in-out infinite;
 }
 @keyframes waiting { 50% { color: #9a8a74; } }
+
+/* Cards are dealt in from the deck when they first appear in the hand. */
+.hand-card-deal { animation: deal-in 0.55s cubic-bezier(.2,.9,.3,1.15) both; }
+@keyframes deal-in {
+  from { opacity: 0; transform: translate(-260px, 90px) rotate(-30deg) scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hand-card-deal { animation: none; }
+}
