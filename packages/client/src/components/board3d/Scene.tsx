@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
-import type { Action, FollowerInstance, GameState, Power, RegionId, TokenType } from '@ruin/engine';
+import type { Action, FollowerInstance, GameState, Power, RegionId } from '@ruin/engine';
 import { CARD_BY_ID, followersInRegion, REGION_ORDER, THREAT_DIALS } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
 import type { TextureBank } from './textures.js';
@@ -10,7 +10,7 @@ import { floorAt, regionFloorY, terrainHeight } from './terrain.js';
 import type { ProjectionRegistry } from './projection.js';
 import {
   BOARD_D, BOARD_TOP, BOARD_W, CARD_D, CARD_W, STANDEE_ASPECT, STANDEE_H,
-  cardSlotPos, corruptionPos, layoutStandees, regionFrame, tokenPos, type StandeeSlot,
+  cardSlotPos, corruptionPos, layoutStandees, regionFrame, type StandeeSlot,
   WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z, DIAL_X, DIAL_R, DIAL_Z, RUIN_PILE_Z,
 } from './layout.js';
 
@@ -736,25 +736,6 @@ function SideTable({ state, bank }: { state: GameState; bank: TextureBank }) {
 
 // ── Tokens & corruption ────────────────────────────────────────────────────
 
-function TokenStack({ type, count, x, z, bank }: { type: TokenType; count: number; x: number; z: number; bank: TextureBank }) {
-  const face = useMemo(() => bank.token(type), [bank, type]);
-  const mats = useMemo(() => [
-    new THREE.MeshStandardMaterial({ color: '#8a6a3a', metalness: 0.6, roughness: 0.4 }),
-    new THREE.MeshStandardMaterial({ map: face, roughness: 0.5 }),
-    new THREE.MeshStandardMaterial({ color: '#1a120b' }),
-  ], [face]);
-  const n = Math.min(count, 5);
-  return (
-    <group position={[x, floorAt(x, z), z]}>
-      {Array.from({ length: n }).map((_, i) => (
-        <mesh key={i} position={[i * 0.012, 0.016 + i * 0.03, -i * 0.01]} material={mats} castShadow>
-          <cylinderGeometry args={[0.085, 0.085, 0.03, 32]} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
 function CorruptionStack({ power, count, x, z, bank }: { power: Power; count: number; x: number; z: number; bank: TextureBank }) {
   const mats = useMemo(() => {
     const color = POWER_COLORS[power];
@@ -804,17 +785,11 @@ function RegionPieces({ regionId, props, sceneStart }: { regionId: RegionId; pro
   const f = regionFrame(regionId);
   const region = state.regions[regionId]!;
   const ruined = region.ruinationCardIndex !== null;
-  const tokenCounts = new Map<TokenType, number>();
-  for (const t of region.tokens) tokenCounts.set(t, (tokenCounts.get(t) ?? 0) + 1);
   const corruption = (Object.entries(region.corruptionTokens) as [Power, number][]).filter(([, n]) => n > 0);
   const pending = pendingAction?.kind === 'summoning_play_card' && pendingAction.toRegion === regionId ? pendingAction : null;
 
   return (
     <group>
-      {[...tokenCounts.entries()].map(([type, count], i) => {
-        const [x, z] = tokenPos(f, i);
-        return <TokenStack key={type} type={type} count={count} x={x} z={z} bank={bank} />;
-      })}
       {corruption.map(([power, count], i) => {
         const [x, z] = corruptionPos(f, i);
         return <CorruptionStack key={power} power={power} count={count} x={x} z={z} bank={bank} />;

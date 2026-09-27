@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import type { FollowerClass, Power, TokenType } from '@ruin/engine';
+import type { FollowerClass, Power } from '@ruin/engine';
 import { CARD_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
-import { chaosCardArt, followerArt, godArt, miscArt, tokenArt, worldCardArt } from '../../lib/art.js';
+import { chaosCardArt, followerArt, godArt, miscArt, worldCardArt } from '../../lib/art.js';
 
 /**
  * Canvas-composited textures for the 3D board. Each texture is drawn at
@@ -288,31 +288,6 @@ export class TextureBank {
         g.restore();
       }
     }, miscArt('card_back'));
-  }
-
-  /** Circular coin face for a world token. */
-  token(type: TokenType): THREE.Texture {
-    const S = 128;
-    const RIM: Record<TokenType, string> = {
-      event: '#6366f1', hero: '#f59e0b', noble: '#eab308', peasant: '#a8a29e', ratmen: '#10b981', chaos_stone: '#14b8a6',
-    };
-    return this.make(`token:${type}`, S, S, (g, img) => {
-      g.fillStyle = RIM[type];
-      g.fillRect(0, 0, S, S);
-      g.save();
-      g.beginPath();
-      g.arc(S / 2, S / 2, S / 2 - 10, 0, Math.PI * 2);
-      g.clip();
-      g.fillStyle = '#120d0a';
-      g.fillRect(0, 0, S, S);
-      if (img) g.drawImage(img, 0, 0, S, S);
-      g.restore();
-      g.beginPath();
-      g.arc(S / 2, S / 2, S / 2 - 10, 0, Math.PI * 2);
-      g.lineWidth = 3;
-      g.strokeStyle = 'rgba(0,0,0,0.7)';
-      g.stroke();
-    }, tokenArt(type));
   }
 
   /** Soft tileable cloud noise for drifting mist. */

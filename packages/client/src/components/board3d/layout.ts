@@ -107,11 +107,6 @@ export function cardSlotPos(frame: RegionFrame, slot: 0 | 1): [number, number] {
   return [x, z];
 }
 
-/** World-token discs along the top-left of the region. */
-export function tokenPos(frame: RegionFrame, index: number): [number, number] {
-  return [frame.x0 + 0.16 + index * 0.21, frame.z0 + 0.3];
-}
-
 /** Corruption stacks along the top-right. */
 export function corruptionPos(frame: RegionFrame, index: number): [number, number] {
   return [frame.x0 + frame.w - 0.16 - index * 0.16, frame.z0 + 0.3];
