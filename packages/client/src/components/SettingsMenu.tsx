@@ -54,8 +54,22 @@ export default function SettingsMenu() {
     setOpen((o) => !o);
   }
 
+  const muted = !settings.sound;
   return (
     <>
+      <button
+        className="gsb-menu-btn gsb-gear"
+        onClick={() => update({ sound: muted })}
+        aria-label={muted ? 'Unmute' : 'Mute'}
+        title={muted ? 'Unmute (sound is off)' : 'Mute all sound'}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 9h4l5-4v14l-5-4H4z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          {muted
+            ? <path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            : <path d="M16.5 8.5a5 5 0 0 1 0 7M18.8 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />}
+        </svg>
+      </button>
       <button ref={btn} className="gsb-menu-btn gsb-gear" onClick={toggle} aria-label="Settings" title="Settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" strokeWidth="1.6" />
