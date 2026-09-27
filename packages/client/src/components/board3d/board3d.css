@@ -218,3 +218,21 @@
   color: #8a7a64;
   text-shadow: 0 1px 2px #000;
 }
+
+.b3-side-label {
+  position: absolute;
+  transform: translate(0, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  font: 700 0.52rem 'Cinzel', serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a7a64;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.b3-side-label b { font-size: 0.9rem; color: #f4e6cc; letter-spacing: 0.04em; }
+#ruin-pile, .b3-side-label:last-of-type { align-items: center; }

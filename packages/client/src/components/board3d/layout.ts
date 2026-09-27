@@ -118,3 +118,9 @@ export function corruptionPos(frame: RegionFrame, index: number): [number, numbe
 export const WORLD_CARD_W = 0.6;
 export const WORLD_TRACK_X = -BOARD_W / 2 - 0.22 - 0.12 - WORLD_CARD_W / 2;
 export const WORLD_TRACK_Z = [-2.05, -1.05, 0.05] as const; // deck, slot 1, slot 2
+
+/** Threat dials and the ruination pile, off the board's east edge. */
+export const DIAL_X = BOARD_W / 2 + 0.22 + 0.12 + 0.34;
+export const DIAL_R = 0.3;
+export const DIAL_Z = [-2.3, -1.55, -0.8, -0.05] as const;
+export const RUIN_PILE_Z = 0.95;

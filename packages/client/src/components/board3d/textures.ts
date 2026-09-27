@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { FollowerClass, Power, TokenType } from '@ruin/engine';
 import { CARD_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
-import { chaosCardArt, followerArt, miscArt, tokenArt, worldCardArt } from '../../lib/art.js';
+import { chaosCardArt, followerArt, godArt, miscArt, tokenArt, worldCardArt } from '../../lib/art.js';
 
 /**
  * Canvas-composited textures for the 3D board. Each texture is drawn at
@@ -202,6 +202,43 @@ export class TextureBank {
         }
       }
     }, chaosCardArt(cardId) ?? worldCardArt(cardId));
+  }
+
+  /** Face of a threat dial: god portrait inside a ringed band of ticks. */
+  dialFace(power: Power, ticks: number): THREE.Texture {
+    const S = 256;
+    const color = POWER_COLORS[power];
+    return this.make(`dial:${power}:${ticks}`, S, S, (g, img) => {
+      const c = S / 2;
+      g.fillStyle = '#1a120b';
+      g.beginPath(); g.arc(c, c, c, 0, Math.PI * 2); g.fill();
+      // Band
+      g.beginPath(); g.arc(c, c, c - 6, 0, Math.PI * 2);
+      g.fillStyle = color; g.globalAlpha = 0.35; g.fill(); g.globalAlpha = 1;
+      g.lineWidth = 4; g.strokeStyle = '#c68c5a'; g.stroke();
+      // Ticks from -150° to +150° (0 = up)
+      for (let i = 0; i < ticks; i++) {
+        const a = (-150 + (300 * i) / Math.max(1, ticks - 1)) * (Math.PI / 180) - Math.PI / 2;
+        const last = i === ticks - 1;
+        g.beginPath();
+        g.moveTo(c + Math.cos(a) * (c - 10), c + Math.sin(a) * (c - 10));
+        g.lineTo(c + Math.cos(a) * (c - (last ? 34 : 26)), c + Math.sin(a) * (c - (last ? 34 : 26)));
+        g.lineWidth = last ? 7 : 4;
+        g.strokeStyle = last ? '#ff5a4a' : '#f4e6cc';
+        g.stroke();
+      }
+      // Portrait
+      g.save();
+      g.beginPath(); g.arc(c, c, c * 0.62, 0, Math.PI * 2); g.clip();
+      g.fillStyle = '#120d0a'; g.fillRect(0, 0, S, S);
+      if (img) {
+        const s2 = (c * 1.24) / Math.min(img.width, img.height * 0.66);
+        g.drawImage(img, c - (img.width * s2) / 2, c - c * 0.62 - img.height * s2 * 0.05, img.width * s2, img.height * s2);
+      }
+      g.restore();
+      g.beginPath(); g.arc(c, c, c * 0.62, 0, Math.PI * 2);
+      g.lineWidth = 5; g.strokeStyle = color; g.stroke();
+    }, godArt(power));
   }
 
   /** Back of a card (painted card back). */

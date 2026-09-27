@@ -3,14 +3,14 @@ import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
 import type { Action, FollowerInstance, GameState, Power, RegionId, TokenType } from '@ruin/engine';
-import { CARD_BY_ID, followersInRegion, REGION_ORDER } from '@ruin/engine';
+import { CARD_BY_ID, followersInRegion, REGION_ORDER, THREAT_DIALS } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
 import type { TextureBank } from './textures.js';
 import type { ProjectionRegistry } from './projection.js';
 import {
   BOARD_D, BOARD_TOP, BOARD_W, CARD_D, CARD_W, STANDEE_ASPECT, STANDEE_H,
   cardSlotPos, corruptionPos, layoutStandees, regionFrame, tokenPos, type StandeeSlot,
-  WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z,
+  WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z, DIAL_X, DIAL_R, DIAL_Z, RUIN_PILE_Z,
 } from './layout.js';
 
 /** User-controlled view: zoom factor (1 = whole board) and pan offset. */
@@ -585,6 +585,76 @@ function TableCardAt({ cardId, x, y, z, w, bank }: { cardId: string; x: number; 
   );
 }
 
+// ── Threat dials + ruination pile (right of the board) ──────────────────────
+
+function ThreatDial({ power, position, ticks, z, bank }: { power: Power; position: number; ticks: number; z: number; bank: TextureBank }) {
+  const face = useMemo(() => bank.dialFace(power, ticks), [bank, power, ticks]);
+  const mats = useMemo(() => [
+    new THREE.MeshStandardMaterial({ color: '#6a4424', metalness: 0.7, roughness: 0.35 }),
+    new THREE.MeshStandardMaterial({ map: face, roughness: 0.55 }),
+    new THREE.MeshStandardMaterial({ color: '#0a0604' }),
+  ], [face]);
+  const needle = useRef<THREE.Group>(null);
+  const target = ((-150 + (300 * position) / Math.max(1, ticks - 1)) * Math.PI) / 180;
+  const cur = useRef(target);
+  useFrame((_, dt) => {
+    // Needles swing to a new threat with a little overshoot.
+    cur.current += (target - cur.current) * Math.min(1, dt * 3);
+    if (needle.current) needle.current.rotation.y = -cur.current;
+  });
+  return (
+    <group position={[DIAL_X, -0.26, z]}>
+      {/* Cylinder caps map texture-up to +X; a quarter turn puts it toward the far edge (screen-up). */}
+      <mesh position={[0, 0.03, 0]} rotation-y={Math.PI / 2} material={mats} castShadow receiveShadow>
+        <cylinderGeometry args={[DIAL_R, DIAL_R * 1.04, 0.06, 40]} />
+      </mesh>
+      <group ref={needle} position={[0, 0.065, 0]}>
+        <mesh position={[0, 0, -DIAL_R * 0.45]} castShadow>
+          <boxGeometry args={[0.022, 0.012, DIAL_R * 0.95]} />
+          <meshStandardMaterial color="#e8c070" metalness={0.9} roughness={0.25} emissive={POWER_COLORS[power]} emissiveIntensity={0.25} />
+        </mesh>
+        <mesh>
+          <cylinderGeometry args={[0.035, 0.035, 0.02, 16]} />
+          <meshStandardMaterial color="#c68c5a" metalness={0.9} roughness={0.3} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+function RuinationPile({ remaining, bank }: { remaining: number; bank: TextureBank }) {
+  const back = useMemo(() => bank.cardBack(), [bank]);
+  const w = WORLD_CARD_W * 0.9;
+  return (
+    <group>
+      {Array.from({ length: remaining }).map((_, i) => (
+        <mesh key={i} rotation-x={-Math.PI / 2} rotation-z={-0.05 + i * 0.02} position={[DIAL_X, -0.254 + i * 0.006, RUIN_PILE_Z]} castShadow>
+          <planeGeometry args={[w, w * 1.4]} />
+          <meshStandardMaterial map={back} color="#ff9a8a" roughness={0.7} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function SideTable({ state, bank }: { state: GameState; bank: TextureBank }) {
+  return (
+    <group>
+      {state.activePowers.map((p, i) => (
+        <ThreatDial
+          key={p}
+          power={p}
+          position={state.powers[p]!.dialPosition}
+          ticks={THREAT_DIALS[p].length}
+          z={DIAL_Z[i] ?? 0}
+          bank={bank}
+        />
+      ))}
+      <RuinationPile remaining={Math.max(0, 5 - state.ruinationCardsUsed)} bank={bank} />
+    </group>
+  );
+}
+
 // ── Tokens & corruption ────────────────────────────────────────────────────
 
 function TokenStack({ type, count, x, z, bank }: { type: TokenType; count: number; x: number; z: number; bank: TextureBank }) {
@@ -747,6 +817,7 @@ export default function Scene(props: SceneProps) {
       <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
       <Mist bank={bank} />
       <WorldTrack state={state} bank={bank} />
+      <SideTable state={state} bank={bank} />
       {REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
         const f = regionFrame(id);
         return <SmokePlume key={`smoke-${id}`} bank={bank} x={f.cx} z={f.cz} />;

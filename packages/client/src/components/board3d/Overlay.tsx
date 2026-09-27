@@ -11,7 +11,7 @@ import CardTooltip from '../CardTooltip.js';
 import FollowerTooltip from '../FollowerTooltip.js';
 import { RegionInfoTooltip, TokenTooltip, TOKEN_COLORS, TOKEN_NAMES } from '../Board.js';
 import type { ProjectionMode, ProjectionRegistry } from './projection.js';
-import { BOARD_TOP, CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot, WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z } from './layout.js';
+import { BOARD_TOP, CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot, WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z, DIAL_X, DIAL_R, DIAL_Z, RUIN_PILE_Z } from './layout.js';
 
 function useProjected(registry: ProjectionRegistry, key: string, points: THREE.Vector3[], mode: ProjectionMode, aspect = 1) {
   const elRef = useRef<HTMLElement | null>(null);
@@ -250,6 +250,14 @@ function WorldZone({ registry, cardId, index, label }: { registry: ProjectionReg
   );
 }
 
+// ── Threat dial / ruin pile labels ─────────────────────────────────────────
+
+function SideLabel({ registry, id, x, z, children }: { registry: ProjectionRegistry; id: string; x: number; z: number; children: React.ReactNode }) {
+  const pts = useMemo(() => [v(x, -0.2, z)], [x, z]);
+  const ref = useProjected(registry, id, pts, 'point');
+  return <div ref={ref} className="b3-side-label">{children}</div>;
+}
+
 // ── Overlay root ───────────────────────────────────────────────────────────
 
 export interface OverlayProps {
@@ -307,6 +315,18 @@ export default function Overlay(props: OverlayProps) {
       {REGION_ORDER.map((id) => (
         <RegionBanner key={`b-${id}`} regionId={id} state={state} registry={registry} domination={dominationLabels?.get(id)} />
       ))}
+      {state.activePowers.map((p, i) => {
+        const ps = state.powers[p]!;
+        return (
+          <SideLabel key={`dial-${p}`} registry={registry} id={`dial-${p}`} x={DIAL_X + DIAL_R + 0.08} z={DIAL_Z[i] ?? 0}>
+            <span style={{ color: POWER_COLORS[p] }}>{POWER_LABELS[p]}</span>
+            <b>{ps.threatValue}</b>
+          </SideLabel>
+        );
+      })}
+      <SideLabel registry={registry} id="ruin-pile" x={DIAL_X} z={RUIN_PILE_Z + 0.5}>
+        <span>Ruination</span><b>{Math.max(0, 5 - state.ruinationCardsUsed)}</b>
+      </SideLabel>
       <WorldZone registry={registry} cardId={null} index={0} label={`World deck · ${state.worldDeck.length}`} />
       <WorldZone registry={registry} cardId={state.worldTrack.slot1} index={1} label={state.worldTrack.slot1 ? '' : ''} />
       <WorldZone registry={registry} cardId={state.worldTrack.slot2} index={2} label="" />
