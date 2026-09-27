@@ -53,6 +53,18 @@ export function TurnBanner({ power }: { power: Power }) {
   );
 }
 
+// ── Another god is deciding ──────────────────────────────────────────────────
+
+export function Deliberating({ power }: { power: Power }) {
+  return (
+    <div className="cin-think" style={{ ['--accent' as string]: POWER_COLORS[power] }}>
+      <span className="cin-think-sigil"><PowerSigil power={power} size={18} /></span>
+      <span>{POWER_LABELS[power]} deliberates</span>
+      <span className="cin-think-dots"><i /><i /><i /></span>
+    </div>
+  );
+}
+
 // ── World card reveal ────────────────────────────────────────────────────────
 
 export function WorldReveal({ cardId }: { cardId: string }) {

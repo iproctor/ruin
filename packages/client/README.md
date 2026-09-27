@@ -14,7 +14,8 @@ React + Vite frontend. Game rules live in `@ruin/engine`; this package is presen
 | 2D map | `components/Board.tsx` | Original SVG board, now with portrait tokens and card art. Selectable in settings. |
 | Cards | `components/cards/GameCard.tsx` | Painted chaos/world/upgrade card at any size (`xs`–`xl`), all dimensions derived from `--cw`. |
 | Sound | `lib/sfx.ts`, `contexts/SoundContext.tsx` | Fully procedural WebAudio (no audio files): god-specific spell timbres, dice, impacts, bells, ruination, an ambient drone. Unlocked on first user gesture. |
-| Settings | `contexts/SettingsContext.tsx`, `components/SettingsMenu.tsx` | Board view, cinematics, pace, sound, ambience, volume. Stored per browser in localStorage. Honours `prefers-reduced-motion`. |
+| Settings | `contexts/SettingsContext.tsx`, `components/SettingsMenu.tsx` | Board view, tabletop detail, cinematics, pace, sound, ambience, volume (plus a one-click mute). Stored per browser in localStorage. Honours `prefers-reduced-motion`. |
+| Hurry | `useGameStream().hurry` | Space / Esc or the tableau's Hurry button plays queued animations at ~15% duration until the queue drains. |
 
 ## Art
 

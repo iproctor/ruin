@@ -8,7 +8,7 @@ import { useFx } from '../fx/FxProvider.js';
 import { useSound } from '../../contexts/SoundContext.js';
 import { useSettings, SPEED_FACTOR } from '../../contexts/SettingsContext.js';
 import BattleScene, { type BattleView } from './BattleScene.js';
-import { PhaseBanner, TurnBanner, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, IntroScene, type Toast, type AftermathRow, type Deeds } from './Scenes.js';
+import { PhaseBanner, TurnBanner, Deliberating, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, IntroScene, type Toast, type AftermathRow, type Deeds } from './Scenes.js';
 import './cinematics.css';
 
 interface CinematicLayerProps {
@@ -405,6 +405,7 @@ export default function CinematicLayer({ subscribe, state, events, myPowers, pau
   }, [state.gameId]);
 
   const awaitingMe = !!state.pendingAction && myPowers.includes(state.pendingAction.waitingFor);
+  const deciding = state.pendingAction && !awaitingMe && !state.winners ? state.pendingAction.waitingFor : null;
   const standings = state.activePowers
     .map((p) => ({ power: p, vp: state.powers[p]!.victoryPoints, threat: state.powers[p]!.threatValue }))
     .sort((a, b) => b.vp - a.vp);
@@ -421,6 +422,7 @@ export default function CinematicLayer({ subscribe, state, events, myPowers, pau
       {world && <WorldReveal key={world.id} cardId={world.cardId} />}
       {banner && <PhaseBanner key={banner.id} phase={banner.phase} round={banner.round} />}
       {turn && !banner && <TurnBanner key={turn.id} power={turn.power} />}
+      {deciding && !banner && !turn && !battle && !world && !paused && <Deliberating key={deciding} power={deciding} />}
       <Toasts toasts={toasts} />
       {spell && (
         <SpellReveal
