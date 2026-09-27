@@ -188,6 +188,72 @@ function Table({ bank }: { bank: TextureBank }) {
   );
 }
 
+// ── Atmosphere ─────────────────────────────────────────────────────────────
+
+function Mist({ bank }: { bank: TextureBank }) {
+  const tex = useMemo(() => {
+    const t = bank.mist().clone();
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(2, 2);
+    t.needsUpdate = true;
+    return t;
+  }, [bank]);
+  const tex2 = useMemo(() => {
+    const t = tex.clone();
+    t.repeat.set(3, 3);
+    t.needsUpdate = true;
+    return t;
+  }, [tex]);
+  useFrame((_, dt) => {
+    tex.offset.x += dt * 0.006;
+    tex.offset.y += dt * 0.002;
+    tex2.offset.x -= dt * 0.004;
+    tex2.offset.y += dt * 0.005;
+  });
+  return (
+    <group>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.25, 0]} renderOrder={6}>
+        <planeGeometry args={[BOARD_W + 3, BOARD_D + 3]} />
+        <meshBasicMaterial map={tex} transparent opacity={0.32} depthWrite={false} />
+      </mesh>
+      <mesh rotation-x={-Math.PI / 2} position={[0, 0.55, 0]} renderOrder={6}>
+        <planeGeometry args={[BOARD_W + 3, BOARD_D + 3]} />
+        <meshBasicMaterial map={tex2} transparent opacity={0.2} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A slow column of smoke rising from a ruined region. */
+function SmokePlume({ bank, x, z }: { bank: TextureBank; x: number; z: number }) {
+  const tex = useMemo(() => bank.smokePuff(), [bank]);
+  const N = 9;
+  const refs = useRef<Array<THREE.Sprite | null>>([]);
+  const seeds = useMemo(() => Array.from({ length: N }, (_, i) => ({ phase: i / N, drift: (Math.random() - 0.5) * 0.4, spin: Math.random() })), []);
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    seeds.forEach((sd, i) => {
+      const sp = refs.current[i];
+      if (!sp) return;
+      const k = (t * 0.12 + sd.phase) % 1;
+      sp.position.set(x + sd.drift * k + Math.sin(t * 0.5 + i) * 0.05, 0.1 + k * 1.8, z - k * 0.3);
+      const s = 0.25 + k * 0.9;
+      sp.scale.set(s, s, s);
+      (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.75;
+      (sp.material as THREE.SpriteMaterial).rotation = sd.spin * 6 + t * 0.2;
+    });
+  });
+  return (
+    <group>
+      {seeds.map((_, i) => (
+        <sprite key={i} ref={(el) => { refs.current[i] = el; }} renderOrder={7}>
+          <spriteMaterial map={tex} transparent depthWrite={false} opacity={0} />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
 // ── Region plates ──────────────────────────────────────────────────────────
 
 function roundedRect(w: number, h: number, r: number) {
@@ -633,6 +699,11 @@ export default function Scene(props: SceneProps) {
         />
       ))}
       <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
+      <Mist bank={bank} />
+      {REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
+        const f = regionFrame(id);
+        return <SmokePlume key={`smoke-${id}`} bank={bank} x={f.cx} z={f.cz} />;
+      })}
     </>
   );
 }

@@ -217,6 +217,46 @@ export class TextureBank {
     }, tokenArt(type));
   }
 
+  /** Soft tileable cloud noise for drifting mist. */
+  mist(): THREE.Texture {
+    const S = 256;
+    const tex = this.make('mist', S, S, (g) => {
+      g.fillStyle = 'rgba(0,0,0,0)';
+      g.fillRect(0, 0, S, S);
+      // Many soft blobs, wrapped at the edges so the texture tiles.
+      let h = 1337;
+      const rnd = () => ((h = (h * 16807) % 2147483647) / 2147483647);
+      for (let i = 0; i < 70; i++) {
+        const x = rnd() * S;
+        const y = rnd() * S;
+        const r = 20 + rnd() * 50;
+        const a = 0.04 + rnd() * 0.08;
+        for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
+          const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+          grad.addColorStop(0, `rgba(170,150,130,${a})`);
+          grad.addColorStop(1, 'rgba(170,150,130,0)');
+          g.fillStyle = grad;
+          g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+        }
+      }
+    });
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  /** Soft smoke puff for ruin plumes. */
+  smokePuff(): THREE.Texture {
+    const S = 64;
+    return this.make('smoke-puff', S, S, (g) => {
+      const grad = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+      grad.addColorStop(0, 'rgba(60,50,45,0.85)');
+      grad.addColorStop(0.5, 'rgba(40,32,28,0.45)');
+      grad.addColorStop(1, 'rgba(20,16,14,0)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, S, S);
+    });
+  }
+
   /** Glowing runic circle (white; tinted by the material colour). */
   magicCircle(): THREE.Texture {
     const S = 512;
