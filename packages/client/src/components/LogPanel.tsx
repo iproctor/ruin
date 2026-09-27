@@ -114,7 +114,7 @@ function Tok({ type }: { type: string }) {
 function renderEvent(event: GameEvent): ReactNode | null {
   switch (event.type) {
     case 'phase_start':
-      return <div style={{ color: PAPER_FADE, fontSize: '0.65rem', letterSpacing: '0.05em', marginTop: 4, textTransform: 'uppercase' }}>— {event.phase} —</div>;
+      return <div className="log-phase">{event.phase}</div>;
     case 'round_start':
       return <div style={{ color: PAPER_DIM, fontWeight: 700, fontSize: '0.75rem', marginTop: 6, marginBottom: 2 }}>Round {event.round}</div>;
     case 'game_over':

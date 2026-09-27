@@ -637,3 +637,21 @@
   0% { transform: scale(1.9); color: #ffe08a; text-shadow: 0 0 14px #ffc860; }
   100% { transform: scale(1); }
 }
+
+/* Log: engraved phase dividers */
+.log-phase {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 3px;
+  font: 700 0.6rem 'Cinzel', serif;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--game-brass);
+}
+.log-phase::before, .log-phase::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--game-border-hi), transparent);
+}
