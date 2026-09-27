@@ -11,7 +11,8 @@ import CardTooltip from '../CardTooltip.js';
 import FollowerTooltip from '../FollowerTooltip.js';
 import { RegionInfoTooltip, TokenTooltip, TOKEN_COLORS, TOKEN_NAMES } from '../Board.js';
 import type { ProjectionMode, ProjectionRegistry } from './projection.js';
-import { BOARD_TOP, CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot, WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z, DIAL_X, DIAL_R, DIAL_Z, RUIN_PILE_Z } from './layout.js';
+import { groundY, groundYUnder } from './terrain.js';
+import { CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot, WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z, DIAL_X, DIAL_R, DIAL_Z, RUIN_PILE_Z } from './layout.js';
 
 function useProjected(registry: ProjectionRegistry, key: string, points: THREE.Vector3[], mode: ProjectionMode, aspect = 1) {
   const elRef = useRef<HTMLElement | null>(null);
@@ -37,7 +38,7 @@ function RegionBanner({ regionId, state, registry, domination }: {
   regionId: RegionId; state: GameState; registry: ProjectionRegistry; domination?: { power: Power; vp: number };
 }) {
   const f = regionFrame(regionId);
-  const pts = useMemo(() => [v(f.cx, BOARD_TOP, f.z0 + 0.04)], [f.cx, f.z0]);
+  const pts = useMemo(() => [v(f.cx, groundY(f.cx, f.z0 + 0.04), f.z0 + 0.04)], [f.cx, f.z0]);
   const ref = useProjected(registry, `banner-${regionId}`, pts, 'point');
   const st = regionStats(state, regionId);
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
@@ -115,8 +116,8 @@ function RegionZone({ regionId, registry, active, onClick }: {
 }) {
   const f = regionFrame(regionId);
   const pts = useMemo(() => [
-    v(f.x0, BOARD_TOP, f.z0), v(f.x0 + f.w, BOARD_TOP, f.z0),
-    v(f.x0, BOARD_TOP, f.z0 + f.d), v(f.x0 + f.w, BOARD_TOP, f.z0 + f.d),
+    v(f.x0, groundY(f.x0, f.z0), f.z0), v(f.x0 + f.w, groundY(f.x0 + f.w, f.z0), f.z0),
+    v(f.x0, groundY(f.x0, f.z0 + f.d), f.z0 + f.d), v(f.x0 + f.w, groundY(f.x0 + f.w, f.z0 + f.d), f.z0 + f.d),
   ], [f.x0, f.z0, f.w, f.d]);
   const projRef = useProjected(registry, `zone-${regionId}`, pts, 'rect');
   const { setNodeRef, isOver } = useDroppable({ id: regionId, data: { kind: 'region', regionId } });
@@ -143,10 +144,13 @@ function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHove
 }) {
   const f = regionFrame(regionId);
   const [x, z] = cardSlotPos(f, slot);
-  const pts = useMemo(() => [
-    v(x - CARD_W / 2, BOARD_TOP, z - CARD_D / 2), v(x + CARD_W / 2, BOARD_TOP, z - CARD_D / 2),
-    v(x - CARD_W / 2, BOARD_TOP, z + CARD_D / 2), v(x + CARD_W / 2, BOARD_TOP, z + CARD_D / 2),
-  ], [x, z]);
+  const pts = useMemo(() => {
+    const y = groundYUnder(x, z, CARD_W / 2, CARD_D / 2);
+    return [
+      v(x - CARD_W / 2, y, z - CARD_D / 2), v(x + CARD_W / 2, y, z - CARD_D / 2),
+      v(x - CARD_W / 2, y, z + CARD_D / 2), v(x + CARD_W / 2, y, z + CARD_D / 2),
+    ];
+  }, [x, z]);
   const ref = useProjected(registry, `slot-${regionId}-${slot}`, pts, 'rect');
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
   return (
@@ -170,7 +174,7 @@ function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHove
 
 function SummonButton({ regionId, registry, onClick }: { regionId: RegionId; registry: ProjectionRegistry; onClick: (x: number, y: number) => void }) {
   const f = regionFrame(regionId);
-  const pts = useMemo(() => [v(f.x0 + f.w - 0.72, BOARD_TOP, f.z0 + 0.62)], [f.x0, f.w, f.z0]);
+  const pts = useMemo(() => [v(f.x0 + f.w - 0.72, groundY(f.x0 + f.w - 0.72, f.z0 + 0.62), f.z0 + 0.62)], [f.x0, f.w, f.z0]);
   const ref = useProjected(registry, `summon-${regionId}`, pts, 'point');
   return (
     <button
@@ -194,7 +198,10 @@ function FigureHandle({ slot, registry, state, draggable, regionId, passThrough,
 }) {
   const f = slot.figure;
   const h = STANDEE_H[f.class];
-  const pts = useMemo(() => [v(slot.x, BOARD_TOP, slot.z), v(slot.x, BOARD_TOP + h * 0.75, slot.z - h * 0.66)], [slot.x, slot.z, h]);
+  const pts = useMemo(() => {
+    const y = groundY(slot.x, slot.z);
+    return [v(slot.x, y, slot.z), v(slot.x, y + h * 0.75, slot.z - h * 0.66)];
+  }, [slot.x, slot.z, h]);
   const projRef = useProjected(registry, `fig-${f.id}`, pts, 'span', STANDEE_ASPECT);
   const dragData: DragItem = { kind: 'board_follower', followerId: f.id, followerClass: f.class, power: (f.controlledBy ?? f.power), fromRegion: regionId };
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `board_fig_${f.id}`, data: dragData, disabled: !draggable });
