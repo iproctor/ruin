@@ -10,6 +10,7 @@ import type { ProjectionRegistry } from './projection.js';
 import {
   BOARD_D, BOARD_TOP, BOARD_W, CARD_D, CARD_W, STANDEE_ASPECT, STANDEE_H,
   cardSlotPos, corruptionPos, layoutStandees, regionFrame, tokenPos, type StandeeSlot,
+  WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z,
 } from './layout.js';
 
 /** User-controlled view: zoom factor (1 = whole board) and pan offset. */
@@ -539,6 +540,51 @@ function EmptySlot({ x, z, playable }: { x: number; z: number; playable: boolean
   );
 }
 
+// ── World track (left of the board) ─────────────────────────────────────────
+
+function WorldTrack({ state, bank }: { state: GameState; bank: TextureBank }) {
+  const back = useMemo(() => bank.cardBack(), [bank]);
+  const { slot1, slot2 } = state.worldTrack;
+  const deck = state.worldDeck.length;
+  const w = WORLD_CARD_W;
+  const d = w * 1.4;
+  return (
+    <group>
+      {Array.from({ length: Math.min(deck, 8) }).map((_, i) => (
+        <mesh key={`deck-${i}`} rotation-x={-Math.PI / 2} rotation-z={0.04} position={[WORLD_TRACK_X + i * 0.004, -0.255 + 0.006 + i * 0.006, WORLD_TRACK_Z[0] - i * 0.004]} castShadow>
+          <planeGeometry args={[w, d]} />
+          <meshStandardMaterial map={back} roughness={0.7} />
+        </mesh>
+      ))}
+      {[slot1, slot2].map((id, i) => id && (
+        <TableCardAt key={`${i}-${id}`} cardId={id} x={WORLD_TRACK_X} z={WORLD_TRACK_Z[i + 1]!} y={-0.25} w={w} bank={bank} />
+      ))}
+    </group>
+  );
+}
+
+function TableCardAt({ cardId, x, y, z, w, bank }: { cardId: string; x: number; y: number; z: number; w: number; bank: TextureBank }) {
+  const tex = useMemo(() => bank.card(cardId), [bank, cardId]);
+  const ref = useRef<THREE.Group>(null);
+  const t0 = useRef(0);
+  useFrame((_, dt) => {
+    const g = ref.current;
+    if (!g) return;
+    if (t0.current < 1) t0.current = Math.min(1, t0.current + dt / 0.8);
+    const k = t0.current;
+    g.position.set(x, y + 0.004 + (1 - k * k) * 1.4, z);
+    g.rotation.set(-Math.PI / 2, 0, (1 - k) * -2.4);
+  });
+  return (
+    <group ref={ref} position={[x, y, z]} rotation-x={-Math.PI / 2}>
+      <mesh castShadow receiveShadow>
+        <planeGeometry args={[w, w * 1.4]} />
+        <meshStandardMaterial map={tex} roughness={0.6} transparent />
+      </mesh>
+    </group>
+  );
+}
+
 // ── Tokens & corruption ────────────────────────────────────────────────────
 
 function TokenStack({ type, count, x, z, bank }: { type: TokenType; count: number; x: number; z: number; bank: TextureBank }) {
@@ -700,6 +746,7 @@ export default function Scene(props: SceneProps) {
       ))}
       <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
       <Mist bank={bank} />
+      <WorldTrack state={state} bank={bank} />
       {REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
         const f = regionFrame(id);
         return <SmokePlume key={`smoke-${id}`} bank={bank} x={f.cx} z={f.cz} />;

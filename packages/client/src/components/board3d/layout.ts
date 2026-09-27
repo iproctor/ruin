@@ -113,3 +113,8 @@ export function tokenPos(frame: RegionFrame, index: number): [number, number] {
 export function corruptionPos(frame: RegionFrame, index: number): [number, number] {
   return [frame.x0 + frame.w - 0.16 - index * 0.16, frame.z0 + 0.3];
 }
+
+/** Positions of the world-track cards and the World deck, off the board's west edge. */
+export const WORLD_CARD_W = 0.6;
+export const WORLD_TRACK_X = -BOARD_W / 2 - 0.22 - 0.12 - WORLD_CARD_W / 2;
+export const WORLD_TRACK_Z = [-2.05, -1.05, 0.05] as const; // deck, slot 1, slot 2

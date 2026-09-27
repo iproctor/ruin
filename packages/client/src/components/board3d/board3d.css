@@ -203,3 +203,18 @@
   border-radius: 2px;
 }
 .b3-reset:hover { border-color: #c68c5a; }
+
+.b3-world { position: absolute; border-radius: 6px; }
+.b3-world:hover { box-shadow: 0 0 16px rgba(143,166,196,0.6); }
+.b3-world-label {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -4px);
+  white-space: nowrap;
+  font: 700 0.56rem 'Cinzel', serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8a7a64;
+  text-shadow: 0 1px 2px #000;
+}

@@ -11,7 +11,7 @@ import CardTooltip from '../CardTooltip.js';
 import FollowerTooltip from '../FollowerTooltip.js';
 import { RegionInfoTooltip, TokenTooltip, TOKEN_COLORS, TOKEN_NAMES } from '../Board.js';
 import type { ProjectionMode, ProjectionRegistry } from './projection.js';
-import { BOARD_TOP, CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot } from './layout.js';
+import { BOARD_TOP, CARD_D, CARD_W, GROUP_VISIBLE, STANDEE_ASPECT, STANDEE_H, cardSlotPos, regionFrame, type StandeeSlot, WORLD_CARD_W, WORLD_TRACK_X, WORLD_TRACK_Z } from './layout.js';
 
 function useProjected(registry: ProjectionRegistry, key: string, points: THREE.Vector3[], mode: ProjectionMode, aspect = 1) {
   const elRef = useRef<HTMLElement | null>(null);
@@ -223,6 +223,33 @@ function FigureHandle({ slot, registry, state, draggable, regionId, passThrough 
   );
 }
 
+// ── World track hover zones ───────────────────────────────────────────────
+
+function WorldZone({ registry, cardId, index, label }: { registry: ProjectionRegistry; cardId: string | null; index: number; label: string }) {
+  const w = WORLD_CARD_W;
+  const d = w * 1.4;
+  const z = WORLD_TRACK_Z[index]!;
+  const pts = useMemo(() => [
+    v(WORLD_TRACK_X - w / 2, -0.25, z - d / 2), v(WORLD_TRACK_X + w / 2, -0.25, z - d / 2),
+    v(WORLD_TRACK_X - w / 2, -0.25, z + d / 2), v(WORLD_TRACK_X + w / 2, -0.25, z + d / 2),
+  ], [w, d, z]);
+  const ref = useProjected(registry, `worldzone-${index}`, pts, 'rect');
+  const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  return (
+    <div
+      ref={ref}
+      className="b3-world"
+      style={{ pointerEvents: cardId ? 'auto' : 'none' }}
+      onMouseEnter={cardId ? (e) => setTip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseMove={cardId ? (e) => setTip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseLeave={() => setTip(null)}
+    >
+      <span className="b3-world-label">{label}</span>
+      {tip && cardId && <CardTooltip cardId={cardId} x={tip.x} y={tip.y} />}
+    </div>
+  );
+}
+
 // ── Overlay root ───────────────────────────────────────────────────────────
 
 export interface OverlayProps {
@@ -280,6 +307,9 @@ export default function Overlay(props: OverlayProps) {
       {REGION_ORDER.map((id) => (
         <RegionBanner key={`b-${id}`} regionId={id} state={state} registry={registry} domination={dominationLabels?.get(id)} />
       ))}
+      <WorldZone registry={registry} cardId={null} index={0} label={`World deck · ${state.worldDeck.length}`} />
+      <WorldZone registry={registry} cardId={state.worldTrack.slot1} index={1} label={state.worldTrack.slot1 ? '' : ''} />
+      <WorldZone registry={registry} cardId={state.worldTrack.slot2} index={2} label="" />
       {onSummonClick && REGION_ORDER.filter((id) => canSummon?.(id) && state.regions[id]!.ruinationCardIndex === null).map((id) => (
         <SummonButton key={`p-${id}`} regionId={id} registry={registry} onClick={(x, y) => onSummonClick(id, x, y)} />
       ))}

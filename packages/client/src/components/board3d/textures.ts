@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { FollowerClass, Power, TokenType } from '@ruin/engine';
-import { CARD_BY_ID } from '@ruin/engine';
+import { CARD_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
-import { chaosCardArt, followerArt, miscArt, tokenArt } from '../../lib/art.js';
+import { chaosCardArt, followerArt, miscArt, tokenArt, worldCardArt } from '../../lib/art.js';
 
 /**
  * Canvas-composited textures for the 3D board. Each texture is drawn at
@@ -157,6 +157,18 @@ export class TextureBank {
       g.fillStyle = shade;
       g.fillRect(0, 0, W, H);
       g.restore();
+      const world = WORLD_CARD_BY_ID[cardId];
+      if (world) {
+        g.font = '700 19px Cinzel, serif';
+        g.fillStyle = '#f4e6cc';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.shadowColor = '#000';
+        g.shadowBlur = 6;
+        const nm = world.name;
+        g.fillText(nm.length > 15 ? nm.slice(0, 14) + '…' : nm, W / 2, H - 28);
+        g.shadowBlur = 0;
+      }
       if (def) {
         // Cost gem
         g.beginPath();
@@ -189,7 +201,27 @@ export class TextureBank {
           g.fillText('✦', W - 28, 30);
         }
       }
-    }, chaosCardArt(cardId));
+    }, chaosCardArt(cardId) ?? worldCardArt(cardId));
+  }
+
+  /** Back of a card (painted card back). */
+  cardBack(): THREE.Texture {
+    const W = 180;
+    const H = 252;
+    return this.make('card-back', W, H, (g, img) => {
+      g.fillStyle = '#1a120b';
+      g.beginPath();
+      g.roundRect(0, 0, W, H, 14);
+      g.fill();
+      if (img) {
+        g.save();
+        g.beginPath();
+        g.roundRect(6, 6, W - 12, H - 12, 10);
+        g.clip();
+        g.drawImage(img, 0, 0, W, H);
+        g.restore();
+      }
+    }, miscArt('card_back'));
   }
 
   /** Circular coin face for a world token. */
