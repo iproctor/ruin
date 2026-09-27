@@ -607,7 +607,7 @@ function WarBanner({ power, regionId, bank }: { power: Power; regionId: RegionId
     if (cloth.current) cloth.current.rotation.y = Math.sin(clock.getElapsedTime() * 2.2) * 0.18;
   });
   return (
-    <group ref={group} position={[f.x0 + 0.2, BOARD_TOP - 1.1, f.z0 + 0.45]}>
+    <group ref={group} position={[f.x0 + f.w - 0.5, BOARD_TOP - 1.1, f.z0 + 0.5]}>
       <mesh position={[0, 0.5, 0]} castShadow>
         <cylinderGeometry args={[0.014, 0.018, 1.0, 8]} />
         <meshStandardMaterial color="#8a6034" metalness={0.8} roughness={0.35} />

@@ -134,10 +134,12 @@ function RegionZone({ regionId, registry, active, onClick }: {
 
 // ── Card slot hotspot ──────────────────────────────────────────────────────
 
-function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHover }: {
+function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHover, quiet }: {
   regionId: RegionId; slot: 0 | 1; registry: ProjectionRegistry; cardId: string | null;
   clickable: boolean; onClick?: (x: number, y: number) => void;
   onHover?: (key: string | null) => void;
+  /** Camera is moving on its own: don't pop tooltips under a resting cursor. */
+  quiet?: boolean;
 }) {
   const f = regionFrame(regionId);
   const [x, z] = cardSlotPos(f, slot);
@@ -159,7 +161,7 @@ function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHove
       onMouseLeave={() => { setTip(null); onHover?.(null); }}
     >
       {clickable && <span className="b3-slot-plus">+</span>}
-      {tip && cardId && <CardTooltip cardId={cardId} x={tip.x} y={tip.y} />}
+      {tip && cardId && !quiet && <CardTooltip cardId={cardId} x={tip.x} y={tip.y} />}
     </div>
   );
 }
@@ -184,7 +186,8 @@ function SummonButton({ regionId, registry, onClick }: { regionId: RegionId; reg
 
 // ── Figure handle (hover tooltip, drag, FX anchor) ─────────────────────────
 
-function FigureHandle({ slot, registry, state, draggable, regionId, passThrough }: {
+function FigureHandle({ slot, registry, state, draggable, regionId, passThrough, quiet }: {
+  quiet?: boolean;
   slot: StandeeSlot; registry: ProjectionRegistry; state: GameState; draggable: boolean; regionId: RegionId;
   /** While the player is picking a region, clicks must reach the region zone underneath. */
   passThrough: boolean;
@@ -211,7 +214,7 @@ function FigureHandle({ slot, registry, state, draggable, regionId, passThrough 
       onMouseLeave={() => setTip(null)}
     >
       {extra > 0 && <span className="b3-fig-count" style={{ ['--ring' as string]: POWER_COLORS[f.power] }}>×{extra}</span>}
-      {tip && !isDragging && (
+      {tip && !isDragging && !quiet && (
         <FollowerTooltip
           power={f.power}
           followerClass={f.class}
@@ -274,10 +277,11 @@ export interface OverlayProps {
   canSummon?: (regionId: RegionId) => boolean;
   dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
   onSlotHover?: (key: string | null) => void;
+  quiet?: boolean;
 }
 
 export default function Overlay(props: OverlayProps) {
-  const { state, registry, standees, dragActive, myPower, onRegionClick, onSlotClick, slotPlayable, onSummonClick, canSummon, dominationLabels, onSlotHover } = props;
+  const { state, registry, standees, dragActive, myPower, onRegionClick, onSlotClick, slotPlayable, onSummonClick, canSummon, dominationLabels, onSlotHover, quiet } = props;
   const regionOf = useMemo(() => {
     const m = new Map<string, RegionId>();
     for (const r of REGION_ORDER) for (const s of standees) if (s.figure.regionId === r) m.set(s.figure.id, r);
@@ -301,6 +305,7 @@ export default function Overlay(props: OverlayProps) {
             clickable={!region.chaosCards[si] && !!onSlotClick && !!slotPlayable?.(id, si)}
             onClick={onSlotClick ? (x, y) => onSlotClick(id, si, x, y) : undefined}
             onHover={onSlotHover}
+            quiet={quiet}
           />
         ));
       })}
@@ -313,6 +318,7 @@ export default function Overlay(props: OverlayProps) {
           regionId={regionOf.get(s.figure.id) ?? (s.figure.regionId as RegionId)}
           draggable={!!myPower && (s.figure.controlledBy ?? s.figure.power) === myPower && s.visible}
           passThrough={!!onRegionClick}
+          quiet={quiet}
         />
       ))}
       {REGION_ORDER.map((id) => (

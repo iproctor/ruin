@@ -174,6 +174,7 @@ export default function Board3D(props: GameBoardProps) {
         canSummon={canSummon}
         dominationLabels={dominationLabels}
         onSlotHover={setHoverSlot}
+        quiet={!!animationRegion}
       />
     </div>
   );

@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { GameEvent, Power } from '@ruin/engine';
+import type { GameEvent, Power, RegionId } from '@ruin/engine';
 import { generateDemoGame } from '../lib/demoGame.js';
 import { useLocalReplay } from '../hooks/useLocalReplay.js';
 import { eventDuration } from '../lib/timing.js';
@@ -20,6 +20,18 @@ function Inner({ seed, viewer }: { seed: number; viewer: Power[] }) {
   const dur = useCallback((e: GameEvent) => eventDuration(e, timing.current), []);
   const r = useLocalReplay(demo.initial, demo.events, dur);
   const state = r.state;
+  // Mirror GamePage: dominations and the focused region during corruption.
+  const [doms, setDoms] = useState<Map<RegionId, { power: Power; vp: number }>>(new Map());
+  const [focus, setFocus] = useState<RegionId | null>(null);
+  useEffect(() => r.subscribe((ev) => {
+    if (ev.type === 'phase_start') { setDoms(new Map()); setFocus(null); }
+    if (ev.type === 'domination_result' && ev.power && ev.conquered) {
+      const p = ev.power;
+      setDoms((m) => new Map(m).set(ev.regionId, { power: p, vp: ev.vp }));
+      setFocus(ev.regionId);
+    }
+    if (ev.type === 'corruption_placement' || ev.type === 'ruination') setFocus(ev.regionId);
+  }), [r.subscribe]);
   if (!state) return null;
 
   const btn: React.CSSProperties = { fontFamily: 'Cinzel', fontSize: 12, padding: '4px 10px', background: '#2a1a0c', color: '#f4e6cc', border: '1px solid #5a4028' };
@@ -36,7 +48,7 @@ function Inner({ seed, viewer }: { seed: number; viewer: Power[] }) {
         <span>seed {seed} · {demo.events.length} events · final round {demo.final.round} · winner {demo.final.winners?.join(',') ?? '—'}</span>
       </div>
       <div style={{ flex: 1, minHeight: 0, position: 'relative', padding: 8 }}>
-        <GameBoard state={state} />
+        <GameBoard state={state} dominationLabels={doms} animationRegion={focus} />
         <CinematicLayer subscribe={r.subscribe} state={state} myPowers={viewer} paused={r.paused} onResume={r.resume} />
       </div>
     </div>
