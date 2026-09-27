@@ -67,7 +67,9 @@ export function FxProvider({ children, shakeRoot }: { children: ReactNode; shake
   const api = useMemo<FxApi>(() => ({
     burst(at, kind, power = null, scale = 1) {
       const p = resolve(at);
-      if (p && sysRef.current) sysRef.current.burst(p.x, p.y, kind, power, scale);
+      // Anchored bursts keep tracking their element (e.g. a region while the camera dollies).
+      const locate = typeof at === 'object' && !Array.isArray(at) ? undefined : () => resolve(at);
+      if (p && sysRef.current) sysRef.current.burst(p.x, p.y, kind, power, scale, locate);
     },
     trail(from, to, color, count, duration) {
       const a = resolve(from);

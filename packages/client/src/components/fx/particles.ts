@@ -22,6 +22,17 @@ interface Particle {
   additive: boolean;
   glyph?: string;
   delay: number;
+  /** When set, the particle rides along with a moving anchor (e.g. a region under a moving camera). */
+  follow: Follow | null;
+}
+
+/** A burst's screen-space origin, re-measured each frame so its particles track the anchor. */
+interface Follow {
+  locate: () => { x: number; y: number } | null;
+  ox: number;
+  oy: number;
+  dx: number;
+  dy: number;
 }
 
 export type BurstKind =
@@ -42,6 +53,8 @@ export class ParticleSystem {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private particles: Particle[] = [];
+  /** Follow target for particles created by the burst currently being built. */
+  private building: Follow | null = null;
   private raf = 0;
   private last = 0;
   private sprites = new Map<string, HTMLCanvasElement>();
@@ -104,6 +117,7 @@ export class ParticleSystem {
       life: 0, maxLife: 1, size: 6, grow: 0,
       color: '#fff', alpha: 1, shape: 'glow',
       rot: 0, vrot: 0, additive: true, delay: 0,
+      follow: this.building,
       ...p,
     });
     if (!this.raf) {
@@ -114,7 +128,16 @@ export class ParticleSystem {
 
   // ── Recipes ────────────────────────────────────────────────────────────────
 
-  burst(x: number, y: number, kind: BurstKind, power: Power | null = null, scale = 1) {
+  burst(x: number, y: number, kind: BurstKind, power: Power | null = null, scale = 1, locate?: () => { x: number; y: number } | null) {
+    this.building = locate ? { locate, ox: x, oy: y, dx: 0, dy: 0 } : null;
+    try {
+      this.buildBurst(x, y, kind, power, scale);
+    } finally {
+      this.building = null;
+    }
+  }
+
+  private buildBurst(x: number, y: number, kind: BurstKind, power: Power | null, scale: number) {
     const pal = power ? PALETTE[power] : ['#ffd79a', '#ffb347', '#fff1c9'];
     const s = scale;
     switch (kind) {
@@ -292,6 +315,16 @@ export class ParticleSystem {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
+    // Re-measure each followed anchor once per frame.
+    const seen = new Set<Follow>();
+    for (const p of this.particles) {
+      const f = p.follow;
+      if (!f || seen.has(f)) continue;
+      seen.add(f);
+      const at = f.locate();
+      if (at) { f.dx = at.x - f.ox; f.dy = at.y - f.oy; }
+    }
+
     const alive: Particle[] = [];
     for (const p of this.particles) {
       if (p.delay > 0) { p.delay -= dt; alive.push(p); continue; }
@@ -309,7 +342,11 @@ export class ParticleSystem {
       const fade = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
       ctx.globalAlpha = Math.max(0, fade * p.alpha);
       ctx.globalCompositeOperation = p.additive ? 'lighter' : 'source-over';
+      const ox = p.follow?.dx ?? 0;
+      const oy = p.follow?.dy ?? 0;
+      p.x += ox; p.y += oy;
       this.draw(p);
+      p.x -= ox; p.y -= oy;
     }
     this.particles = alive;
     ctx.globalAlpha = 1;
