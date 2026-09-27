@@ -23,6 +23,11 @@ import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
 import ActionPanel, { CardOnPlayChoicePanel } from '../components/ActionPanel.js';
 import { POWER_COLORS, POWER_LABELS } from '../lib/display.js';
+import { eventDuration } from '../lib/timing.js';
+import { useSettings, SPEED_FACTOR } from '../contexts/SettingsContext.js';
+import { SoundProvider } from '../contexts/SoundContext.js';
+import { FxProvider } from '../components/fx/FxProvider.js';
+import CinematicLayer from '../components/cinematics/CinematicLayer.js';
 import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_DIM, CARD_FACE, CARD_INK, RUINED, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
 
@@ -175,7 +180,11 @@ function findFollower(state: GameState, followerId: string) {
 
 function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps) {
   const { state: serverState, setState } = useGame();
-  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume } = useGameStream(gameId);
+  const { settings } = useSettings();
+  const timingRef = useRef({ myPowers, cinematics: settings.cinematics, speed: SPEED_FACTOR[settings.animSpeed] });
+  timingRef.current = { myPowers, cinematics: settings.cinematics, speed: SPEED_FACTOR[settings.animSpeed] };
+  const durationFor = useCallback((ev: GameEvent) => eventDuration(ev, timingRef.current), []);
+  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe } = useGameStream(gameId, { eventDuration: durationFor });
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -680,11 +689,6 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
           {/* Board */}
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
-            {anim.phaseBanner && (
-              <div className="phase-banner" key={anim.phaseBanner}>
-                <span className="phase-banner-text">{anim.phaseBanner}</span>
-              </div>
-            )}
             <Board
               state={(anim.animationPhase ? anim.displayState : displayState) ?? displayState}
               highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}
@@ -704,6 +708,13 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               slotPlayable={isSummoningTurn && !pendingAction && !anim.animationPhase ? slotPlayable : undefined}
               onSummonClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSummonClick : undefined}
               canSummon={isSummoningTurn && !pendingAction && !anim.animationPhase ? canSummon : undefined}
+            />
+            <CinematicLayer
+              subscribe={subscribe}
+              state={serverState ?? displayState}
+              myPowers={myPowers}
+              paused={paused}
+              onResume={resume}
             />
           </div>
 
@@ -775,25 +786,6 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           />
         </div>
 
-        {paused && (
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', justifyContent: 'center', padding: '12px 8px', background: PARCHMENT, borderTop: `1px solid ${BORDER_HI}`, zIndex: 50 }}>
-            <button
-              onClick={resume}
-              style={{
-                fontSize: '0.85rem',
-                padding: '8px 32px',
-                borderRadius: 6,
-                border: 'none',
-                background: RUINED,
-                color: ERROR,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              Continue to Corruption Phase
-            </button>
-          </div>
-        )}
         {!anim.animationPhase && myPower && (
           <Tableau
             state={serverState ?? displayState}
@@ -966,6 +958,7 @@ export default function GamePage() {
   const [initialState, setInitialState] = useState<GameState | null>(null);
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [error, setError] = useState('');
+  const shakeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!id || !userId) return;
@@ -1005,9 +998,13 @@ export default function GamePage() {
 
   return (
     <GameProvider gameId={id} myPower={myPowers[0] ?? null} initialState={initialState}>
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <GameInner gameId={id} myPowers={myPowers} players={players} isMultiplayer={isMultiplayer} />
-      </div>
+      <SoundProvider>
+        <FxProvider shakeRoot={shakeRef}>
+          <div ref={shakeRef} style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <GameInner gameId={id} myPowers={myPowers} players={players} isMultiplayer={isMultiplayer} />
+          </div>
+        </FxProvider>
+      </SoundProvider>
     </GameProvider>
   );
 }

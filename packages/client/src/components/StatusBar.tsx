@@ -152,6 +152,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
   return (
     <div
       className={classes}
+      data-anchor={`power-${power}`}
       style={{ ['--accent' as string]: color }}
       onMouseEnter={e => setTooltip({ x: e.clientX, y: e.clientY })}
       onMouseMove={e => setTooltip({ x: e.clientX, y: e.clientY })}

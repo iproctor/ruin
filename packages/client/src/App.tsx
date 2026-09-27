@@ -1,12 +1,14 @@
 import React from 'react';
 import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.js';
+import { SettingsProvider } from './contexts/SettingsContext.js';
 import LandingPage from './pages/LandingPage.js';
 import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
 import HomePage from './pages/HomePage.js';
 import MultiplayerLobbyPage from './pages/MultiplayerLobbyPage.js';
 import DevGalleryPage from './pages/DevGalleryPage.js';
+import DevReplayPage from './pages/DevReplayPage.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -76,6 +78,7 @@ function AppRoutes() {
         }
       />
       {import.meta.env.DEV && <Route path="/dev" element={<DevGalleryPage />} />}
+      {import.meta.env.DEV && <Route path="/dev/replay" element={<DevReplayPage />} />}
       <Route path="/" element={<RootEntry />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
@@ -85,7 +88,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <SettingsProvider>
+        <AppRoutes />
+      </SettingsProvider>
     </AuthProvider>
   );
 }

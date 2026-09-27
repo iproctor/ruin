@@ -240,7 +240,7 @@ function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, 
         const animStyle = (isAppearing || isMoving) ? 'summoning-appear' : undefined;
         const key = slot.kind === 'single' ? slot.figure.id : `grp-${index}-${figureGroupKey(fig)}`;
         return (
-          <g key={key}>
+          <g key={key} data-anchor={`fig-${fig.id}`}>
             {(isAppearing || isMoving) && (
               <circle
                 cx={fx} cy={fy}
@@ -366,6 +366,7 @@ function RegionDropZone({ regionId, pos, onClick, active }: {
     <div
       ref={setNodeRef}
       onClick={onClick}
+      data-anchor={`region-${regionId}`}
       style={{
         position: 'absolute',
         left:   `${(pos.x / BOARD_VIEWBOX_W) * 100}%`,
@@ -701,7 +702,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
           const slotIdx = si as 0 | 1;
           const canClick = !card && !!onSlotClick && (slotPlayable?.(regionId, slotIdx) ?? false);
           return (
-            <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`}>
+            <g key={si} transform={`translate(${si * (cardSlotW + 4)}, 0)`} data-anchor={`slot-${regionId}-${si}`}>
               {card ? (
                 <MiniCard cardId={card.cardId} width={cardSlotW} height={cardSlotH} onHover={onCardHover} isPending={isPending}
                   isAppearing={summoningAnim?.appearingCards.has(`${regionId}-${si}`) ?? false} />

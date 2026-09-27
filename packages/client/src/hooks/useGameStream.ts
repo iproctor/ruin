@@ -55,6 +55,13 @@ function getEventDuration(event: GameEvent): number {
   return base * phaseMultiplier * DEBUG_MULTIPLIER;
 }
 
+export type EventListener = (event: GameEvent, stateAfter: GameState | null) => void;
+
+export interface GameStreamOptions {
+  /** Override per-event pacing (ms to wait after applying the event). */
+  eventDuration?: (event: GameEvent) => number;
+}
+
 export interface GameStreamResult {
   state: GameState | null;
   events: GameEvent[];
@@ -67,9 +74,14 @@ export interface GameStreamResult {
   paused: boolean;
   /** Resume the queue after a pause. */
   resume: () => void;
+  /** Called synchronously for every event as the queue applies it (never batched). */
+  subscribe: (listener: EventListener) => () => void;
 }
 
-export function useGameStream(gameId: string): GameStreamResult {
+export function useGameStream(gameId: string, options?: GameStreamOptions): GameStreamResult {
+  const durationRef = useRef(options?.eventDuration);
+  durationRef.current = options?.eventDuration;
+  const listeners = useRef(new Set<EventListener>());
   const [state, setState]         = useState<GameState | null>(null);
   const [events, setEvents]       = useState<GameEvent[]>([]);
   const [lastEvent, setLastEvent] = useState<GameEvent | null>(null);
@@ -133,8 +145,11 @@ export function useGameStream(gameId: string): GameStreamResult {
 
     setEvents(prev => [...prev, event]);
     setLastEvent(event);
+    for (const l of listeners.current) {
+      try { l(event, stateRef.current); } catch (err) { console.error('[event] listener failed', err); }
+    }
 
-    const delay = getEventDuration(event);
+    const delay = durationRef.current ? durationRef.current(event) : getEventDuration(event);
     if (delay > 0) {
       timerRef.current = setTimeout(processNext, delay);
     } else {
@@ -247,5 +262,10 @@ export function useGameStream(gameId: string): GameStreamResult {
     return cleanup;
   }, [gameId, handleEvent]);
 
-  return { state, events, lastEvent, chat, connected, syncAfterAction, paused, resume };
+  const subscribe = useCallback((listener: EventListener) => {
+    listeners.current.add(listener);
+    return () => { listeners.current.delete(listener); };
+  }, []);
+
+  return { state, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe };
 }
