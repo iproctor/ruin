@@ -65,7 +65,13 @@ function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, o
       {...listeners}
       {...attributes}
       className={cls}
-      style={{ ['--angle' as string]: `${angle}deg`, ['--drop' as string]: `${drop}px`, zIndex: 10 + handIndex }}
+      style={{
+        ['--angle' as string]: `${angle}deg`,
+        ['--drop' as string]: `${drop}px`,
+        // Bigger hands overlap more so the fan never spills past its area.
+        margin: `0 ${-10 - Math.max(0, handSize - 6) * 7}px`,
+        zIndex: 10 + handIndex,
+      }}
       onClick={onClick}
       onMouseEnter={(e) => { onHover(cardId, e.clientX, e.clientY); sound.hover(); }}
       onMouseMove={(e) => onHover(cardId, e.clientX, e.clientY)}

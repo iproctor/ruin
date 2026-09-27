@@ -531,3 +531,10 @@
 .gsb-powers { gap: 0.3rem !important; }
 .gsb-pow-stats { gap: 5px !important; font-size: 0.62rem !important; }
 .gsb { gap: 0.6rem !important; }
+@media (max-width: 1560px) {
+  .gsb-acting { display: none; }
+  .gsb-wc { width: 78px !important; }
+}
+@media (max-width: 1280px) {
+  .gsb-pow-stats { display: none !important; }
+}

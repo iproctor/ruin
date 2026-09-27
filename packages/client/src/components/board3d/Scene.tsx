@@ -12,7 +12,16 @@ import {
   cardSlotPos, corruptionPos, layoutStandees, regionFrame, tokenPos, type StandeeSlot,
 } from './layout.js';
 
+/** User-controlled view: zoom factor (1 = whole board) and pan offset. */
+export interface ViewControl {
+  zoom: number;
+  panX: number;
+  panZ: number;
+  camera: THREE.PerspectiveCamera | null;
+}
+
 export interface SceneProps {
+  view: ViewControl;
   state: GameState;
   bank: TextureBank;
   registry: ProjectionRegistry;
@@ -60,9 +69,10 @@ function fitDistance(cam: THREE.PerspectiveCamera, dir: THREE.Vector3): number {
   return hi;
 }
 
-function CameraRig({ focusRegion, registry }: { focusRegion: RegionId | null; registry: ProjectionRegistry }) {
+function CameraRig({ focusRegion, registry, view }: { focusRegion: RegionId | null; registry: ProjectionRegistry; view: ViewControl }) {
   const { camera, size } = useThree();
   const cam = camera as THREE.PerspectiveCamera;
+  view.camera = cam;
   const dir = useMemo(() => new THREE.Vector3(0, Math.sin(ELEVATION), Math.cos(ELEVATION)).normalize(), []);
   const fit = useRef(20);
   const curTarget = useRef(TARGET.clone());
@@ -81,8 +91,8 @@ function CameraRig({ focusRegion, registry }: { focusRegion: RegionId | null; re
 
   useFrame(({ clock }, dt) => {
     const t = clock.getElapsedTime();
-    let goalTarget = TARGET;
-    let goalDist = fit.current;
+    let goalTarget = new THREE.Vector3(TARGET.x + view.panX, 0, TARGET.z + view.panZ);
+    let goalDist = fit.current * view.zoom;
     if (focusRegion) {
       const f = regionFrame(focusRegion);
       goalTarget = new THREE.Vector3(f.cx * 0.6, 0, f.cz * 0.6 + 0.2);
@@ -195,8 +205,23 @@ function roundedRect(w: number, h: number, r: number) {
   return s;
 }
 
-function RegionPlate({ regionId, state, highlighted, dimmed, focused }: {
-  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean;
+function RuinDecal({ regionId, bank, w, d }: { regionId: RegionId; bank: TextureBank; w: number; d: number }) {
+  const tex = useMemo(() => bank.ruinDecal(regionId), [bank, regionId]);
+  const mat = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (mat.current) mat.current.opacity = 0.82 + Math.sin(t * 2.3) * 0.08 + Math.sin(t * 7.1) * 0.05;
+  });
+  return (
+    <mesh position={[0, 0, 0.003]} renderOrder={2}>
+      <planeGeometry args={[w * 1.05, d * 1.05]} />
+      <meshBasicMaterial ref={mat} map={tex} transparent depthWrite={false} toneMapped={false} />
+    </mesh>
+  );
+}
+
+function RegionPlate({ regionId, state, highlighted, dimmed, focused, bank }: {
+  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean; bank: TextureBank;
 }) {
   const f = regionFrame(regionId);
   const region = state.regions[regionId]!;
@@ -237,6 +262,7 @@ function RegionPlate({ regionId, state, highlighted, dimmed, focused }: {
       <lineLoop geometry={edgeGeom} renderOrder={2}>
         <lineBasicMaterial ref={edgeMat} color={edgeColor} transparent opacity={0.4} />
       </lineLoop>
+      {ruined && <RuinDecal regionId={regionId} bank={bank} w={f.w} d={f.d} />}
       {ruined && (
         <Sparkles count={26} scale={[f.w, f.d, 0.6]} position={[0, 0, 0.3]} size={3} speed={0.6} color="#ff5a2a" opacity={0.9} />
       )}
@@ -335,7 +361,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing }: {
         </mesh>
       )}
       <group ref={card} position={[0, 0.026, 0]} rotation-x={-0.72}>
-        <mesh position={[0, h / 2, 0]} castShadow>
+        <mesh position={[0, h / 2, 0]}>
           <planeGeometry args={[w, h]} />
           <meshStandardMaterial map={tex} alphaTest={0.5} side={THREE.DoubleSide} roughness={0.7} emissive="#ffffff" emissiveMap={tex} emissiveIntensity={0.18} />
         </mesh>
@@ -520,7 +546,7 @@ export default function Scene(props: SceneProps) {
     <>
       <color attach="background" args={['#070504']} />
       <fog attach="fog" args={['#070504', 14, 34]} />
-      <CameraRig focusRegion={focusRegion} registry={registry} />
+      <CameraRig focusRegion={focusRegion} registry={registry} view={props.view} />
       <Lights />
       <Table bank={bank} />
       {REGION_ORDER.map((id) => (
@@ -531,6 +557,7 @@ export default function Scene(props: SceneProps) {
           highlighted={!!highlight?.has(id)}
           dimmed={!!dimmed?.has(id)}
           focused={focusRegion === id}
+          bank={bank}
         />
       ))}
       {REGION_ORDER.map((id) => <RegionPieces key={id} regionId={id} props={props} />)}

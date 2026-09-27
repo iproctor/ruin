@@ -217,6 +217,60 @@ export class TextureBank {
     }, tokenArt(type));
   }
 
+  /** Scorched earth with glowing fissures, laid over a ruined region. */
+  ruinDecal(seed: string): THREE.Texture {
+    const W = 512;
+    const H = 360;
+    return this.make(`ruin:${seed}`, W, H, (g) => {
+      let h = 0;
+      for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+      const rnd = () => {
+        h = (h + 0x6d2b79f5) >>> 0;
+        let t = h;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const burn = g.createRadialGradient(W / 2, H / 2, 10, W / 2, H / 2, W * 0.55);
+      burn.addColorStop(0, 'rgba(20,4,2,0.92)');
+      burn.addColorStop(0.7, 'rgba(30,8,4,0.75)');
+      burn.addColorStop(1, 'rgba(30,8,4,0)');
+      g.fillStyle = burn;
+      g.fillRect(0, 0, W, H);
+      const crack = (x: number, y: number, a: number, len: number, width: number, depth: number) => {
+        g.beginPath();
+        g.moveTo(x, y);
+        const steps = 6 + Math.floor(rnd() * 5);
+        for (let i = 0; i < steps; i++) {
+          a += (rnd() - 0.5) * 0.9;
+          const step = (len / steps) * (0.6 + rnd() * 0.8);
+          x += Math.cos(a) * step;
+          y += Math.sin(a) * step;
+          g.lineTo(x, y);
+          if (depth < 2 && rnd() < 0.28) {
+            g.stroke();
+            crack(x, y, a + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.6), len * 0.45, width * 0.6, depth + 1);
+            g.beginPath();
+            g.moveTo(x, y);
+          }
+        }
+        g.lineWidth = width;
+        g.stroke();
+      };
+      g.lineCap = 'round';
+      g.lineJoin = 'round';
+      for (const [color, blur, widthK] of [['#ff3a0a', 18, 2.2], ['#ffb060', 6, 1], ['#fff0c0', 0, 0.35]] as const) {
+        const save = h;
+        g.strokeStyle = color;
+        g.shadowColor = color;
+        g.shadowBlur = blur;
+        for (let i = 0; i < 7; i++) crack(W / 2, H / 2, (i / 7) * Math.PI * 2 + rnd() * 0.5, W * 0.42, 5 * widthK, 0);
+        h = save;
+      }
+      g.shadowBlur = 0;
+    });
+  }
+
   /** Dark leather/wood table surface; painted art when available. */
   table(): THREE.Texture {
     const W = 1024;
