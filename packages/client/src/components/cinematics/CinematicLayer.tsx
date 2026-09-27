@@ -8,12 +8,14 @@ import { useFx } from '../fx/FxProvider.js';
 import { useSound } from '../../contexts/SoundContext.js';
 import { useSettings, SPEED_FACTOR } from '../../contexts/SettingsContext.js';
 import BattleScene, { type BattleView } from './BattleScene.js';
-import { PhaseBanner, TurnBanner, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, IntroScene, type Toast, type AftermathRow } from './Scenes.js';
+import { PhaseBanner, TurnBanner, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, IntroScene, type Toast, type AftermathRow, type Deeds } from './Scenes.js';
 import './cinematics.css';
 
 interface CinematicLayerProps {
   subscribe: (l: EventListener) => () => void;
   state: GameState;
+  /** Full event history, for the end-of-game deeds tally. */
+  events?: GameEvent[];
   myPowers: Power[];
   paused: boolean;
   onResume: () => void;
@@ -40,6 +42,19 @@ const EFFECT_CARD: Record<string, string> = {
   persistence_matrix_reset: 'tenzen_persistence_matrix',
 };
 
+/** Per-god tally of the game's defining acts, from the event history. */
+function tallyDeeds(events: GameEvent[]): Partial<Record<Power, Deeds>> {
+  const out: Partial<Record<Power, Deeds>> = {};
+  const get = (p: Power) => (out[p] ??= { kills: 0, dominations: 0, ruinations: 0 });
+  for (const ev of events) {
+    if (ev.type === 'battle_kill') get(ev.attacker).kills++;
+    else if (ev.type === 'harvest_kill') get(ev.killedBy).kills++;
+    else if (ev.type === 'domination_result' && ev.power && ev.conquered) get(ev.power).dominations++;
+    else if (ev.type === 'ruination') for (const p of ev.ruiners) get(p).ruinations++;
+  }
+  return out;
+}
+
 /** "a Heartripper" / "an Addict" from a follower's plural name. */
 function oneOf(power: Power, cls: 'cultist' | 'warrior' | 'incarnation'): string {
   const name = FOLLOWERS[power][cls].name;
@@ -54,7 +69,7 @@ function oneOf(power: Power, cls: 'cultist' | 'warrior' | 'incarnation'): string
  * reckoning. Renders over the board area; spell flights and the game-over
  * screen portal to <body>.
  */
-export default function CinematicLayer({ subscribe, state, myPowers, paused, onResume }: CinematicLayerProps) {
+export default function CinematicLayer({ subscribe, state, events, myPowers, paused, onResume }: CinematicLayerProps) {
   const fx = useFx();
   const sound = useSound();
   const navigate = useNavigate();
@@ -420,6 +435,7 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
       )}
       {gameOver && (
         <GameOverScreen
+          deeds={tallyDeeds(events ?? [])}
           winners={gameOver.winners}
           condition={gameOver.condition}
           standings={standings}

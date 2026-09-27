@@ -55,7 +55,7 @@ function Inner({ seed, viewer, auto }: { seed: number; viewer: Power[]; auto: bo
       </div>
       <div style={{ flex: 1, minHeight: 0, position: 'relative', padding: 8 }}>
         <GameBoard state={state} dominationLabels={doms} animationRegion={focus} />
-        <CinematicLayer subscribe={r.subscribe} state={state} myPowers={viewer} paused={r.paused} onResume={r.resume} />
+        <CinematicLayer subscribe={r.subscribe} events={r.log} state={state} myPowers={viewer} paused={r.paused} onResume={r.resume} />
       </div>
     </div>
   );

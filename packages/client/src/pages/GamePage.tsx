@@ -736,6 +736,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
             >
               <CinematicLayer
                 subscribe={subscribe}
+                events={events}
                 state={serverState ?? displayState}
                 myPowers={myPowers}
                 paused={paused}

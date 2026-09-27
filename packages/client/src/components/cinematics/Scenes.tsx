@@ -297,13 +297,16 @@ const CONDITION_TEXT: Record<WinCondition, string> = {
   world_exhausted: 'The World deck is spent, and no god prevailed.',
 };
 
-export function GameOverScreen({ winners, condition, standings, myPowers, onClose, onHome }: {
+export interface Deeds { kills: number; dominations: number; ruinations: number }
+
+export function GameOverScreen({ winners, condition, standings, myPowers, onClose, onHome, deeds }: {
   winners: Power[];
   condition: WinCondition;
   standings: Array<{ power: Power; vp: number; threat: number }>;
   myPowers: Power[];
   onClose: () => void;
   onHome: () => void;
+  deeds?: Partial<Record<Power, Deeds>>;
 }) {
   const primary = winners[0] ?? null;
   // No winner: the mortal world endured. Show the Old World itself.
@@ -328,6 +331,13 @@ export function GameOverScreen({ winners, condition, standings, myPowers, onClos
               <span className="cin-over-name">{POWER_LABELS[s.power]}{myPowers.includes(s.power) ? ' (you)' : ''}</span>
               <span className="cin-over-vp">{s.vp} VP</span>
               <span className="cin-over-threat">threat {s.threat}</span>
+              {deeds?.[s.power] && (
+                <span className="cin-over-deeds">
+                  <span title="Enemies slain">☠ {deeds[s.power]!.kills}</span>
+                  <span title="Regions dominated">⚑ {deeds[s.power]!.dominations}</span>
+                  <span title="Ruinations joined">✹ {deeds[s.power]!.ruinations}</span>
+                </span>
+              )}
             </div>
           ))}
         </div>
