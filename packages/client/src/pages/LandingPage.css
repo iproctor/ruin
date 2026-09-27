@@ -425,3 +425,19 @@
   .landing-field-email.is-open { max-width: none; }
   .landing-submit { width: 100%; }
 }
+
+/* God portraits rising behind each power column */
+.landing-power { padding-top: clamp(4.5rem, 10vh, 7rem) !important; }
+.landing-power-art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 15%;
+  opacity: 0.5;
+  -webkit-mask-image: linear-gradient(180deg, #000 20%, transparent 95%);
+  mask-image: linear-gradient(180deg, #000 20%, transparent 95%);
+  transition: opacity 0.6s ease, transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  z-index: 0;
+}
+.landing-power:hover .landing-power-art { opacity: 0.85; transform: scale(1.06); }
+.landing-power > div:not(.landing-power-art) { position: relative; z-index: 1; text-shadow: 0 1px 4px #000; }

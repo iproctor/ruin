@@ -4,6 +4,7 @@ import type { Power } from '@ruin/engine';
 import { login, register, ApiError } from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { PowerSigil } from '../components/PowerSigil.js';
+import { godArt } from '../lib/art.js';
 import './LandingPage.css';
 
 interface PowerMeta {
@@ -171,6 +172,7 @@ export default function LandingPage() {
             className={`landing-power landing-power-${p.slug}`}
             style={{ animationDelay: `${0.55 + i * 0.08}s` }}
           >
+            <div className="landing-power-art" aria-hidden="true" style={godArt(p.slug) ? { backgroundImage: `url(${godArt(p.slug)})` } : undefined} />
             <div className="landing-power-sigil"><PowerSigil power={p.slug} /></div>
             <div className="landing-power-numeral">{p.numeral}</div>
             <div className="landing-power-name">{p.name}</div>
