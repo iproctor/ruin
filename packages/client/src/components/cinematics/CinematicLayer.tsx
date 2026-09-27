@@ -141,6 +141,10 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
           }
           break;
         }
+        case 'action_applied':
+          // Any decision resolves a pending "chooses victims" prompt.
+          setBattle((b) => (b && b.awaitingPower ? { ...b, awaitingPower: null } : b));
+          break;
         case 'play_card': {
           sound.cardPlay(ev.power);
           if (cinematic && !mine(ev.power)) {

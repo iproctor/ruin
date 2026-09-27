@@ -183,8 +183,10 @@ function SummonButton({ regionId, registry, onClick }: { regionId: RegionId; reg
 
 // ── Figure handle (hover tooltip, drag, FX anchor) ─────────────────────────
 
-function FigureHandle({ slot, registry, state, draggable, regionId }: {
+function FigureHandle({ slot, registry, state, draggable, regionId, passThrough }: {
   slot: StandeeSlot; registry: ProjectionRegistry; state: GameState; draggable: boolean; regionId: RegionId;
+  /** While the player is picking a region, clicks must reach the region zone underneath. */
+  passThrough: boolean;
 }) {
   const f = slot.figure;
   const h = STANDEE_H[f.class];
@@ -200,7 +202,7 @@ function FigureHandle({ slot, registry, state, draggable, regionId }: {
       ref={ref}
       data-anchor={`fig-${f.id}`}
       className={`b3-fig ${draggable ? 'is-draggable' : ''}`}
-      style={{ opacity: isDragging ? 0.2 : 1, pointerEvents: slot.visible ? 'auto' : 'none' }}
+      style={{ opacity: isDragging ? 0.2 : 1, pointerEvents: slot.visible && !passThrough ? 'auto' : 'none' }}
       {...(draggable ? listeners : {})}
       {...(draggable ? attributes : {})}
       onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY })}
@@ -272,6 +274,7 @@ export default function Overlay(props: OverlayProps) {
           state={state}
           regionId={regionOf.get(s.figure.id) ?? (s.figure.regionId as RegionId)}
           draggable={!!myPower && (s.figure.controlledBy ?? s.figure.power) === myPower && s.visible}
+          passThrough={!!onRegionClick}
         />
       ))}
       {REGION_ORDER.map((id) => (
