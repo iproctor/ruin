@@ -206,7 +206,8 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
           setAftermath((rows) => [...rows.filter((r) => r.regionId !== ev.regionId), { regionId: ev.regionId, rolls: [], losses: [] }]);
           if (cinematic) {
             sound.battleHorn();
-            setBattle({ key: nextId(), regionId: ev.regionId, roster, rolls: [], kills: {}, enthralled: {}, wounded: {}, peasants: [], awaitingPower: null });
+            const peasantsAtStart = after ? after.regions[ev.regionId]!.tokens.filter((t) => t === 'peasant').length : 0;
+            setBattle({ key: nextId(), regionId: ev.regionId, roster, rolls: [], kills: {}, enthralled: {}, wounded: {}, peasants: [], peasantsAtStart, awaitingPower: null });
           } else {
             sound.battleHorn();
             soon(() => fx.burst(`region-${ev.regionId}`, 'hit', null, 1.2));

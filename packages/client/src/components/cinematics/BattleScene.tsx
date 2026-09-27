@@ -25,6 +25,8 @@ export interface BattleView {
   enthralled: Record<string, Power>;     // followerId → new controller
   wounded: Record<string, number>;       // War Frenzy partial hits
   peasants: Array<{ power: Power; id: number }>;
+  /** Peasant tokens in the region when the fight began (the mortal defenders). */
+  peasantsAtStart: number;
   awaitingPower: Power | null;           // someone must assign hits
 }
 
@@ -111,16 +113,18 @@ export default function BattleScene({ view, awaitingMe }: { view: BattleView; aw
       if (peasantsSeen.current.has(p.id)) continue;
       peasantsSeen.current.add(p.id);
       sound.hit();
-      requestAnimationFrame(() => fx.burst(`blane-${p.power}`, 'gold', null, 0.7));
+      requestAnimationFrame(() => fx.burst(['blane-peasants', `blane-${p.power}`], 'hit', p.power, 0.8));
     }
   }, [view.peasants, fx, sound]);
 
   const figSize = lanes.length > 3 ? 46 : 54;
+  const killCount = Object.keys(view.kills).length;
 
   return (
     <div className="bs" key={view.key}>
       <div className="bs-backdrop" style={art ? { backgroundImage: `url(${art})` } : undefined} />
       <div className="bs-vignette" />
+      {killCount > 0 && <div key={`flash-${killCount}`} className="bs-flash" />}
       <div className="bs-header">
         <div className="bs-swords">⚔</div>
         <div className="bs-title">Battle for {region.name}</div>
@@ -141,7 +145,7 @@ export default function BattleScene({ view, awaitingMe }: { view: BattleView; aw
                 <span className="bs-lane-sigil" style={{ color }}><PowerSigil power={power} size={30} /></span>
                 <span className="bs-lane-name">{POWER_LABELS[power]}</span>
               </div>
-              <div className="bs-lane-figs">
+              <div className="bs-lane-figs" key={active ? `atk-${roll?.id}` : 'idle'} data-attacking={active ? 'yes' : undefined}>
                 {figs.length === 0 && <span className="bs-lane-empty">no figures</span>}
                 {figs.map((f) => (
                   <FigureToken
@@ -154,11 +158,7 @@ export default function BattleScene({ view, awaitingMe }: { view: BattleView; aw
                     anchor={`bfig-${f.id}`}
                   />
                 ))}
-                {peasantCount > 0 && (
-                  <div className="bs-peasants" title="Peasants claimed">
-                    {tokenArt('peasant') ? <img src={tokenArt('peasant')} alt="" /> : '⚒'} ×{peasantCount}
-                  </div>
-                )}
+                {peasantCount > 0 && <span className="bs-peasant-tally" title="Peasants claimed">+{peasantCount} ⚒</span>}
               </div>
               <div className="bs-tray">
                 {roll ? (
@@ -193,6 +193,30 @@ export default function BattleScene({ view, awaitingMe }: { view: BattleView; aw
           );
         })}
       </div>
+
+      {view.peasantsAtStart > 0 && (
+        <div className="bs-lanes bs-lanes-mortal">
+          <div className="bs-lane bs-lane-mortal" style={{ ['--accent' as string]: '#a8a29e' }} data-anchor="blane-peasants">
+            <div className="bs-lane-head">
+              <span className="bs-lane-name">Peasantry</span>
+            </div>
+            <div className="bs-lane-figs">
+              {Array.from({ length: view.peasantsAtStart }).map((_, i) => {
+                const taken = i < view.peasants.length;
+                return (
+                  <div key={i} className={`bs-fig bs-fig-cultist ${taken ? 'is-killed' : ''}`} style={{ width: 40, height: 40, ['--ring' as string]: '#a8a29e' }}>
+                    <div className="bs-fig-art" style={tokenArt('peasant') ? { backgroundImage: `url(${tokenArt('peasant')})` } : undefined} />
+                    {taken && <div className="bs-fig-slash" />}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="bs-tray bs-tray-mortal">
+              <div className="bs-tray-idle">{view.peasants.length > 0 ? `${view.peasants.length} claimed` : 'cowering'}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {view.awaitingPower && (
         <div className="bs-await" style={{ ['--accent' as string]: POWER_COLORS[view.awaitingPower] }}>

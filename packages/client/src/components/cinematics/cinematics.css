@@ -812,3 +812,34 @@
 .cin-over-vp { font: 900 1.1rem 'Cinzel', serif; color: #f4e6cc; }
 .cin-over-threat { font-family: 'IM Fell English', serif; color: #9a8a74; font-size: 0.85rem; }
 .cin-over-buttons { display: flex; gap: 12px; }
+
+/* The rolling god's figures lunge forward; each kill flashes the field red. */
+.bs-lane-figs[data-attacking] .bs-fig { animation: lunge 0.55s cubic-bezier(.3,1.6,.5,1) both; }
+.bs-lane-figs[data-attacking] .bs-fig:nth-child(2) { animation-delay: 0.05s; }
+.bs-lane-figs[data-attacking] .bs-fig:nth-child(3) { animation-delay: 0.1s; }
+.bs-lane-figs[data-attacking] .bs-fig:nth-child(4) { animation-delay: 0.15s; }
+.bs-lane-figs[data-attacking] .bs-fig:nth-child(n+5) { animation-delay: 0.2s; }
+@keyframes lunge {
+  0% { transform: none; }
+  35% { transform: translateX(14px) scale(1.12); filter: brightness(1.4); }
+  100% { transform: none; }
+}
+.bs-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 50%, transparent 35%, rgba(200,20,10,0.55) 100%);
+  animation: bs-flash 0.7s ease-out both;
+  z-index: 2;
+}
+@keyframes bs-flash { from { opacity: 1; } to { opacity: 0; } }
+
+.bs-lanes-mortal { margin-top: -8px; }
+.bs-lane-mortal {
+  background: linear-gradient(90deg, rgba(90,80,70,0.35), rgba(10,6,4,0.8) 40%, rgba(10,6,4,0.65));
+  border-left-color: #a8a29e;
+  min-height: 60px;
+}
+.bs-lane-mortal .bs-lane-name { color: #c9c2b8; }
+.bs-tray-mortal { min-height: 40px; }
+.bs-peasant-tally { font: 800 0.75rem 'Cinzel', serif; color: #e0c890; margin-left: 4px; animation: skull-in 0.4s both; }
