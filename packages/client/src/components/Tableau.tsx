@@ -69,7 +69,7 @@ function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, o
         ['--angle' as string]: `${angle}deg`,
         ['--drop' as string]: `${drop}px`,
         // Bigger hands overlap more so the fan never spills past its area.
-        margin: `0 ${-10 - Math.max(0, handSize - 6) * 7}px`,
+        margin: `0 ${-6 - Math.max(0, handSize - 7) * 6}px`,
         zIndex: 10 + handIndex,
       }}
       onClick={onClick}

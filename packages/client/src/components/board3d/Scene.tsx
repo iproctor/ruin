@@ -450,7 +450,15 @@ function TokenStack({ type, count, x, z, bank }: { type: TokenType; count: numbe
   );
 }
 
-function CorruptionStack({ power, count, x, z }: { power: Power; count: number; x: number; z: number }) {
+function CorruptionStack({ power, count, x, z, bank }: { power: Power; count: number; x: number; z: number; bank: TextureBank }) {
+  const mats = useMemo(() => {
+    const color = POWER_COLORS[power];
+    return [
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3, metalness: 0.3, roughness: 0.45 }),
+      new THREE.MeshStandardMaterial({ map: bank.corruptionFace(power), emissive: color, emissiveIntensity: 0.15, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ color: '#0a0604' }),
+    ];
+  }, [power, bank]);
   const prev = useRef(count);
   const drops = useRef<number[]>([]);
   if (count > prev.current) {
@@ -473,13 +481,11 @@ function CorruptionStack({ power, count, x, z }: { power: Power; count: number; 
     });
   });
   const n = Math.min(count, 12);
-  const color = POWER_COLORS[power];
   return (
     <group ref={group} position={[x, BOARD_TOP, z]}>
       {Array.from({ length: n }).map((_, i) => (
-        <mesh key={i} position={[((i * 7) % 3 - 1) * 0.004, 0.012 + i * 0.024, 0]} castShadow>
-          <cylinderGeometry args={[0.055, 0.058, 0.022, 20]} />
-          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} metalness={0.3} roughness={0.45} />
+        <mesh key={i} position={[((i * 7) % 3 - 1) * 0.004, 0.012 + i * 0.024, 0]} material={mats} castShadow>
+          <cylinderGeometry args={[0.058, 0.06, 0.022, 24]} />
         </mesh>
       ))}
     </group>
@@ -506,7 +512,7 @@ function RegionPieces({ regionId, props }: { regionId: RegionId; props: ScenePro
       })}
       {corruption.map(([power, count], i) => {
         const [x, z] = corruptionPos(f, i);
-        return <CorruptionStack key={power} power={power} count={count} x={x} z={z} />;
+        return <CorruptionStack key={power} power={power} count={count} x={x} z={z} bank={bank} />;
       })}
       {!ruined && ([0, 1] as const).map((si) => {
         const [x, z] = cardSlotPos(f, si);

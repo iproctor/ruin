@@ -217,6 +217,30 @@ export class TextureBank {
     }, tokenArt(type));
   }
 
+  /** Top face of a corruption token: owner's colour with an engraved skull. */
+  corruptionFace(power: Power): THREE.Texture {
+    const S = 96;
+    const color = POWER_COLORS[power];
+    return this.make(`corrupt:${power}`, S, S, (g) => {
+      const grad = g.createRadialGradient(S * 0.4, S * 0.35, 4, S / 2, S / 2, S / 2);
+      grad.addColorStop(0, '#ffffff');
+      grad.addColorStop(0.18, color);
+      grad.addColorStop(1, '#0a0604');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, S, S);
+      g.beginPath();
+      g.arc(S / 2, S / 2, S / 2 - 5, 0, Math.PI * 2);
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(0,0,0,0.6)';
+      g.stroke();
+      g.fillStyle = 'rgba(10,4,2,0.8)';
+      g.font = `${S * 0.5}px serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('☠', S / 2, S / 2 + 2);
+    });
+  }
+
   /** Scorched earth with glowing fissures, laid over a ruined region. */
   ruinDecal(seed: string): THREE.Texture {
     const W = 512;
