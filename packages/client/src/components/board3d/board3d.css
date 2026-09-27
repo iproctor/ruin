@@ -168,7 +168,8 @@
   z-index: 4;
   transition: transform 0.12s, box-shadow 0.12s;
 }
-.b3-summon:hover { transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 0 16px rgba(250,204,21,0.7); }
+.b3-summon:hover,
+.b3-summon:active { transform: translate(-50%, -50%) scale(1.18); box-shadow: 0 0 16px rgba(250,204,21,0.7); }
 
 .b3-fig {
   position: absolute;

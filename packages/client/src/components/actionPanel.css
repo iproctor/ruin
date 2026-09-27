@@ -29,7 +29,7 @@
   box-shadow: 0 0 0 1px #000, 0 0 14px rgba(194,24,24,0.4);
 }
 .game-ui button.danger:hover:not(:disabled) { filter: brightness(1.2); }
-.game-ui button:active:not(:disabled) { transform: translateY(1px); }
+.game-ui :is(button.primary, button.secondary, button.danger):active:not(:disabled) { transform: translateY(1px); }
 
 /* Dock that holds non-summoning decisions */
 .ap-dock {

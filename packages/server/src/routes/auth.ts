@@ -12,15 +12,22 @@ const router: ReturnType<typeof Router> = Router();
 // POST /api/auth/register
 // ---------------------------------------------------------------------------
 const registerSchema = z.object({
-  username: z.string().min(2).max(32),
-  password: z.string().min(8),
-  email: z.string().email().optional(),
+  username: z.string().trim()
+    .min(2, 'Username must be at least 2 characters')
+    .max(32, 'Username must be at most 32 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  // Email is optional; treat a blank field as "not given".
+  email: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().trim().email('That email address looks invalid').optional(),
+  ),
 });
 
 router.post('/register', async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: 'Invalid input', details: parsed.error.issues });
+    const first = parsed.error.issues[0]?.message ?? 'Invalid input';
+    res.status(400).json({ error: first, details: parsed.error.issues });
     return;
   }
 

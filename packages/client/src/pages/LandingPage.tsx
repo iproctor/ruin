@@ -121,7 +121,10 @@ export default function LandingPage() {
           throw err;
         }
       } else {
-        const res = await register(username, password, email || undefined);
+        const name = username.trim();
+        if (name.length < 2) throw new Error('Username must be at least 2 characters.');
+        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+        const res = await register(name, password, email.trim() || undefined);
         storeToken(res.token);
         navigate('/home');
         return;
