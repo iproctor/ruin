@@ -8,6 +8,7 @@ import { TextureBank } from './textures.js';
 import { ProjectionRegistry } from './projection.js';
 import Scene, { standeeLayout, type ViewControl } from './Scene.js';
 import { BOARD_D, BOARD_W, regionFrame } from './layout.js';
+import { useSettings } from '../../contexts/SettingsContext.js';
 import Overlay from './Overlay.js';
 import './board3d.css';
 
@@ -17,6 +18,8 @@ export default function Board3D(props: GameBoardProps) {
     state, highlightRegions, dimmedRegions, pendingAction, onRegionClick, myPower, animationRegion,
     animationKilledIds, hideKilled, summoningAnim, onSlotClick, slotPlayable, onSummonClick, canSummon, dominationLabels,
   } = props;
+  const { settings } = useSettings();
+  const lite = settings.graphics === 'low';
   const bank = useMemo(() => new TextureBank(8), []);
   const registry = useMemo(() => new ProjectionRegistry(), []);
   useEffect(() => () => bank.dispose(), [bank]);
@@ -132,8 +135,9 @@ export default function Board3D(props: GameBoardProps) {
       onDoubleClick={(e) => { if ((e.target as HTMLElement).tagName === 'CANVAS') resetView(); }}
     >
       <Canvas
-        shadows
-        dpr={[1, 1.5]}
+        key={lite ? 'lite' : 'full'}
+        shadows={!lite}
+        dpr={lite ? 1 : [1, 1.5]}
         gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
         camera={{ fov: 30, near: 0.1, far: 80, position: [0, 14, 10] }}
         style={{ position: 'absolute', inset: 0 }}
@@ -141,6 +145,7 @@ export default function Board3D(props: GameBoardProps) {
         <Suspense fallback={null}>
           <Scene
             view={view}
+            lite={lite}
             state={state}
             bank={bank}
             registry={registry}

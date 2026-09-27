@@ -23,6 +23,8 @@ export interface ViewControl {
 
 export interface SceneProps {
   view: ViewControl;
+  /** Low-detail mode: skip ambient particles, mist and smoke. */
+  lite?: boolean;
   state: GameState;
   bank: TextureBank;
   registry: ProjectionRegistry;
@@ -860,14 +862,14 @@ export default function Scene(props: SceneProps) {
           sceneStart={sceneStart}
         />
       ))}
-      <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
-      <Mist bank={bank} />
+      {!props.lite && <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />}
+      {!props.lite && <Mist bank={bank} />}
       <WorldTrack state={state} bank={bank} />
       {props.dominations && [...props.dominations.entries()].map(([regionId, d]) => (
         <WarBanner key={`banner-${regionId}-${d.power}`} power={d.power} regionId={regionId} bank={bank} />
       ))}
       <SideTable state={state} bank={bank} />
-      {REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
+      {!props.lite && REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
         const f = regionFrame(id);
         return <SmokePlume key={`smoke-${id}`} bank={bank} x={f.cx} z={f.cz} />;
       })}

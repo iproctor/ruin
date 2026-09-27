@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSettings, type AnimSpeed, type BoardView } from '../contexts/SettingsContext.js';
+import { useSettings, type AnimSpeed, type BoardView, type Graphics } from '../contexts/SettingsContext.js';
 
 function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -80,6 +80,9 @@ export default function SettingsMenu() {
         <div ref={panel} className="gset" style={{ top: pos.top, left: pos.left }}>
           <div className="gset-title">Presentation</div>
           <Choice<BoardView> label="Board" value={settings.boardView} options={[['3d', 'Tabletop'], ['2d', 'Map']]} onChange={(v) => update({ boardView: v })} />
+          {settings.boardView === '3d' && (
+            <Choice<Graphics> label="Detail" value={settings.graphics} options={[['high', 'High'], ['low', 'Low']]} onChange={(v) => update({ graphics: v })} />
+          )}
           <Toggle label="Cinematics" on={settings.cinematics} onChange={(v) => update({ cinematics: v })} />
           <Choice<AnimSpeed> label="Pace" value={settings.animSpeed} options={[['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']]} onChange={(v) => update({ animSpeed: v })} />
           <div className="gset-title" style={{ marginTop: 10 }}>Sound</div>

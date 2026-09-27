@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 
 export type AnimSpeed = 'slow' | 'normal' | 'fast';
 export type BoardView = '3d' | '2d';
+export type Graphics = 'high' | 'low';
 
 export interface Settings {
   sound: boolean;
@@ -10,6 +11,7 @@ export interface Settings {
   animSpeed: AnimSpeed;
   cinematics: boolean;     // full-screen battle / spell / ruination scenes
   boardView: BoardView;
+  graphics: Graphics;      // tabletop quality (low: no shadows / mist / embers)
 }
 
 /** Multiplier applied to every animation and event-queue delay. */
@@ -22,6 +24,7 @@ const DEFAULTS: Settings = {
   animSpeed: 'normal',
   cinematics: true,
   boardView: '3d',
+  graphics: 'high',
 };
 
 const STORAGE_KEY = 'ruin_settings_v1';
