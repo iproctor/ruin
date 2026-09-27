@@ -32,7 +32,7 @@ for (const kind of Object.keys(SIZES)) {
     const src = path.join(dir, f);
     const out = path.join(DST, kind, f.replace(/\.png$/, '.webp'));
     if (existsSync(out) && statSync(out).mtimeMs > statSync(src).mtimeMs) continue;
-    const [w, h, q] = SIZES[kind];
+    const [w, h, q] = kind === 'misc' && f.startsWith('card_back') ? [480, 0, 78] : SIZES[kind];
     execFileSync('cwebp', ['-quiet', '-q', String(q), '-resize', String(w), String(h), src, '-o', out]);
     n++;
   }

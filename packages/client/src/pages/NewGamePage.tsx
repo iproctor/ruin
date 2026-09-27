@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import type { Power } from '@ruin/engine';
 import { createGame } from '../api/client.js';
 import { PowerSigil } from '../components/PowerSigil.js';
+import { godArt } from '../lib/art.js';
 import './NewGamePage.css';
 
 const ALL_POWERS: Power[] = ['xarm', 'gormen', 'tenzen', 'lasha'];
@@ -143,6 +144,7 @@ export default function NewGamePage() {
                 className={`newgame-power newgame-power-${power} ${active ? 'is-active' : 'is-off'} is-${setting}`}
                 aria-label={`${POWER_NAMES[power]} — ${SETTING_LABEL[setting]} (click to cycle)`}
               >
+                <span className="newgame-power-portrait" aria-hidden="true" style={godArt(power) ? { backgroundImage: `url(${godArt(power)})` } : undefined} />
                 <span className="newgame-power-bleed" aria-hidden="true" />
                 <span className="newgame-power-sigil"><PowerSigil power={power} size={48} /></span>
                 <span className="newgame-power-name">{POWER_NAMES[power]}</span>

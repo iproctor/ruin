@@ -3,7 +3,13 @@ import { Link } from 'react-router-dom';
 import { listGames, type GameSummary } from '../api/client.js';
 import { useAuth } from '../contexts/AuthContext.js';
 import { POWER_LABELS } from '../lib/display.js';
+import { godArt, chaosCardArt, worldCardArt, regionArt } from '../lib/art.js';
 import './HomePage.css';
+
+function Medal({ power }: { power: string }) {
+  const art = godArt(power as keyof typeof POWER_LABELS);
+  return <span className={`home-medal home-game-power-${power}`} style={art ? { backgroundImage: `url(${art})` } : undefined} />;
+}
 
 function formatDate(dateStr: string): string {
   try {
@@ -46,6 +52,7 @@ function GameRow({ game, userId }: { game: GameSummary; userId: string | null })
                   key={p.userId ?? p.power}
                   className={`home-game-power home-game-power-${p.power}`}
                 >
+                  <Medal power={p.power} />
                   {p.username ?? POWER_LABELS[p.power as keyof typeof POWER_LABELS] ?? p.power}
                 </span>
               ))}
@@ -62,6 +69,7 @@ function GameRow({ game, userId }: { game: GameSummary; userId: string | null })
                   key={p.power}
                   className={`home-game-power home-game-power-${p.power}`}
                 >
+                  <Medal power={p.power} />
                   {POWER_LABELS[p.power as keyof typeof POWER_LABELS] ?? p.power}
                 </span>
               ))}
@@ -127,6 +135,7 @@ export default function HomePage() {
 
   return (
     <div className="home">
+      <div className="home-backdrop" aria-hidden="true" style={regionArt('mittelreich') ? { backgroundImage: `url(${regionArt('mittelreich')})` } : undefined} />
       <div className="home-grain" aria-hidden="true" />
       <div className="home-vignette" aria-hidden="true" />
       <div className="home-inner">
@@ -140,10 +149,12 @@ export default function HomePage() {
 
         <div className="home-modes">
           <Link to="/games/new" className="home-mode">
+            <div className="home-mode-art" aria-hidden="true" style={chaosCardArt('xarm_war_cry') ? { backgroundImage: `url(${chaosCardArt('xarm_war_cry')})` } : undefined} />
             <div className="home-mode-label">Play Solo</div>
             <div className="home-mode-sub">play against AI opponents</div>
           </Link>
           <Link to="/lobby" className="home-mode">
+            <div className="home-mode-art" aria-hidden="true" style={worldCardArt('grand_muster') ? { backgroundImage: `url(${worldCardArt('grand_muster')})` } : undefined} />
             <div className="home-mode-label">Summon Rivals</div>
             <div className="home-mode-sub">lobby, chat, and find a game</div>
           </Link>

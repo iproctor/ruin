@@ -145,7 +145,7 @@
   opacity: 1;
   transition: opacity 0.45s ease, transform 0.55s ease;
 }
-.newgame-power > *:not(.newgame-power-bleed) { position: relative; z-index: 1; }
+.newgame-power > *:not(.newgame-power-bleed):not(.newgame-power-portrait) { position: relative; z-index: 1; }
 
 .newgame-power-sigil {
   color: var(--accent);
@@ -400,3 +400,23 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* God portrait fading down into the tile */
+.newgame-power { padding-top: clamp(8rem, 17vh, 11rem); }
+.newgame-power-portrait {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 70%;
+  background-size: cover;
+  background-position: center 18%;
+  -webkit-mask-image: linear-gradient(180deg, #000 35%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 35%, transparent 100%);
+  opacity: 0.62;
+  transition: opacity 0.45s ease, transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+.newgame-power:hover .newgame-power-portrait { opacity: 0.9; transform: scale(1.05); }
+.newgame-power.is-off .newgame-power-portrait { opacity: 0.25; filter: grayscale(1); }
+.newgame-power-name, .newgame-power-epithet, .newgame-power-desc { text-shadow: 0 1px 3px #000, 0 0 10px rgba(0,0,0,0.8); }

@@ -2,7 +2,7 @@ import { useRef, type CSSProperties, type ReactNode } from 'react';
 import type { Power } from '@ruin/engine';
 import { CARD_BY_ID, UPGRADE_BY_ID, WORLD_CARD_BY_ID } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS } from '../../lib/display.js';
-import { anyCardArt } from '../../lib/art.js';
+import { anyCardArt, miscArt } from '../../lib/art.js';
 import { PowerSigil } from '../PowerSigil.js';
 import './cards.css';
 
@@ -143,12 +143,12 @@ export default function GameCard({ cardId, size = 'md', interactive, compact, fa
   if (faceDown || !info) {
     return (
       <div ref={ref} className={cls} style={vars}>
-        <div className="gc-back">
-          <div className="gc-back-sigils">
+        <div className="gc-back" style={miscArt('card_back') ? { backgroundImage: `url(${miscArt('card_back')})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}>
+          {!miscArt('card_back') && <div className="gc-back-sigils">
             {(['xarm', 'gormen', 'tenzen', 'lasha'] as Power[]).map((p) => (
               <span key={p} style={{ color: POWER_COLORS[p] }}><PowerSigil power={p} size={width * 0.22} /></span>
             ))}
-          </div>
+          </div>}
         </div>
         {children}
       </div>
