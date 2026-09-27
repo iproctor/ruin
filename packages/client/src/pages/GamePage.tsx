@@ -409,6 +409,18 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       >;
   }, [displayState, myPowerEarly]);
 
+  // What the player can actually do this turn — the tableau dims everything else.
+  const playableCardIds = useMemo(() => new Set(legalPlayCardActions.map((a) => a.cardId)), [legalPlayCardActions]);
+  const summonableClasses = useMemo(() => {
+    const out = new Set<FollowerClass>();
+    if (!displayState) return out;
+    for (const a of legalSummonActions) {
+      const fig = findFollower(displayState, a.followerId);
+      if (fig && fig.regionId === null) out.add(fig.class);
+    }
+    return out;
+  }, [legalSummonActions, displayState]);
+
   const canSummon = useCallback(
     (regionId: RegionId) =>
       legalSummonActions.some((a) => {
@@ -792,6 +804,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
             selectedCardId={selectedCardId}
             onSelectCard={setSelectedCardId}
             pendingAction={pendingOnPlayChoice ?? pendingAction}
+            playable={isSummoningTurn && !pendingAction && !pendingOnPlayChoice ? { cards: playableCardIds, classes: summonableClasses } : undefined}
             onUndo={handleUndo}
             onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) && !needsApprenticeChoice ? handleEndTurn : undefined}
             submitError={submitError}

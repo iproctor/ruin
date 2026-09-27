@@ -23,11 +23,14 @@ interface TableauProps {
   onUndo?: () => void;
   onEndTurn?: () => void;
   submitError?: string;
+  /** During your summoning turn: what you can legally play/summon right now. */
+  playable?: { cards: Set<string>; classes: Set<FollowerClass> };
 }
 
 // ── Draggable hand card ───────────────────────────────────────────────────────
 
-function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, onClick, onHover, isSummoningTurn }: {
+function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, onClick, onHover, isSummoningTurn, unplayable }: {
+  unplayable?: boolean;
   cardId: string;
   handIndex: number;
   handSize: number;
@@ -57,6 +60,7 @@ function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, o
     isPending ? 'is-pending' : '',
     isSummoningTurn ? 'is-live' : '',
     isDragging ? 'is-dragging' : '',
+    unplayable ? 'is-unplayable' : '',
   ].join(' ');
 
   return (
@@ -87,7 +91,8 @@ function HandCard({ cardId, power, isSelected, isPending, handIndex, handSize, o
 
 // ── Draggable reserve follower ────────────────────────────────────────────────
 
-function ReserveFollower({ followerId, followerClass, power, count, isSummoningTurn, upgradesInPlay }: {
+function ReserveFollower({ followerId, followerClass, power, count, isSummoningTurn, upgradesInPlay, unaffordable }: {
+  unaffordable?: boolean;
   followerId: string | null;
   followerClass: FollowerClass;
   power: Power;
@@ -109,7 +114,7 @@ function ReserveFollower({ followerId, followerClass, power, count, isSummoningT
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`res-fig res-${followerClass} ${empty ? 'is-empty' : ''} ${isSummoningTurn && !empty ? 'is-live' : ''}`}
+      className={`res-fig res-${followerClass} ${empty ? 'is-empty' : ''} ${isSummoningTurn && !empty && !unaffordable ? 'is-live' : ''} ${unaffordable && !empty ? 'is-unaffordable' : ''}`}
       style={{ ['--ring' as string]: POWER_COLORS[power], opacity: isDragging ? 0.35 : undefined }}
       onMouseEnter={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
       onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
@@ -155,7 +160,7 @@ function pendingLabel(action: Action): string {
 
 // ── Tableau ───────────────────────────────────────────────────────────────────
 
-export default function Tableau({ state, displayState, myPower, selectedCardId, onSelectCard, pendingAction, onUndo, onEndTurn, submitError }: TableauProps) {
+export default function Tableau({ state, displayState, myPower, selectedCardId, onSelectCard, pendingAction, onUndo, onEndTurn, submitError, playable }: TableauProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const sound = useSound();
 
@@ -242,6 +247,7 @@ export default function Tableau({ state, displayState, myPower, selectedCardId, 
                 count={list.length}
                 isSummoningTurn={isSummoningTurn}
                 upgradesInPlay={ps.upgradesInPlay}
+                unaffordable={!!playable && !playable.classes.has(cls)}
               />
             );
           })}
@@ -280,6 +286,7 @@ export default function Tableau({ state, displayState, myPower, selectedCardId, 
               onClick={isSummoningTurn ? undefined : () => onSelectCard(selectedCardId === cardId ? null : cardId)}
               onHover={(id, x, y) => setTooltip(id ? { cardId: id, x, y } : null)}
               isSummoningTurn={isSummoningTurn}
+              unplayable={!!playable && !playable.cards.has(cardId)}
             />
           ))}
         </div>
