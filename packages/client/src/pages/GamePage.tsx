@@ -31,6 +31,8 @@ import { SoundProvider } from '../contexts/SoundContext.js';
 import { FxProvider } from '../components/fx/FxProvider.js';
 import CinematicLayer from '../components/cinematics/CinematicLayer.js';
 import SafeBoundary from '../components/SafeBoundary.js';
+import LoadingScreen from '../components/LoadingScreen.js';
+import { allArtUrls } from '../lib/art.js';
 import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_DIM, CARD_FACE, CARD_INK, RUINED, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
 
@@ -613,13 +615,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  if (!displayState) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: PAPER_FADE }}>
-        Connecting…
-      </div>
-    );
-  }
+  if (!displayState) return <LoadingScreen />;
 
   // Use server state for status bar so "Acting:" doesn't jump ahead of the buffer
   const statusState = serverState ?? displayState;
@@ -978,6 +974,19 @@ export default function GamePage() {
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [error, setError] = useState('');
   const shakeRef = useRef<HTMLDivElement>(null);
+
+  // Warm the browser cache with every painting while the table sets up, so
+  // cards and portraits never pop in mid-cinematic.
+  useEffect(() => {
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 400));
+    idle(() => {
+      for (const url of allArtUrls()) {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = url;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     if (!id || !userId) return;

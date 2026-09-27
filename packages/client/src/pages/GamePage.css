@@ -583,3 +583,52 @@
   background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.45), transparent 40%), radial-gradient(circle at 50% 60%, var(--accent, #a97140), color-mix(in srgb, var(--accent, #a97140) 40%, black) 85%);
   box-shadow: 0 0 0 1.5px #0a0604, 0 0 0 2.5px #8a6034;
 }
+
+/* ── Loading screen ──────────────────────────────────────────────────────── */
+.loading-screen {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: radial-gradient(ellipse at 50% 45%, #1c130c, #050302 70%);
+}
+.loading-gods { display: flex; gap: 22px; }
+.loading-god {
+  position: relative;
+  width: 86px;
+  height: 86px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px var(--accent);
+  animation: god-wake 1.4s ease-in-out infinite alternate;
+  opacity: 0.35;
+}
+.loading-god-art {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #120d0a center 18% / cover;
+}
+.loading-god-sigil {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  color: var(--accent);
+  background: #0a0604;
+  border-radius: 50%;
+  padding: 3px;
+  display: flex;
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+@keyframes god-wake {
+  from { opacity: 0.25; filter: grayscale(0.8); }
+  to { opacity: 1; filter: none; box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px var(--accent), 0 0 30px var(--accent); }
+}
+.loading-label {
+  font: 700 0.8rem 'Cinzel', serif;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: #9a8a74;
+  animation: waiting 2.4s ease-in-out infinite;
+}
