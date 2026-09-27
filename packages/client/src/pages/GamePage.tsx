@@ -677,7 +677,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
 
           {/* Board */}
-          <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', display: 'flex', justifyContent: 'center' }}>
+          {/* marginBottom leaves room for the hand, whose cards rise over the table edge */}
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: tablePower ? 40 : 0 }}>
             <GameBoard
               state={(anim.animationPhase ? anim.displayState : displayState) ?? displayState}
               highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}

@@ -8,6 +8,7 @@ import { INK, SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRAS
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
 import BattlePane from './BattlePane.js';
+import { followerArt, chaosCardArt } from '../lib/art.js';
 import type { DragItem } from '../types/drag.js';
 
 // ── Region layout ─────────────────────────────────────────────────────────────
@@ -257,12 +258,35 @@ function FigureCluster({ figures, x, y, powers, animationKilledIds, hideKilled, 
               onMouseMove={e => setHovered({ fig, mx: e.clientX, my: e.clientY })}
               onMouseLeave={() => setHovered(null)}
             >
-              {needsOuterRing && fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={10} fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
-              {needsOuterRing && fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={8}  fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
-              {needsOuterRing && fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy}    fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
-              {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
-              {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
-              {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
+              {(() => {
+                // Portrait token: painted face inside a ring in the owner's colour.
+                const art = followerArt(fig.power, fig.class);
+                const r = fig.class === 'incarnation' ? 8 : fig.class === 'warrior' ? 7 : 6;
+                if (!art) {
+                  return (
+                    <>
+                      {needsOuterRing && fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={10} fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
+                      {needsOuterRing && fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={8}  fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
+                      {needsOuterRing && fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy}    fill="none" opacity={op} stroke={controlledColor!} strokeWidth={1.5} />}
+                      {fig.class === 'incarnation' && <Square   cx={fx} cy={fy} r={8} {...sp} />}
+                      {fig.class === 'warrior'     && <Triangle cx={fx} cy={fy} r={6} {...sp} />}
+                      {fig.class === 'cultist'     && <CultistShape cx={fx} cy={fy} {...sp} />}
+                    </>
+                  );
+                }
+                return (
+                  <g opacity={op === 0.9 ? 1 : 0.35}>
+                    {needsOuterRing && <circle cx={fx} cy={fy} r={r + 3} fill="none" stroke={controlledColor!} strokeWidth={1.5} />}
+                    <circle cx={fx} cy={fy} r={r + 1.2} fill={color} stroke={glowStroke ?? '#0a0604'} strokeWidth={glowStroke ? 1.5 : 0.6} />
+                    <image
+                      href={art}
+                      x={fx - r} y={fy - r} width={r * 2} height={r * 2}
+                      preserveAspectRatio="xMidYMin slice"
+                      style={{ clipPath: 'circle(50%)', filter: fig.tipped || isAnimKilled ? 'grayscale(1)' : undefined }}
+                    />
+                  </g>
+                );
+              })()}
               {slot.kind === 'group' && (
                 <text
                   x={fx + 7} y={fy + 3}
@@ -335,10 +359,19 @@ function MiniCard({ cardId, width, height, onHover, isPending, isAppearing }: {
           strokeWidth={isPending ? 2 : isPersistent ? 1.5 : 0.75}
           strokeDasharray={isPending ? '3 2' : undefined}
         />
+      {isChaos && chaosCardArt(cardId) && (
+        <image
+          href={chaosCardArt(cardId)}
+          width={width} height={height}
+          preserveAspectRatio="xMidYMid slice"
+          opacity={0.6}
+          style={{ clipPath: 'inset(0 round 3px)' }}
+        />
+      )}
       <rect width={width} height={3} rx={1} fill={accentColor} opacity={0.95} />
       <text x={3} y={12} fill={CARD_INK} fontSize="8" fontWeight="600"
         fontFamily="'Cinzel', serif" letterSpacing="0.02em"
-        style={{ userSelect: 'none' }}>
+        style={{ userSelect: 'none', paintOrder: 'stroke' }} stroke="#0a0604" strokeWidth={2.2} strokeLinejoin="round">
         {name.slice(0, 10)}
       </text>
       {cost !== null && (
