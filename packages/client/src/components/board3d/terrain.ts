@@ -1,4 +1,5 @@
-import { BOARD_D, BOARD_TOP, BOARD_W, PX } from './layout.js';
+import type { RegionId } from '@ruin/engine';
+import { BOARD_D, BOARD_TOP, BOARD_W, PX, regionFrame } from './layout.js';
 
 /**
  * Light relief for the tabletop map. Heights come from hand-placed mountain
@@ -155,4 +156,37 @@ export function groundYUnder(x: number, z: number, halfW: number, halfD: number)
     for (const dz of [-halfD, 0, halfD]) y = Math.max(y, groundY(x + dx, z + dz));
   }
   return y;
+}
+
+// ── Region floors ────────────────────────────────────────────────────────────
+// Regions don't follow the relief: each is a flat plate floating just above
+// the highest ground inside it, and everything in the region sits on it.
+
+const REGION_IDS: RegionId[] = ['norrsund', 'talvimaa', 'volensk', 'mittelreich', 'normagne', 'almerida', 'toscavar', 'pelascos', 'the_barrens'];
+
+const FLOORS: Record<RegionId, number> = (() => {
+  const out = {} as Record<RegionId, number>;
+  for (const id of REGION_IDS) {
+    const f = regionFrame(id);
+    let top = 0;
+    for (let i = 0; i <= 24; i++) {
+      for (let j = 0; j <= 16; j++) top = Math.max(top, terrainHeight(f.x0 + (f.w * i) / 24, f.z0 + (f.d * j) / 16));
+    }
+    out[id] = BOARD_TOP + top + 0.012;
+  }
+  return out;
+})();
+
+/** World y of a region's floating plate. */
+export function regionFloorY(id: RegionId): number {
+  return FLOORS[id];
+}
+
+/** Where a piece at x/z rests: its region's plate, or the terrain outside any region. */
+export function floorAt(x: number, z: number): number {
+  for (const id of REGION_IDS) {
+    const f = regionFrame(id);
+    if (x >= f.x0 - 0.02 && x <= f.x0 + f.w + 0.02 && z >= f.z0 - 0.02 && z <= f.z0 + f.d + 0.02) return FLOORS[id];
+  }
+  return groundY(x, z);
 }

@@ -6,7 +6,7 @@ import type { Action, FollowerInstance, GameState, Power, RegionId, TokenType } 
 import { CARD_BY_ID, followersInRegion, REGION_ORDER, THREAT_DIALS } from '@ruin/engine';
 import { POWER_COLORS } from '../../lib/display.js';
 import type { TextureBank } from './textures.js';
-import { groundY, groundYUnder, terrainHeight } from './terrain.js';
+import { floorAt, regionFloorY, terrainHeight } from './terrain.js';
 import type { ProjectionRegistry } from './projection.js';
 import {
   BOARD_D, BOARD_TOP, BOARD_W, CARD_D, CARD_W, STANDEE_ASPECT, STANDEE_H,
@@ -264,7 +264,7 @@ function SmokePlume({ bank, x, z }: { bank: TextureBank; x: number; z: number })
       const sp = refs.current[i];
       if (!sp) return;
       const k = (t * 0.12 + sd.phase) % 1;
-      sp.position.set(x + sd.drift * k + Math.sin(t * 0.5 + i) * 0.05, groundY(x, z) + 0.08 + k * 1.8, z - k * 0.3);
+      sp.position.set(x + sd.drift * k + Math.sin(t * 0.5 + i) * 0.05, floorAt(x, z) + 0.08 + k * 1.8, z - k * 0.3);
       const s = 0.25 + k * 0.9;
       sp.scale.set(s, s, s);
       (sp.material as THREE.SpriteMaterial).opacity = Math.sin(k * Math.PI) * 0.75;
@@ -300,38 +300,8 @@ function roundedRect(w: number, h: number, r: number) {
   return s;
 }
 
-/**
- * A plane draped over the terrain: local (x, y) in the plate's frame (group
- * rotated -90° about X at (cx, 0, cz)), vertices lifted to the ground + lift.
- */
-function drapedPlane(cx: number, cz: number, w: number, d: number, lift: number): THREE.PlaneGeometry {
-  const g = new THREE.PlaneGeometry(w, d, 40, 28);
-  const pos = g.attributes.position!;
-  for (let i = 0; i < pos.count; i++) pos.setZ(i, groundY(cx + pos.getX(i), cz - pos.getY(i)) + lift);
-  g.computeVertexNormals();
-  return g;
-}
-
-/** Rounded-rectangle alpha mask for draped plates. */
-function useRoundedMask(w: number, d: number) {
-  return useMemo(() => {
-    const c = document.createElement('canvas');
-    c.width = 256;
-    c.height = Math.round((256 * d) / w);
-    const g = c.getContext('2d')!;
-    g.fillStyle = '#000';
-    g.fillRect(0, 0, c.width, c.height);
-    g.fillStyle = '#fff';
-    g.beginPath();
-    g.roundRect(0, 0, c.width, c.height, (0.08 / w) * 256);
-    g.fill();
-    return new THREE.CanvasTexture(c);
-  }, [w, d]);
-}
-
 function RuinDecal({ regionId, bank, w, d, sceneStart }: { regionId: RegionId; bank: TextureBank; w: number; d: number; sceneStart: number }) {
-  const f = regionFrame(regionId);
-  const geom = useMemo(() => drapedPlane(f.cx, f.cz, w * 1.05, d * 1.05, 0.007), [f.cx, f.cz, w, d]);
+
   const tex = useMemo(() => bank.ruinDecal(regionId), [bank, regionId]);
   const mat = useRef<THREE.MeshBasicMaterial>(null);
   // A region ruined mid-game burns in; one already ruined at load just smoulders.
@@ -344,7 +314,8 @@ function RuinDecal({ regionId, bank, w, d, sceneStart }: { regionId: RegionId; b
     if (mat.current) mat.current.opacity = burn.current * (0.82 + Math.sin(t * 2.3) * 0.08 + Math.sin(t * 7.1) * 0.05) + flare * Math.random();
   });
   return (
-    <mesh geometry={geom} renderOrder={2}>
+    <mesh position={[0, 0, 0.003]} renderOrder={2}>
+      <planeGeometry args={[w * 1.05, d * 1.05]} />
       <meshBasicMaterial ref={mat} map={tex} transparent depthWrite={false} toneMapped={false} />
     </mesh>
   );
@@ -357,13 +328,7 @@ function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, b
   const region = state.regions[regionId]!;
   const ruined = region.ruinationCardIndex !== null;
   const shape = useMemo(() => roundedRect(f.w, f.d, 0.08), [f.w, f.d]);
-  const fillGeom = useMemo(() => drapedPlane(f.cx, f.cz, f.w, f.d, 0.004), [f.cx, f.cz, f.w, f.d]);
-  const mask = useRoundedMask(f.w, f.d);
-  // The outline follows the relief too (densely sampled so it hugs slopes).
-  const edgePts = useMemo(
-    () => shape.getSpacedPoints(160).map((p) => new THREE.Vector3(p.x, p.y, groundY(f.cx + p.x, f.cz - p.y) + 0.006)),
-    [shape, f.cx, f.cz],
-  );
+  const edgePts = useMemo(() => shape.getPoints(8).map((p) => new THREE.Vector3(p.x, p.y, 0.002)), [shape]);
   const edgeGeom = useMemo(() => new THREE.BufferGeometry().setFromPoints(edgePts), [edgePts]);
   const fillMat = useRef<THREE.MeshBasicMaterial>(null);
   const edgeMat = useRef<THREE.LineBasicMaterial>(null);
@@ -390,17 +355,19 @@ function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, b
 
   const edgeColor = highlighted ? '#facc15' : focused ? '#ff3b2f' : ruined ? '#7f1d1d' : persistent ? POWER_COLORS[persistent.power] : hovered ? '#e8c070' : '#a97140';
 
+  // Regions float flat above the relief, just clear of their highest ground.
   return (
-    <group position={[f.cx, 0, f.cz]} rotation-x={-Math.PI / 2}>
-      <mesh renderOrder={1} geometry={fillGeom}>
-        <meshBasicMaterial ref={fillMat} transparent depthWrite={false} color="#0a0604" opacity={0.34} alphaMap={mask} />
+    <group position={[f.cx, regionFloorY(regionId) - 0.01, f.cz]} rotation-x={-Math.PI / 2}>
+      <mesh renderOrder={1}>
+        <shapeGeometry args={[shape]} />
+        <meshBasicMaterial ref={fillMat} transparent depthWrite={false} color="#0a0604" opacity={0.34} />
       </mesh>
       <lineLoop geometry={edgeGeom} renderOrder={2}>
         <lineBasicMaterial ref={edgeMat} color={edgeColor} transparent opacity={0.4} />
       </lineLoop>
       {ruined && <RuinDecal regionId={regionId} bank={bank} w={f.w} d={f.d} sceneStart={sceneStart} />}
       {ruined && (
-        <Sparkles count={26} scale={[f.w, f.d, 0.6]} position={[0, 0, BOARD_TOP + terrainHeight(f.cx, f.cz) + 0.3]} size={3} speed={0.6} color="#ff5a2a" opacity={0.9} />
+        <Sparkles count={26} scale={[f.w, f.d, 0.6]} position={[0, 0, 0.3]} size={3} speed={0.6} color="#ff5a2a" opacity={0.9} />
       )}
     </group>
   );
@@ -441,6 +408,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing, sceneStart }: 
   const pos = useRef(new THREE.Vector3(slot.x, 0, slot.z));
   const from = useRef(new THREE.Vector3(slot.x, 0, slot.z));
   const hop = useRef(1);           // 0..1 progress of a move arc
+  const fromFloor = useRef(floorAt(slot.x, slot.z));
   const spawn = useRef(appearing || fresh ? 0 : 0.999);
   const fall = useRef(0);
   const target = useMemo(() => new THREE.Vector3(slot.x, 0, slot.z), [slot.x, slot.z]);
@@ -448,6 +416,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing, sceneStart }: 
   useEffect(() => {
     if (pos.current.distanceTo(target) > 0.4) {
       from.current.copy(pos.current);
+      fromFloor.current = floorAt(pos.current.x, pos.current.z);
       hop.current = 0;
     }
   }, [target]);
@@ -469,7 +438,10 @@ function Standee({ slot, bank, registry, blob, killed, appearing, sceneStart }: 
     if (spawn.current < 1) spawn.current = Math.min(1, spawn.current + dt / 0.5);
     const s = spawn.current;
     const pop = s >= 1 ? 1 : 1 + Math.sin(s * Math.PI) * 0.35 - (1 - s) * 1;
-    g.position.set(pos.current.x, groundY(pos.current.x, pos.current.z) + pos.current.y + (1 - s) * 0.6, pos.current.z);
+    // Rest on the region's plate; mid-hop, blend between the two plates.
+    const toFloor = floorAt(target.x, target.z);
+    const floor = hop.current < 1 ? fromFloor.current + (toFloor - fromFloor.current) * hop.current : toFloor;
+    g.position.set(pos.current.x, floor + pos.current.y + (1 - s) * 0.6, pos.current.z);
     g.scale.setScalar(Math.max(0.001, pop));
     // Killed figures topple backwards.
     const fallGoal = killed || f.tipped ? 1 : 0;
@@ -487,7 +459,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing, sceneStart }: 
   const ctrl = f.controlledBy;
   const baseR = w * 0.42;
   return (
-    <group ref={group} position={[slot.x, groundY(slot.x, slot.z), slot.z]}>
+    <group ref={group} position={[slot.x, floorAt(slot.x, slot.z), slot.z]}>
       <mesh rotation-x={-Math.PI / 2} position={[0.03, 0.004, 0.05]} renderOrder={3}>
         <planeGeometry args={[baseR * 3, baseR * 2.4]} />
         <meshBasicMaterial map={blob} transparent depthWrite={false} />
@@ -562,7 +534,7 @@ function TableCard({ cardId, x, z, bank, pending, appearing, sceneStart, hovered
   const ref = useRef<THREE.Group>(null);
   const fresh = useFreshMount(sceneStart);
   // Cards lie flat on the highest ground beneath them.
-  const base = useMemo(() => groundYUnder(x, z, CARD_W / 2, CARD_D / 2), [x, z]);
+  const base = useMemo(() => floorAt(x, z), [x, z]);
   const t0 = useRef(appearing || (fresh && !pending) ? 0 : 1);
   const def = CARD_BY_ID[cardId];
   const glow = def ? POWER_COLORS[def.power] : '#8fa6c4';
@@ -605,7 +577,7 @@ function EmptySlot({ x, z, playable }: { x: number; z: number; playable: boolean
     if (mat.current) mat.current.opacity = playable ? 0.25 + 0.2 * Math.sin(clock.getElapsedTime() * 4) : 0.1;
   });
   return (
-    <mesh position={[x, groundYUnder(x, z, CARD_W / 2, CARD_D / 2) + 0.004, z]} rotation-x={-Math.PI / 2}>
+    <mesh position={[x, floorAt(x, z) + 0.004, z]} rotation-x={-Math.PI / 2}>
       <planeGeometry args={[CARD_W, CARD_D]} />
       <meshBasicMaterial ref={mat} color={playable ? '#c68c5a' : '#000000'} transparent opacity={0.1} depthWrite={false} />
     </mesh>
@@ -666,7 +638,7 @@ function WarBanner({ power, regionId, bank }: { power: Power; regionId: RegionId
   const cloth = useRef<THREE.Mesh>(null);
   const bx = f.x0 + f.w - 0.5;
   const bz = f.z0 + 0.5;
-  const baseY = groundY(bx, bz);
+  const baseY = floorAt(bx, bz);
   const rise = useRef(0);
   useFrame(({ clock }, dt) => {
     rise.current = Math.min(1, rise.current + dt / 0.7);
@@ -773,7 +745,7 @@ function TokenStack({ type, count, x, z, bank }: { type: TokenType; count: numbe
   ], [face]);
   const n = Math.min(count, 5);
   return (
-    <group position={[x, groundYUnder(x, z, 0.085, 0.085), z]}>
+    <group position={[x, floorAt(x, z), z]}>
       {Array.from({ length: n }).map((_, i) => (
         <mesh key={i} position={[i * 0.012, 0.016 + i * 0.03, -i * 0.01]} material={mats} castShadow>
           <cylinderGeometry args={[0.085, 0.085, 0.03, 32]} />
@@ -815,7 +787,7 @@ function CorruptionStack({ power, count, x, z, bank }: { power: Power; count: nu
   });
   const n = Math.min(count, 12);
   return (
-    <group ref={group} position={[x, groundYUnder(x, z, 0.06, 0.06), z]}>
+    <group ref={group} position={[x, floorAt(x, z), z]}>
       {Array.from({ length: n }).map((_, i) => (
         <mesh key={i} position={[((i * 7) % 3 - 1) * 0.004, 0.012 + i * 0.024, 0]} material={mats} castShadow>
           <cylinderGeometry args={[0.058, 0.06, 0.022, 24]} />
