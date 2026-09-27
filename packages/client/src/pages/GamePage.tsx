@@ -32,6 +32,7 @@ import { FxProvider } from '../components/fx/FxProvider.js';
 import CinematicLayer from '../components/cinematics/CinematicLayer.js';
 import SafeBoundary from '../components/SafeBoundary.js';
 import LoadingScreen from '../components/LoadingScreen.js';
+import ControlsHint from '../components/ControlsHint.js';
 import { allArtUrls } from '../lib/art.js';
 import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_FADE, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
@@ -708,6 +709,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               onSummonClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSummonClick : undefined}
               canSummon={isSummoningTurn && !pendingAction && !anim.animationPhase ? canSummon : undefined}
             />
+            {tablePower && <ControlsHint />}
             <SafeBoundary
               label="cinematics"
               resetKey={(serverState ?? displayState).round}

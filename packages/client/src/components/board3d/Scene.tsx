@@ -277,12 +277,17 @@ function roundedRect(w: number, h: number, r: number) {
   return s;
 }
 
-function RuinDecal({ regionId, bank, w, d }: { regionId: RegionId; bank: TextureBank; w: number; d: number }) {
+function RuinDecal({ regionId, bank, w, d, sceneStart }: { regionId: RegionId; bank: TextureBank; w: number; d: number; sceneStart: number }) {
   const tex = useMemo(() => bank.ruinDecal(regionId), [bank, regionId]);
   const mat = useRef<THREE.MeshBasicMaterial>(null);
-  useFrame(({ clock }) => {
+  // A region ruined mid-game burns in; one already ruined at load just smoulders.
+  const fresh = useFreshMount(sceneStart);
+  const burn = useRef(fresh ? 0 : 1);
+  useFrame(({ clock }, dt) => {
     const t = clock.getElapsedTime();
-    if (mat.current) mat.current.opacity = 0.82 + Math.sin(t * 2.3) * 0.08 + Math.sin(t * 7.1) * 0.05;
+    burn.current = Math.min(1, burn.current + dt / 2.2);
+    const flare = burn.current < 1 ? (1 - burn.current) * 0.6 : 0;
+    if (mat.current) mat.current.opacity = burn.current * (0.82 + Math.sin(t * 2.3) * 0.08 + Math.sin(t * 7.1) * 0.05) + flare * Math.random();
   });
   return (
     <mesh position={[0, 0, 0.003]} renderOrder={2}>
@@ -292,8 +297,8 @@ function RuinDecal({ regionId, bank, w, d }: { regionId: RegionId; bank: Texture
   );
 }
 
-function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, bank }: {
-  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean; hovered: boolean; bank: TextureBank;
+function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, bank, sceneStart }: {
+  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean; hovered: boolean; bank: TextureBank; sceneStart: number;
 }) {
   const f = regionFrame(regionId);
   const region = state.regions[regionId]!;
@@ -335,7 +340,7 @@ function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, b
       <lineLoop geometry={edgeGeom} renderOrder={2}>
         <lineBasicMaterial ref={edgeMat} color={edgeColor} transparent opacity={0.4} />
       </lineLoop>
-      {ruined && <RuinDecal regionId={regionId} bank={bank} w={f.w} d={f.d} />}
+      {ruined && <RuinDecal regionId={regionId} bank={bank} w={f.w} d={f.d} sceneStart={sceneStart} />}
       {ruined && (
         <Sparkles count={26} scale={[f.w, f.d, 0.6]} position={[0, 0, 0.3]} size={3} speed={0.6} color="#ff5a2a" opacity={0.9} />
       )}
@@ -839,6 +844,7 @@ export default function Scene(props: SceneProps) {
           focused={focusRegion === id}
           hovered={props.hoverRegion === id}
           bank={bank}
+          sceneStart={sceneStart}
         />
       ))}
       {REGION_ORDER.map((id) => <RegionPieces key={id} regionId={id} props={props} sceneStart={sceneStart} />)}
