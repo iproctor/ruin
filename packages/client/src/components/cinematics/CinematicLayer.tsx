@@ -247,6 +247,10 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
         case 'war_frenzy_partial':
           if (cinematic) setBattle((b) => b && b.regionId === ev.regionId ? { ...b, wounded: { ...b.wounded, [ev.followerId]: ev.hits } } : b);
           break;
+        case 'chaos_card_discarded':
+          // Fire now, while the card is still on the table to anchor to.
+          fx.burst([`slot-${ev.regionId}-${ev.slotIndex}`, `region-${ev.regionId}`], 'corrupt', ev.playedBy, 0.45);
+          break;
         case 'heartrippers_corruption':
           soon(() => fx.burst(`region-${ev.regionId}`, 'corrupt', 'xarm'));
           break;

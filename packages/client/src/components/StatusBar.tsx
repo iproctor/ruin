@@ -194,7 +194,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
           {POWER_LABELS[power]}{isMe && <span className="gsb-pow-you">★</span>}
         </span>
         <span className="gsb-pow-vp">
-          {ps.victoryPoints}<span className="gsb-pow-vp-label">vp</span>
+          <span key={ps.victoryPoints} className="gsb-vp-pop">{ps.victoryPoints}</span><span className="gsb-pow-vp-label">vp</span>
         </span>
         <div className="gsb-pow-stats">
           <span>{ps.powerPoints}<em>pp</em></span>

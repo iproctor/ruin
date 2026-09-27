@@ -632,3 +632,8 @@
   color: #9a8a74;
   animation: waiting 2.4s ease-in-out infinite;
 }
+.gsb-vp-pop { display: inline-block; animation: vp-pop 0.7s cubic-bezier(.2,1.6,.4,1); }
+@keyframes vp-pop {
+  0% { transform: scale(1.9); color: #ffe08a; text-shadow: 0 0 14px #ffc860; }
+  100% { transform: scale(1); }
+}

@@ -36,6 +36,7 @@ export function eventDuration(ev: GameEvent, opts: TimingOptions): number {
       case 'rapture_control': return 1100;
       case 'war_frenzy_partial': return 600;
       case 'heartrippers_corruption': return 700;
+      case 'chaos_card_discarded': return 140;
       case 'domination_result': return ev.conquered ? 1900 : 0;
       case 'domination_failed': return 0;
       case 'corruption_placement': return 800;
