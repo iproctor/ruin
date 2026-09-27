@@ -843,3 +843,60 @@
 .bs-lane-mortal .bs-lane-name { color: #c9c2b8; }
 .bs-tray-mortal { min-height: 40px; }
 .bs-peasant-tally { font: 800 0.75rem 'Cinzel', serif; color: #e0c890; margin-left: 4px; animation: skull-in 0.4s both; }
+
+/* ── Opening ─────────────────────────────────────────────────────────────── */
+.cin-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(20,12,8,0.92), rgba(0,0,0,0.97));
+  animation: fade-life 4.2s ease-in-out both;
+}
+.cin-intro-title {
+  font: 900 clamp(2rem, 4.4vw, 3.4rem) 'Cinzel', serif;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #f4e6cc;
+  text-shadow: 0 0 30px rgba(194,24,24,0.6), 0 3px 0 #000;
+  animation: title-squeeze 2.2s cubic-bezier(.1,.8,.2,1) both;
+}
+.cin-intro-gods { display: flex; gap: clamp(10px, 2vw, 26px); }
+.cin-intro-god {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  animation: intro-god 0.9s cubic-bezier(.2,.9,.3,1) both;
+}
+@keyframes intro-god { from { opacity: 0; transform: translateY(50px) scale(0.9); filter: brightness(0); } to { opacity: 1; transform: none; filter: none; } }
+.cin-intro-art {
+  width: clamp(110px, 12vw, 170px);
+  aspect-ratio: 2 / 3;
+  background: #120d0a center 15% / cover;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 4px var(--accent), 0 0 40px color-mix(in srgb, var(--accent) 50%, transparent), 0 20px 40px rgba(0,0,0,0.8);
+}
+.cin-intro-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 800 0.85rem 'Cinzel', serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.cin-intro-you {
+  font-size: 0.55rem;
+  letter-spacing: 0.2em;
+  color: #0a0604;
+  background: var(--accent);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+.cin-intro-tag { font-family: 'IM Fell English', serif; font-size: 1.1rem; color: #b8a58a; animation: fade-up 0.8s 1.3s both; }

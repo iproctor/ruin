@@ -415,22 +415,20 @@ function TenzenDiscardPanel({
           ? 'Discard one card from your physical hand, or keep all:'
           : 'Choose a card to discard, or keep all:'}
       </div>
+      <div className="ap-cards">
+        {unique.map((cardId) => (
+          <button
+            key={cardId}
+            className="ap-card-pick"
+            title="Discard this card"
+            onClick={() => onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })}
+          >
+            <GameCard cardId={cardId} size="sm" interactive />
+            <span className="ap-card-pick-label">Discard</span>
+          </button>
+        ))}
+      </div>
       <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-        {unique.map((cardId) => {
-          const name = CARD_BY_ID[cardId]?.shortName ?? CARD_BY_ID[cardId]?.name ?? formatId(cardId.replace(/^[a-z]+_/, ''));
-          return (
-            <button
-              key={cardId}
-              className="primary"
-              onClick={() =>
-                onAction({ kind: 'tenzen_discard', power: 'tenzen', cardId })
-              }
-              style={{ fontSize: '0.8rem' }}
-            >
-              Discard {name}
-            </button>
-          );
-        })}
         {freePlay && unique.length === 0 && (
           <button
             className="primary"
@@ -1309,15 +1307,15 @@ function ForcedDiscardPanel({
       <div style={{ fontSize: '0.8rem', color: ERROR }}>
         Meddling of Rats — choose {count} card{count !== 1 ? 's' : ''} to discard ({selectedIndices.size}/{count} selected):
       </div>
-      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+      <div className="ap-cards">
         {visibleEntries.map(({ cardId, i }) => (
           <button
             key={i}
-            className={selectedIndices.has(i) ? 'danger' : 'secondary'}
+            className={`ap-card-pick ${selectedIndices.has(i) ? 'is-chosen' : ''}`}
             onClick={() => toggle(i)}
-            style={{ fontSize: '0.8rem' }}
           >
-            {formatId(cardId)}
+            <GameCard cardId={cardId} size="sm" interactive />
+            {selectedIndices.has(i) && <span className="ap-card-pick-stamp">Discard</span>}
           </button>
         ))}
       </div>

@@ -148,3 +148,47 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Card choices inside the dock (discards) */
+.ap-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; justify-items: center; }
+.ap-card-pick {
+  position: relative;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  transition: transform 0.15s;
+}
+.ap-card-pick:hover { transform: translateY(-3px); }
+.ap-card-pick-label {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  font: 800 0.6rem 'Cinzel', serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #fff1ee;
+  background: rgba(120,14,10,0.9);
+  border: 1px solid #ff5a4a;
+  padding: 1px 8px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+.ap-card-pick:hover .ap-card-pick-label { opacity: 1; }
+.ap-card-pick.is-chosen .gc { filter: grayscale(0.7) brightness(0.55); }
+.ap-card-pick-stamp {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-14deg);
+  font: 900 0.8rem 'Cinzel', serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #ff6a5a;
+  border: 2px solid #ff5a4a;
+  padding: 2px 8px;
+  background: rgba(20,4,2,0.85);
+  pointer-events: none;
+}

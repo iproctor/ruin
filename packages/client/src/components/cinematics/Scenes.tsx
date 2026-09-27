@@ -340,3 +340,25 @@ export function GameOverScreen({ winners, condition, standings, myPowers, onClos
     document.body,
   );
 }
+
+// ── Opening: the gods awaken ────────────────────────────────────────────────
+
+export function IntroScene({ powers, myPowers }: { powers: Power[]; myPowers: Power[] }) {
+  return (
+    <div className="cin-intro">
+      <div className="cin-intro-title">The Gods Awaken</div>
+      <div className="cin-intro-gods">
+        {powers.map((p, i) => (
+          <div key={p} className="cin-intro-god" style={{ ['--accent' as string]: POWER_COLORS[p], animationDelay: `${0.25 + i * 0.22}s` }}>
+            <div className="cin-intro-art" style={godArt(p) ? { backgroundImage: `url(${godArt(p)})` } : undefined} />
+            <div className="cin-intro-name">
+              <PowerSigil power={p} size={20} /> {POWER_LABELS[p]}
+              {myPowers.includes(p) && <span className="cin-intro-you">you</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="cin-intro-tag">The old continent will not survive the four of you.</div>
+    </div>
+  );
+}

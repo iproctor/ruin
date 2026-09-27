@@ -8,7 +8,7 @@ import { useFx } from '../fx/FxProvider.js';
 import { useSound } from '../../contexts/SoundContext.js';
 import { useSettings, SPEED_FACTOR } from '../../contexts/SettingsContext.js';
 import BattleScene, { type BattleView } from './BattleScene.js';
-import { PhaseBanner, TurnBanner, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, type Toast, type AftermathRow } from './Scenes.js';
+import { PhaseBanner, TurnBanner, WorldReveal, SpellReveal, RuinScene, Toasts, Aftermath, GameOverScreen, IntroScene, type Toast, type AftermathRow } from './Scenes.js';
 import './cinematics.css';
 
 interface CinematicLayerProps {
@@ -71,6 +71,7 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
   const [ruin, setRuin] = useState<{ id: number; regionId: RegionId; ruiners: Power[]; vp: number } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [gameOver, setGameOver] = useState<{ winners: Power[]; condition: WinCondition } | null>(null);
+  const [intro, setIntro] = useState(false);
 
   const idRef = useRef(0);
   const nextId = () => ++idRef.current;
@@ -358,6 +359,23 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
     if (state.phase !== 'battle' && battle && !paused) setBattle(null);
   }, [state.phase, battle, paused]);
 
+  // A brand-new game opens with the gods awakening (once per browser session).
+  useEffect(() => {
+    if (!cine || state.round !== 1 || state.winners) return;
+    if (state.activePowers.some((p) => state.powers[p]!.summoningTurnsTaken > 0)) return;
+    const key = `ruin_intro_${state.gameId}`;
+    try {
+      if (sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+    } catch { /* storage unavailable: just show it */ }
+    setIntro(true);
+    sound.phase('battle');
+    const t = setTimeout(() => setIntro(false), 4200);
+    return () => clearTimeout(t);
+    // Only when a game first loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.gameId]);
+
   // Also surface a game that was already over when the page loaded.
   useEffect(() => {
     if (state.winners && state.winCondition && !gameOver) {
@@ -379,6 +397,7 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
       {paused && aftermath.length === 0 && (
         <div className="cin-after"><button className="cin-btn" onClick={onResume}>Continue to Corruption</button></div>
       )}
+      {intro && <IntroScene powers={state.activePowers} myPowers={myPowers} />}
       {ruin && <RuinScene regionId={ruin.regionId} ruiners={ruin.ruiners} vp={ruin.vp} />}
       {world && <WorldReveal key={world.id} cardId={world.cardId} />}
       {banner && <PhaseBanner key={banner.id} phase={banner.phase} round={banner.round} />}
