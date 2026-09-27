@@ -1,4 +1,8 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import GameCard from './cards/GameCard.js';
+import { followerArt } from '../lib/art.js';
+import './actionPanel.css';
 import { POWER_COLORS, POWER_LABELS, TOKEN_LABELS } from '../lib/display.js';
 import { CARD_FACE, CARD_FACE_HI, CARD_EDGE, BRASS, BRASS_HOT, PAPER, PAPER_DIM, PAPER_FADE, HIGHLIGHT, ERROR } from '../lib/gameColors.js';
 import type {
@@ -31,6 +35,26 @@ function formatId(id: string): string {
   return id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+const ACTION_TITLES: Record<string, string> = {
+  summoning_action: 'Summoning',
+  tenzen_discard: 'Discard?',
+  world_choice: 'World Choice',
+  hero_removal: 'Hero Strikes',
+  world_card_effect: 'World Card',
+  upgrade_choice: 'Choose an Upgrade',
+  battle_hit_assignment: 'Assign Hits',
+  corruption_harvest_choice: 'Inevitable Rot',
+  card_on_play_choice: 'Card Effect',
+  forced_discard: 'Discard',
+  tenzen_apprentice_choice: 'Chaos Stone',
+  rapture_choice: 'The Rapture',
+  dial_place_token: 'Dial Reward',
+  dial_remove_corruption: 'Dial Reward',
+  dial_remove_world_token: 'Dial Reward',
+  companion_world_pick: 'World Card',
+  companion_dice_roll: 'Roll Dice',
+};
+
 interface ActionPanelProps {
   state: GameState;
   myPower: Power;
@@ -55,8 +79,9 @@ export default function ActionPanel({
 
   return (
     <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-      <div style={{ fontSize: '0.8rem', color: BRASS_HOT, fontWeight: 700, marginBottom: '0.5rem' }}>
-        Your turn — {formatId(pending.actionKind)}
+      <div className="ap-title" style={{ ['--accent' as string]: POWER_COLORS[myPower] }}>
+        <span className="ap-kicker">Your decision</span>
+        {ACTION_TITLES[pending.actionKind] ?? formatId(pending.actionKind)}
       </div>
 
       {pending.actionKind === 'summoning_action' && (
@@ -809,37 +834,28 @@ function UpgradeChoicePanel({
   const powerColor = POWER_COLORS[myPower];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>Choose an upgrade:</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-        {upgrades.map((upgradeId) => {
-          const def = UPGRADE_BY_ID[upgradeId];
-          return (
-            <button
-              key={upgradeId}
-              onClick={() =>
-                onAction({ kind: 'upgrade_choice', power: myPower, upgradeCardId: upgradeId })
-              }
-              style={{
-                textAlign: 'left', padding: '0.4rem 0.6rem',
-                background: 'transparent',
-                border: `2px solid ${powerColor}`,
-                borderRadius: 6, cursor: 'pointer', width: '100%',
-              }}
-            >
-              <div style={{ fontWeight: 700, fontSize: '0.85rem', color: powerColor }}>
-                {def?.name ?? formatId(upgradeId)}
-              </div>
-              {def?.effect && (
-                <div style={{ fontWeight: 400, fontSize: '0.75rem', color: PAPER, marginTop: '0.15rem' }}>
-                  {def.effect}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <>
+      <div style={{ fontSize: '0.8rem', color: PAPER_DIM }}>Your dark patron offers a boon. Choose one.</div>
+      {createPortal(
+        <div className="ap-modal" style={{ ['--accent' as string]: powerColor }}>
+          <div className="ap-modal-title">Choose your boon</div>
+          <div className="ap-modal-sub">{POWER_LABELS[myPower]} rewards the faithful</div>
+          <div className="ap-modal-cards">
+            {upgrades.map((upgradeId, i) => (
+              <button
+                key={upgradeId}
+                className="ap-modal-card"
+                style={{ animationDelay: `${i * 90}ms` }}
+                onClick={() => onAction({ kind: 'upgrade_choice', power: myPower, upgradeCardId: upgradeId })}
+              >
+                <GameCard cardId={upgradeId} size="md" interactive />
+              </button>
+            ))}
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -1425,18 +1441,25 @@ function BattleHitAssignmentPanel({
         {targets.length === 0 && peasantsAvailable === 0 && (
           <span style={{ fontSize: '0.75rem', color: PAPER_DIM }}>No valid targets.</span>
         )}
-        {targets.map(f => (
-          <button
-            key={f.id}
-            className={selectedIds.has(f.id) ? 'danger' : 'secondary'}
-            onClick={() => toggleFigure(f.id)}
-            style={{ fontSize: '0.8rem' }}
-            disabled={!selectedIds.has(f.id) && getDefense(f) > hitsLeft}
-          >
-            {POWER_LABELS_LOCAL[f.controlledBy ?? f.power] ?? f.power} {formatId(f.class)}
-            <span style={{ color: PAPER_DIM, marginLeft: 4 }}>def {getDefense(f)}</span>
-          </button>
-        ))}
+        {targets.map(f => {
+          const art = followerArt(f.power, f.class);
+          const chosen = selectedIds.has(f.id);
+          return (
+            <button
+              key={f.id}
+              className={`ap-target ${chosen ? 'is-chosen' : ''}`}
+              onClick={() => toggleFigure(f.id)}
+              style={{ ['--ring' as string]: POWER_COLORS[f.controlledBy ?? f.power] }}
+              disabled={!chosen && getDefense(f) > hitsLeft}
+              title={`${POWER_LABELS_LOCAL[f.controlledBy ?? f.power] ?? f.power} ${FOLLOWERS[f.power][f.class].name}`}
+            >
+              <span className="ap-target-art" style={art ? { backgroundImage: `url(${art})` } : undefined} />
+              <span className="ap-target-def">{getDefense(f)}</span>
+              {chosen && <span className="ap-target-x">☠</span>}
+              <span className="ap-target-name">{FOLLOWERS[f.power][f.class].name}</span>
+            </button>
+          );
+        })}
       </div>
       <button className="danger" onClick={handleConfirm} disabled={confirmDisabled}>
         {confirmLabel}

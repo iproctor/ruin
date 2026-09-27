@@ -1,0 +1,141 @@
+/* ── In-game controls: grimdark buttons for every panel and popup ─────────── */
+
+.game-ui button.primary,
+.game-ui button.secondary,
+.game-ui button.danger {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border-radius: 2px;
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.game-ui button.primary {
+  color: #fff8ec;
+  background: linear-gradient(180deg, #7a4a1e, #3a2010);
+  border: 1px solid #c68c5a;
+  box-shadow: 0 0 0 1px #000, 0 3px 10px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,220,160,0.2);
+}
+.game-ui button.primary:hover:not(:disabled) { filter: brightness(1.2); background: linear-gradient(180deg, #7a4a1e, #3a2010); }
+.game-ui button.secondary {
+  color: #d9c7a7;
+  background: linear-gradient(180deg, #2a1d14, #140e0a);
+  border: 1px solid #5a4028;
+}
+.game-ui button.secondary:hover:not(:disabled) { border-color: #c68c5a; color: #f4e6cc; background: linear-gradient(180deg, #3a2a1e, #1a120b); }
+.game-ui button.danger {
+  color: #fff1ee;
+  background: linear-gradient(180deg, #8a1414, #3a0606);
+  border: 1px solid #ff5a4a;
+  box-shadow: 0 0 0 1px #000, 0 0 14px rgba(194,24,24,0.4);
+}
+.game-ui button.danger:hover:not(:disabled) { filter: brightness(1.2); }
+.game-ui button:active:not(:disabled) { transform: translateY(1px); }
+
+/* Dock that holds non-summoning decisions */
+.ap-dock {
+  background: linear-gradient(180deg, rgba(28,21,16,0.97), rgba(12,8,6,0.97));
+  border: 1px solid #5a4028;
+  border-top: 2px solid var(--accent, #c68c5a);
+  border-radius: 3px;
+  padding: 0.8rem 0.85rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.7), inset 0 0 30px rgba(0,0,0,0.5);
+  animation: ap-in 0.35s cubic-bezier(.2,.9,.3,1) both;
+}
+@keyframes ap-in { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: none; } }
+.ap-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 900;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #f4e6cc;
+  margin-bottom: 0.6rem;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.ap-kicker {
+  display: block;
+  font-size: 0.56rem;
+  letter-spacing: 0.34em;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Upgrade choice modal */
+.ap-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background:
+    radial-gradient(ellipse at 50% 55%, color-mix(in srgb, var(--accent) 22%, transparent), rgba(0,0,0,0.88) 70%);
+  backdrop-filter: blur(3px);
+  animation: ap-fade 0.4s both;
+}
+@keyframes ap-fade { from { opacity: 0; } to { opacity: 1; } }
+.ap-modal-title {
+  font: 900 clamp(1.8rem, 3.6vw, 2.8rem) 'Cinzel', serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #f4e6cc;
+  text-shadow: 0 0 30px var(--accent), 0 3px 0 #000;
+}
+.ap-modal-sub { font-family: 'IM Fell English', serif; font-size: 1.1rem; color: #c0ad90; margin-bottom: 18px; }
+.ap-modal-cards { display: flex; gap: 22px; flex-wrap: wrap; justify-content: center; }
+.ap-modal-card {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 12px;
+  animation: ap-card-in 0.6s cubic-bezier(.2,.9,.3,1) both;
+  transition: transform 0.2s;
+}
+.ap-modal-card:hover { transform: translateY(-10px) scale(1.04); }
+@keyframes ap-card-in { from { opacity: 0; transform: translateY(60px) rotateX(40deg); } to { opacity: 1; transform: none; } }
+
+/* Hit assignment targets */
+.ap-target {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 64px;
+  padding: 6px 2px 4px;
+  background: rgba(20,12,8,0.7);
+  border: 1px solid #3a2a1e;
+  border-radius: 3px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ap-target:hover:not(:disabled) { border-color: #ff5a4a; background: rgba(60,10,8,0.6); }
+.ap-target:disabled { opacity: 0.35; }
+.ap-target.is-chosen { border-color: #ff3b2f; background: rgba(90,10,8,0.7); box-shadow: 0 0 14px rgba(255,60,40,0.45); }
+.ap-target-art {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #120d0a center 25% / cover;
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px var(--ring);
+}
+.ap-target.is-chosen .ap-target-art { filter: grayscale(0.8) brightness(0.6); }
+.ap-target-def {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font: 800 0.62rem 'Cinzel', serif;
+  color: #fff;
+  background: #3a2a1e;
+  border-radius: 7px;
+  padding: 0 4px;
+}
+.ap-target-x {
+  position: absolute;
+  top: 12px;
+  font-size: 1.2rem;
+  color: #ff5a4a;
+  text-shadow: 0 0 8px #000;
+}
+.ap-target-name { font: 600 0.52rem 'Cinzel', serif; color: #c0ad90; text-align: center; line-height: 1.1; }

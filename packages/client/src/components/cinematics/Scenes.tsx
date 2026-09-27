@@ -131,6 +131,36 @@ export function SpellReveal({ cardId, power, regionId, slotIndex, speed, onDone 
 
 // ── Ruination ────────────────────────────────────────────────────────────────
 
+/** Jagged, branching cracks radiating from the centre (viewBox 100×60). */
+function crackPaths(seed: string): string[] {
+  let h = 0;
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const rnd = () => {
+    h = (h + 0x6d2b79f5) >>> 0;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const paths: string[] = [];
+  const walk = (x: number, y: number, angle: number, len: number, depth: number) => {
+    let d = `M${x.toFixed(1)} ${y.toFixed(1)}`;
+    const steps = 5 + Math.floor(rnd() * 5);
+    for (let i = 0; i < steps; i++) {
+      angle += (rnd() - 0.5) * 0.9;
+      const step = (len / steps) * (0.6 + rnd() * 0.8);
+      x += Math.cos(angle) * step;
+      y += Math.sin(angle) * step * 0.7;
+      d += ` L${x.toFixed(1)} ${y.toFixed(1)}`;
+      if (depth < 2 && rnd() < 0.3) walk(x, y, angle + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.6), len * 0.45, depth + 1);
+    }
+    paths.push(d);
+  };
+  const arms = 7;
+  for (let i = 0; i < arms; i++) walk(50, 30, (i / arms) * Math.PI * 2 + rnd() * 0.5, 38 + rnd() * 20, 0);
+  return paths;
+}
+
 export function RuinScene({ regionId, ruiners, vp }: { regionId: RegionId; ruiners: Power[]; vp: number }) {
   const art = regionArt(regionId);
   return (
@@ -138,11 +168,9 @@ export function RuinScene({ regionId, ruiners, vp }: { regionId: RegionId; ruine
       <div className="cin-ruin-art" style={art ? { backgroundImage: `url(${art})` } : undefined} />
       <div className="cin-ruin-fire" />
       <svg className="cin-ruin-cracks" viewBox="0 0 100 60" preserveAspectRatio="none">
-        <path d="M50 0 L47 12 L53 20 L45 31 L51 40 L44 60" />
-        <path d="M47 12 L30 18 L22 30 L8 34" />
-        <path d="M53 20 L68 24 L76 36 L95 40" />
-        <path d="M45 31 L34 42 L26 56" />
-        <path d="M51 40 L63 48 L70 60" />
+        {crackPaths(regionId).map((d, i) => (
+          <path key={i} d={d} pathLength={1} style={{ animationDelay: `${0.12 + (i % 7) * 0.04}s` }} />
+        ))}
       </svg>
       <div className="cin-ruin-text">
         <div className="cin-ruin-region">{REGIONS[regionId].name}</div>
@@ -266,7 +294,7 @@ const CONDITION_TEXT: Record<WinCondition, string> = {
   threat_dial: 'Their threat dial reached its apex.',
   vp: 'Fifty victory points of misery.',
   ruination: 'The Old World lies in ruin.',
-  world_exhausted: 'The World deck is spent.',
+  world_exhausted: 'The World deck is spent, and no god prevailed.',
 };
 
 export function GameOverScreen({ winners, condition, standings, myPowers, onClose, onHome }: {
@@ -277,18 +305,19 @@ export function GameOverScreen({ winners, condition, standings, myPowers, onClos
   onClose: () => void;
   onHome: () => void;
 }) {
-  const primary = winners[0]!;
-  const art = godArt(primary);
+  const primary = winners[0] ?? null;
+  // No winner: the mortal world endured. Show the Old World itself.
+  const art = primary ? godArt(primary) : regionArt('mittelreich');
   const iWon = winners.some((w) => myPowers.includes(w));
   const iPlayed = myPowers.length > 0;
   return createPortal(
-    <div className="cin-over" style={{ ['--accent' as string]: POWER_COLORS[primary] }}>
+    <div className="cin-over" style={{ ['--accent' as string]: primary ? POWER_COLORS[primary] : '#8fa6c4' }}>
       <div className="cin-over-art" style={art ? { backgroundImage: `url(${art})` } : undefined} />
       <div className="cin-over-shade" />
       <div className="cin-over-content">
         <div className="cin-over-kicker">{iPlayed ? (iWon ? 'Victory' : 'Defeat') : 'The game is decided'}</div>
         <div className="cin-over-title">
-          {winners.map((w) => POWER_LABELS[w]).join(' & ')} Triumphant
+          {primary ? `${winners.map((w) => POWER_LABELS[w]).join(' & ')} Triumphant` : 'The Old World Endures'}
         </div>
         <div className="cin-over-cond">{CONDITION_TEXT[condition]}</div>
         <div className="cin-over-standings">

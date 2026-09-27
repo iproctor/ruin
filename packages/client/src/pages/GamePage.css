@@ -528,3 +528,6 @@
   margin-left: -1px;
 }
 .gset-choice button.is-on { background: #5a3a1c; color: #f4e6cc; border-color: var(--game-brass); position: relative; z-index: 1; }
+.gsb-powers { gap: 0.3rem !important; }
+.gsb-pow-stats { gap: 5px !important; font-size: 0.62rem !important; }
+.gsb { gap: 0.6rem !important; }

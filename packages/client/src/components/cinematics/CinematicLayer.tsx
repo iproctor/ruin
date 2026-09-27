@@ -23,6 +23,31 @@ interface SpellState { id: number; cardId: string; power: Power; regionId: Regio
 
 const TOAST_MS = 3200;
 
+/** The card (or upgrade) behind each on-play effect, for toast art. */
+const EFFECT_CARD: Record<string, string> = {
+  plaguefather_corruption: 'gormen_plaguefather_up',
+  fractals_summon: 'tenzen_fractals_up',
+  call_to_war: 'xarm_call_to_war',
+  teleport: 'tenzen_teleport',
+  meddling_of_rats: 'tenzen_the_meddling_of_rats',
+  fate_shield: 'tenzen_fate_shield',
+  hidden_influence: 'lasha_hidden_influence',
+  narcotic_musk: 'lasha_narcotic_musk',
+  decay: 'gormen_decay',
+  siphon_power: 'tenzen_siphon_power',
+  depraved_infiltration: 'lasha_depraved_infiltration',
+  persistence_matrix_marked: 'tenzen_persistence_matrix',
+  persistence_matrix_reset: 'tenzen_persistence_matrix',
+};
+
+/** "a Heartripper" / "an Addict" from a follower's plural name. */
+function oneOf(power: Power, cls: 'cultist' | 'warrior' | 'incarnation'): string {
+  const name = FOLLOWERS[power][cls].name;
+  if (cls === 'incarnation') return name;
+  const single = name.endsWith('ies') ? name.slice(0, -3) + 'y' : name.replace(/s$/, '');
+  return `${/^[AEIOU]/.test(single) ? 'an' : 'a'} ${single}`;
+}
+
 /**
  * Turns the game's event stream into cinematics: phase banners, card
  * reveals, battle scenes with thrown dice, ruination, toasts and the final
@@ -171,7 +196,9 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
               soon(() => fx.burst([`fig-${ev.followerId}`, `region-${ev.regionId}`], 'summon', 'tenzen'));
               break;
           }
-          if (text) pushToast({ power: 'power' in ev ? (ev as { power: Power }).power : null, title: text });
+          const effectCard = EFFECT_CARD[ev.subtype];
+          const effectPower = (CARD_BY_ID[effectCard ?? '']?.power ?? UPGRADE_BY_ID[effectCard ?? '']?.power ?? null) as Power | null;
+          if (text) pushToast({ power: effectPower, cardId: effectCard, title: text });
           break;
         }
         case 'battle_region_start': {
@@ -215,7 +242,7 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
         case 'rapture_control':
           sound.cardPlay('lasha');
           if (cinematic) setBattle((b) => b && b.regionId === ev.regionId ? { ...b, enthralled: { ...b.enthralled, [ev.targetId]: 'lasha' } } : b);
-          pushToast({ power: 'lasha', title: `The Rapture enthralls a ${FOLLOWERS[ev.targetPower][ev.targetClass].name.replace(/s$/, '')}`, body: REGIONS[ev.regionId].name });
+          pushToast({ power: 'lasha', title: `The Rapture enthralls ${oneOf(ev.targetPower, ev.targetClass)}`, body: REGIONS[ev.regionId].name });
           break;
         case 'war_frenzy_partial':
           if (cinematic) setBattle((b) => b && b.regionId === ev.regionId ? { ...b, wounded: { ...b.wounded, [ev.followerId]: ev.hits } } : b);
@@ -298,7 +325,7 @@ export default function CinematicLayer({ subscribe, state, myPowers, paused, onR
         case 'hero_forced_removal':
           sound.kill();
           soon(() => fx.burst(`region-${ev.regionId}`, 'kill', null, 0.8));
-          pushToast({ power: ev.power, title: `A hero strikes down a ${FOLLOWERS[ev.power][ev.followerClass].name.replace(/s$/, '')}`, body: REGIONS[ev.regionId].name });
+          pushToast({ power: ev.power, title: `A hero strikes down ${oneOf(ev.power, ev.followerClass)}`, body: REGIONS[ev.regionId].name });
           break;
         case 'harvest_kill':
           sound.kill();

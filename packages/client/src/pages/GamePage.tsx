@@ -661,7 +661,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: INK, overflow: 'clip' }}>
+      <div className="game-ui" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: INK, overflow: 'clip' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
         <StatusBar
@@ -709,9 +709,9 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
           {/* Middle: non-summoning action panels */}
           {(needsOnPlayChoice || needsApprenticeChoice || (isMyTurn && serverPending?.actionKind !== 'summoning_action')) && (
-            <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0 }}>
+            <div style={{ width: 270, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0, flexShrink: 0, ['--accent' as string]: myPower ? POWER_COLORS[myPower] : undefined }}>
               {needsOnPlayChoice && myPower && !pendingOnPlayChoice && onPlayContext && (
-                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <div className="ap-dock">
                   <CardOnPlayChoicePanel
                     state={displayState}
                     myPower={myPower}
@@ -723,7 +723,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               )}
 
               {needsApprenticeChoice && myPower && afterPlayPending && (
-                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <div className="ap-dock">
                   <div style={{ fontSize: '0.8rem', color: PAPER, marginBottom: 6, fontWeight: 600 }}>
                     Chaos Stone
                   </div>
@@ -750,7 +750,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               )}
 
               {isMyTurn && serverPending?.actionKind !== 'summoning_action' && (
-                <div style={{ background: PARCHMENT, border: `2px solid ${BRASS_DIM}`, borderRadius: 8, padding: '0.75rem', flexShrink: 0 }}>
+                <div className="ap-dock">
                   {submitError && <p style={{ color: ERROR, fontSize: '0.8rem', marginBottom: 6 }}>{submitError}</p>}
                   <ActionPanel
                     state={displayState}
