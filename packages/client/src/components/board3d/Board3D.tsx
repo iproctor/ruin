@@ -31,6 +31,7 @@ export default function Board3D(props: GameBoardProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [zoomed, setZoomed] = useState(false);
   const [hoverRegion, setHoverRegion] = useState<RegionId | null>(null);
+  const [hoverSlot, setHoverSlot] = useState<string | null>(null);
   // Region plaques scale with the board's rendered size so small screens don't crowd.
   const [uiScale, setUiScale] = useState(1);
   useEffect(() => {
@@ -153,6 +154,8 @@ export default function Board3D(props: GameBoardProps) {
             appearingCards={summoningAnim?.appearingCards}
             pendingAction={pendingAction}
             slotPlayable={slotPlayable}
+            dominations={dominationLabels}
+            hoverSlot={hoverSlot}
           />
         </Suspense>
       </Canvas>
@@ -170,6 +173,7 @@ export default function Board3D(props: GameBoardProps) {
         onSummonClick={onSummonClick}
         canSummon={canSummon}
         dominationLabels={dominationLabels}
+        onSlotHover={setHoverSlot}
       />
     </div>
   );

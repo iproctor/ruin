@@ -134,9 +134,10 @@ function RegionZone({ regionId, registry, active, onClick }: {
 
 // ── Card slot hotspot ──────────────────────────────────────────────────────
 
-function SlotZone({ regionId, slot, registry, cardId, clickable, onClick }: {
+function SlotZone({ regionId, slot, registry, cardId, clickable, onClick, onHover }: {
   regionId: RegionId; slot: 0 | 1; registry: ProjectionRegistry; cardId: string | null;
   clickable: boolean; onClick?: (x: number, y: number) => void;
+  onHover?: (key: string | null) => void;
 }) {
   const f = regionFrame(regionId);
   const [x, z] = cardSlotPos(f, slot);
@@ -153,9 +154,9 @@ function SlotZone({ regionId, slot, registry, cardId, clickable, onClick }: {
       className={`b3-slot ${clickable ? 'is-clickable' : ''}`}
       style={{ pointerEvents: cardId || clickable ? 'auto' : 'none' }}
       onClick={clickable && onClick ? (e) => { e.stopPropagation(); onClick(e.clientX, e.clientY); } : undefined}
-      onMouseEnter={cardId ? (e) => setTip({ x: e.clientX, y: e.clientY }) : undefined}
+      onMouseEnter={cardId ? (e) => { setTip({ x: e.clientX, y: e.clientY }); onHover?.(`${regionId}-${slot}`); } : undefined}
       onMouseMove={cardId ? (e) => setTip({ x: e.clientX, y: e.clientY }) : undefined}
-      onMouseLeave={() => setTip(null)}
+      onMouseLeave={() => { setTip(null); onHover?.(null); }}
     >
       {clickable && <span className="b3-slot-plus">+</span>}
       {tip && cardId && <CardTooltip cardId={cardId} x={tip.x} y={tip.y} />}
@@ -272,10 +273,11 @@ export interface OverlayProps {
   onSummonClick?: (regionId: RegionId, x: number, y: number) => void;
   canSummon?: (regionId: RegionId) => boolean;
   dominationLabels?: Map<RegionId, { power: Power; vp: number }>;
+  onSlotHover?: (key: string | null) => void;
 }
 
 export default function Overlay(props: OverlayProps) {
-  const { state, registry, standees, dragActive, myPower, onRegionClick, onSlotClick, slotPlayable, onSummonClick, canSummon, dominationLabels } = props;
+  const { state, registry, standees, dragActive, myPower, onRegionClick, onSlotClick, slotPlayable, onSummonClick, canSummon, dominationLabels, onSlotHover } = props;
   const regionOf = useMemo(() => {
     const m = new Map<string, RegionId>();
     for (const r of REGION_ORDER) for (const s of standees) if (s.figure.regionId === r) m.set(s.figure.id, r);
@@ -298,6 +300,7 @@ export default function Overlay(props: OverlayProps) {
             cardId={region.chaosCards[si]?.cardId ?? null}
             clickable={!region.chaosCards[si] && !!onSlotClick && !!slotPlayable?.(id, si)}
             onClick={onSlotClick ? (x, y) => onSlotClick(id, si, x, y) : undefined}
+            onHover={onSlotHover}
           />
         ));
       })}

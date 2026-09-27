@@ -241,6 +241,35 @@ export class TextureBank {
     }, godArt(power));
   }
 
+  /** A war banner in the god's colour bearing its portrait. */
+  banner(power: Power): THREE.Texture {
+    const W = 128;
+    const H = 192;
+    const color = POWER_COLORS[power];
+    return this.make(`banner:${power}`, W, H, (g, img) => {
+      // Swallow-tailed cloth
+      g.beginPath();
+      g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, H); g.lineTo(W / 2, H - 34); g.lineTo(0, H); g.closePath();
+      const grad = g.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, '#140806');
+      g.fillStyle = grad;
+      g.fill();
+      g.lineWidth = 6;
+      g.strokeStyle = '#c68c5a';
+      g.stroke();
+      if (img) {
+        g.save();
+        g.beginPath(); g.arc(W / 2, 70, 40, 0, Math.PI * 2); g.clip();
+        const sc = 80 / Math.min(img.width, img.height * 0.66);
+        g.drawImage(img, W / 2 - (img.width * sc) / 2, 30 - img.height * sc * 0.04, img.width * sc, img.height * sc);
+        g.restore();
+        g.beginPath(); g.arc(W / 2, 70, 40, 0, Math.PI * 2);
+        g.lineWidth = 4; g.strokeStyle = '#e8c070'; g.stroke();
+      }
+    }, godArt(power));
+  }
+
   /** Back of a card (painted card back). */
   cardBack(): THREE.Texture {
     const W = 180;

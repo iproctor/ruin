@@ -36,6 +36,10 @@ export interface SceneProps {
   appearingCards?: Set<string>;
   pendingAction?: Action | null;
   slotPlayable?: (regionId: RegionId, slot: 0 | 1) => boolean;
+  /** Regions dominated this corruption phase → a war banner is planted there. */
+  dominations?: Map<RegionId, { power: Power; vp: number }>;
+  /** `${regionId}-${slot}` of the table card under the cursor. */
+  hoverSlot?: string | null;
 }
 
 const ELEVATION = 1.1; // radians above horizontal (~63°)
@@ -487,9 +491,10 @@ function useFreshMount(sceneStart: number) {
 
 // ── Cards on the table ─────────────────────────────────────────────────────
 
-function TableCard({ cardId, x, z, bank, pending, appearing, sceneStart }: {
-  cardId: string; x: number; z: number; bank: TextureBank; pending: boolean; appearing: boolean; sceneStart: number;
+function TableCard({ cardId, x, z, bank, pending, appearing, sceneStart, hovered }: {
+  cardId: string; x: number; z: number; bank: TextureBank; pending: boolean; appearing: boolean; sceneStart: number; hovered: boolean;
 }) {
+  const lift = useRef(0);
   const tex = useMemo(() => bank.card(cardId), [bank, cardId]);
   const ref = useRef<THREE.Group>(null);
   const fresh = useFreshMount(sceneStart);
@@ -502,9 +507,11 @@ function TableCard({ cardId, x, z, bank, pending, appearing, sceneStart }: {
     if (t0.current < 1) t0.current = Math.min(1, t0.current + dt / 0.7);
     const s = t0.current;
     const drop = (1 - Math.pow(s, 2)) * 1.2;
-    const lift = pending ? 0.14 + Math.sin(clock.getElapsedTime() * 3) * 0.03 : 0;
-    g.position.set(x, BOARD_TOP + 0.012 + drop + lift, z);
-    g.rotation.set(-Math.PI / 2, 0, (1 - s) * 1.6 + (cardId.length % 5 - 2) * 0.03);
+    lift.current += ((hovered ? 1 : 0) - lift.current) * Math.min(1, dt * 10);
+    const hover = pending ? 0.14 + Math.sin(clock.getElapsedTime() * 3) * 0.03 : lift.current * 0.12;
+    g.position.set(x, BOARD_TOP + 0.012 + drop + hover, z);
+    g.rotation.set(-Math.PI / 2 + lift.current * 0.35, 0, (1 - s) * 1.6 + (cardId.length % 5 - 2) * 0.03 * (1 - lift.current));
+    g.scale.setScalar(1 + lift.current * 0.18);
   });
   return (
     <>
@@ -580,6 +587,38 @@ function TableCardAt({ cardId, x, y, z, w, bank }: { cardId: string; x: number; 
       <mesh castShadow receiveShadow>
         <planeGeometry args={[w, w * 1.4]} />
         <meshStandardMaterial map={tex} roughness={0.6} transparent />
+      </mesh>
+    </group>
+  );
+}
+
+// ── War banners planted on dominated regions ────────────────────────────────
+
+function WarBanner({ power, regionId, bank }: { power: Power; regionId: RegionId; bank: TextureBank }) {
+  const tex = useMemo(() => bank.banner(power), [bank, power]);
+  const f = regionFrame(regionId);
+  const group = useRef<THREE.Group>(null);
+  const cloth = useRef<THREE.Mesh>(null);
+  const rise = useRef(0);
+  useFrame(({ clock }, dt) => {
+    rise.current = Math.min(1, rise.current + dt / 0.7);
+    const e = 1 - Math.pow(1 - rise.current, 3);
+    if (group.current) group.current.position.y = BOARD_TOP - 1.1 * (1 - e);
+    if (cloth.current) cloth.current.rotation.y = Math.sin(clock.getElapsedTime() * 2.2) * 0.18;
+  });
+  return (
+    <group ref={group} position={[f.x0 + 0.2, BOARD_TOP - 1.1, f.z0 + 0.45]}>
+      <mesh position={[0, 0.5, 0]} castShadow>
+        <cylinderGeometry args={[0.014, 0.018, 1.0, 8]} />
+        <meshStandardMaterial color="#8a6034" metalness={0.8} roughness={0.35} />
+      </mesh>
+      <mesh position={[0, 1.02, 0]}>
+        <sphereGeometry args={[0.03, 12, 12]} />
+        <meshStandardMaterial color="#e8c070" metalness={0.9} roughness={0.2} emissive={POWER_COLORS[power]} emissiveIntensity={0.5} />
+      </mesh>
+      <mesh ref={cloth} position={[0.17, 0.78, 0]} castShadow>
+        <planeGeometry args={[0.32, 0.48]} />
+        <meshStandardMaterial map={tex} side={THREE.DoubleSide} transparent alphaTest={0.3} roughness={0.8} emissive={POWER_COLORS[power]} emissiveIntensity={0.15} />
       </mesh>
     </group>
   );
@@ -755,6 +794,7 @@ function RegionPieces({ regionId, props, sceneStart }: { regionId: RegionId; pro
               pending={!!pending && pending.slotIndex === si}
               appearing={!!appearingCards?.has(`${regionId}-${si}`)}
               sceneStart={sceneStart}
+              hovered={props.hoverSlot === `${regionId}-${si}`}
             />
           );
         }
@@ -817,6 +857,9 @@ export default function Scene(props: SceneProps) {
       <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
       <Mist bank={bank} />
       <WorldTrack state={state} bank={bank} />
+      {props.dominations && [...props.dominations.entries()].map(([regionId, d]) => (
+        <WarBanner key={`banner-${regionId}-${d.power}`} power={d.power} regionId={regionId} bank={bank} />
+      ))}
       <SideTable state={state} bank={bank} />
       {REGION_ORDER.filter((id) => state.regions[id]!.ruinationCardIndex !== null).map((id) => {
         const f = regionFrame(id);
