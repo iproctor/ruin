@@ -1,11 +1,25 @@
-import { CHAOS_CARDS, UPGRADES, WORLD_CARDS } from '@ruin/engine';
+import { useMemo, useState } from 'react';
+import { CHAOS_CARDS, UPGRADES, WORLD_CARDS, createInitialState } from '@ruin/engine';
+import type { GameState } from '@ruin/engine';
 import GameCard from '../components/cards/GameCard.js';
+import ActionPanel from '../components/ActionPanel.js';
 
 /** Dev-only visual harness (route /dev). Renders every card and lets the
  *  cinematic layer be triggered without playing a game. */
+function BoonPreview() {
+  const state = useMemo<GameState>(() => {
+    const s = createInitialState({ gameId: 'dev', activePowers: ['xarm', 'gormen', 'tenzen', 'lasha'], playerTypes: { xarm: 'human', gormen: 'ai', tenzen: 'ai', lasha: 'ai' }, seed: 3 });
+    return { ...s, pendingAction: { waitingFor: 'lasha', actionKind: 'upgrade_choice', context: {} } };
+  }, []);
+  return <ActionPanel state={state} myPower="lasha" selectedCardId={null} onAction={() => {}} onClearCard={() => {}} />;
+}
+
 export default function DevGalleryPage() {
+  const [boon, setBoon] = useState(false);
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0806', padding: 24, overflow: 'auto', height: '100vh' }}>
+    <div className="game-ui" style={{ minHeight: '100vh', background: '#0a0806', padding: 24, overflow: 'auto', height: '100vh' }}>
+      <button className="primary" onClick={() => setBoon((b) => !b)} style={{ position: 'fixed', right: 20, top: 20, zIndex: 900 }}>Toggle boon modal</button>
+      {boon && <BoonPreview />}
       <h2 style={{ fontFamily: 'Cinzel', color: '#d9c7a7', marginBottom: 12 }}>Chaos cards</h2>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
         {CHAOS_CARDS.map((c) => <GameCard key={c.id} cardId={c.id} size="md" interactive />)}

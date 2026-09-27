@@ -28,6 +28,7 @@ export interface SceneProps {
   highlight: Set<RegionId> | null;
   dimmed: Set<RegionId> | null;
   focusRegion: RegionId | null;
+  hoverRegion?: RegionId | null;
   killedIds?: Set<string>;
   hideKilled?: boolean;
   appearingFigures?: Set<string>;
@@ -220,8 +221,8 @@ function RuinDecal({ regionId, bank, w, d }: { regionId: RegionId; bank: Texture
   );
 }
 
-function RegionPlate({ regionId, state, highlighted, dimmed, focused, bank }: {
-  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean; bank: TextureBank;
+function RegionPlate({ regionId, state, highlighted, dimmed, focused, hovered, bank }: {
+  regionId: RegionId; state: GameState; highlighted: boolean; dimmed: boolean; focused: boolean; hovered: boolean; bank: TextureBank;
 }) {
   const f = regionFrame(regionId);
   const region = state.regions[regionId]!;
@@ -244,14 +245,15 @@ function RegionPlate({ regionId, state, highlighted, dimmed, focused, bank }: {
       if (highlighted) { fillMat.current.color.set('#facc15'); fillMat.current.opacity = 0.14 + pulse * 0.14; }
       else if (focused) { fillMat.current.color.set('#ff3b2f'); fillMat.current.opacity = 0.12 + pulse * 0.1; }
       else if (ruined) { fillMat.current.color.set('#2a0404'); fillMat.current.opacity = 0.72; }
+      else if (hovered) { fillMat.current.color.set('#3a2410'); fillMat.current.opacity = 0.3; }
       else { fillMat.current.color.set('#0a0604'); fillMat.current.opacity = dimmed ? 0.62 : 0.34; }
     }
     if (edgeMat.current) {
-      edgeMat.current.opacity = highlighted ? 0.6 + pulse * 0.4 : focused ? 0.9 : persistent ? 0.55 + pulse * 0.25 : 0.4;
+      edgeMat.current.opacity = highlighted ? 0.6 + pulse * 0.4 : focused ? 0.9 : hovered ? 0.95 : persistent ? 0.55 + pulse * 0.25 : 0.4;
     }
   });
 
-  const edgeColor = highlighted ? '#facc15' : focused ? '#ff3b2f' : ruined ? '#7f1d1d' : persistent ? POWER_COLORS[persistent.power] : '#a97140';
+  const edgeColor = highlighted ? '#facc15' : focused ? '#ff3b2f' : ruined ? '#7f1d1d' : persistent ? POWER_COLORS[persistent.power] : hovered ? '#e8c070' : '#a97140';
 
   return (
     <group position={[f.cx, BOARD_TOP + 0.002, f.cz]} rotation-x={-Math.PI / 2}>
@@ -336,7 +338,11 @@ function Standee({ slot, bank, registry, blob, killed, appearing }: {
     // Killed figures topple backwards.
     const fallGoal = killed || f.tipped ? 1 : 0;
     fall.current += (fallGoal - fall.current) * Math.min(1, dt * 6);
-    if (card.current) card.current.rotation.x = -0.72 - fall.current * 0.8;
+    if (card.current) {
+      card.current.rotation.x = -0.72 - fall.current * 0.8;
+      // Incarnations breathe: a slow menacing sway.
+      if (f.class === 'incarnation' && fall.current < 0.05) card.current.rotation.z = Math.sin(performance.now() / 900 + slot.x * 3) * 0.04;
+    }
     registry.move(`fig-${f.id}`, 0, g.position.x, g.position.y, g.position.z);
     registry.move(`fig-${f.id}`, 1, g.position.x, g.position.y + h * 0.75 * (1 - fall.current * 0.7), g.position.z - h * 0.66);
   });
@@ -557,6 +563,7 @@ export default function Scene(props: SceneProps) {
           highlighted={!!highlight?.has(id)}
           dimmed={!!dimmed?.has(id)}
           focused={focusRegion === id}
+          hovered={props.hoverRegion === id}
           bank={bank}
         />
       ))}

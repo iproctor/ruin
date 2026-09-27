@@ -2,11 +2,12 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Canvas } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { RegionId } from '@ruin/engine';
+import { REGION_ORDER } from '@ruin/engine';
 import type { GameBoardProps } from '../GameBoard.js';
 import { TextureBank } from './textures.js';
 import { ProjectionRegistry } from './projection.js';
 import Scene, { standeeLayout, type ViewControl } from './Scene.js';
-import { BOARD_D, BOARD_W } from './layout.js';
+import { BOARD_D, BOARD_W, regionFrame } from './layout.js';
 import Overlay from './Overlay.js';
 import './board3d.css';
 
@@ -29,6 +30,7 @@ export default function Board3D(props: GameBoardProps) {
   const view = useMemo<ViewControl>(() => ({ zoom: 1, panX: 0, panZ: 0, camera: null }), []);
   const rootRef = useRef<HTMLDivElement>(null);
   const [zoomed, setZoomed] = useState(false);
+  const [hoverRegion, setHoverRegion] = useState<RegionId | null>(null);
   const clampPan = useCallback(() => {
     const room = (1 - view.zoom) * 0.9;
     view.panX = Math.max(-BOARD_W / 2 * room, Math.min(BOARD_W / 2 * room, view.panX));
@@ -83,7 +85,20 @@ export default function Board3D(props: GameBoardProps) {
   function onPointerMove(e: React.PointerEvent) {
     const d = drag.current;
     const el = rootRef.current;
-    if (!d || !el) return;
+    if (!d) {
+      // Hover: light up the region under the cursor.
+      const p = groundPoint(e.clientX, e.clientY);
+      let hit: RegionId | null = null;
+      if (p) {
+        for (const id of REGION_ORDER) {
+          const f = regionFrame(id);
+          if (p.x >= f.x0 && p.x <= f.x0 + f.w && p.z >= f.z0 && p.z <= f.z0 + f.d) { hit = id; break; }
+        }
+      }
+      if (hit !== hoverRegion) setHoverRegion(hit);
+      return;
+    }
+    if (!el) return;
     const scale = (BOARD_W * view.zoom * 1.3) / el.clientWidth;
     view.panX = d.px - (e.clientX - d.x) * scale;
     view.panZ = d.pz - (e.clientY - d.y) * scale * 1.1;
@@ -98,6 +113,7 @@ export default function Board3D(props: GameBoardProps) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerLeave={() => setHoverRegion(null)}
       onDoubleClick={(e) => { if ((e.target as HTMLElement).tagName === 'CANVAS') resetView(); }}
     >
       <Canvas
@@ -116,6 +132,7 @@ export default function Board3D(props: GameBoardProps) {
             highlight={highlight}
             dimmed={dimmed}
             focusRegion={animationRegion ?? null}
+            hoverRegion={hoverRegion}
             killedIds={animationKilledIds}
             hideKilled={hideKilled}
             appearingFigures={summoningAnim?.appearingFigures}

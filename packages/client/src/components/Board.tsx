@@ -8,7 +8,7 @@ import { INK, SOOT, PARCHMENT, BORDER, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRAS
 import CardTooltip from './CardTooltip.js';
 import FollowerTooltip from './FollowerTooltip.js';
 import BattlePane from './BattlePane.js';
-import { followerArt, chaosCardArt } from '../lib/art.js';
+import { followerArt, chaosCardArt, regionArt } from '../lib/art.js';
 import type { DragItem } from '../types/drag.js';
 
 // ── Region layout ─────────────────────────────────────────────────────────────
@@ -838,11 +838,14 @@ export function RegionInfoTooltip({ state, regionId, x, y }: {
     .filter(p => presentPowers.has(p))
     .map(p => ({ p, d: getPowerDomination(state, regionId, p) }));
 
-  const left = Math.min(x + 14, window.innerWidth - 240);
-  const top  = Math.min(y + 14, window.innerHeight - 200);
+  const left = Math.min(x + 14, window.innerWidth - 250);
+  const top  = Math.max(8, Math.min(y + 14, window.innerHeight - 330));
 
   return createPortal(
     <div className="gt" style={{ left, top, width: 240 }}>
+      {regionArt(regionId) && (
+        <div style={{ margin: '-10px -12px 8px', height: 90, background: `linear-gradient(180deg, transparent 40%, rgba(22,26,31,0.95)), url(${regionArt(regionId)}) center / cover`, borderRadius: '2px 2px 0 0' }} />
+      )}
       <div className="gt-title" style={{ margin: 0, marginBottom: 4 }}>{def.name}</div>
       {def.populous && (
         <div className="gt-sublabel" style={{ color: 'var(--game-brass-hot)', marginBottom: 4 }}>Populous</div>
