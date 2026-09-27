@@ -20,6 +20,9 @@
   pointer-events: none;
   overflow: hidden;
 }
+/* Until the first projection frame places them, overlay elements wait off-screen
+   (so effects never target a not-yet-positioned anchor at the corner). */
+.b3-overlay > * { left: -10000px; top: -10000px; }
 
 /* Region name plaque, anchored at the region's back edge. */
 .b3-banner {

@@ -655,3 +655,20 @@
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--game-border-hi), transparent);
 }
+/* Race to 50 VP */
+.gsb-vp-bar {
+  display: block;
+  width: 58px;
+  height: 3px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 1px 0 2px;
+}
+.gsb-vp-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 50%, #000), var(--accent));
+  box-shadow: 0 0 6px var(--accent);
+  transition: width 0.8s cubic-bezier(.2,.9,.3,1);
+}

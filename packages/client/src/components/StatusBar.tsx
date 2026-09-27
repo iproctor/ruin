@@ -196,6 +196,9 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
         <span className="gsb-pow-vp">
           <span key={ps.victoryPoints} className="gsb-vp-pop">{ps.victoryPoints}</span><span className="gsb-pow-vp-label">vp</span>
         </span>
+        <span className="gsb-vp-bar" title={`${ps.victoryPoints} of 50 VP`}>
+          <i style={{ width: `${Math.min(100, (ps.victoryPoints / 50) * 100)}%` }} />
+        </span>
         <div className="gsb-pow-stats">
           <span>{ps.powerPoints}<em>pp</em></span>
           <span>{ps.hand.length}<em>cards</em></span>

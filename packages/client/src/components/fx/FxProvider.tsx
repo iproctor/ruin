@@ -12,7 +12,10 @@ export function anchorRect(key: string): DOMRect | null {
   const el = document.querySelector(`[data-anchor="${CSS.escape(key)}"]`);
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return r.width === 0 && r.height === 0 ? null : r;
+  if (r.width === 0 && r.height === 0) return null;
+  // Off-screen means "not placed yet" (3D overlays before their first projection).
+  if (r.right < 0 || r.bottom < 0) return null;
+  return r;
 }
 
 export function anchorCenter(key: string): { x: number; y: number } | null {
