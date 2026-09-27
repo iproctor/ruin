@@ -30,6 +30,7 @@ import { useSettings, SPEED_FACTOR } from '../contexts/SettingsContext.js';
 import { SoundProvider } from '../contexts/SoundContext.js';
 import { FxProvider } from '../components/fx/FxProvider.js';
 import CinematicLayer from '../components/cinematics/CinematicLayer.js';
+import SafeBoundary from '../components/SafeBoundary.js';
 import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_DIM, CARD_FACE, CARD_INK, RUINED, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
 
@@ -699,13 +700,15 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               onSummonClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSummonClick : undefined}
               canSummon={isSummoningTurn && !pendingAction && !anim.animationPhase ? canSummon : undefined}
             />
-            <CinematicLayer
-              subscribe={subscribe}
-              state={serverState ?? displayState}
-              myPowers={myPowers}
-              paused={paused}
-              onResume={resume}
-            />
+            <SafeBoundary label="cinematics" resetKey={(serverState ?? displayState).round}>
+              <CinematicLayer
+                subscribe={subscribe}
+                state={serverState ?? displayState}
+                myPowers={myPowers}
+                paused={paused}
+                onResume={resume}
+              />
+            </SafeBoundary>
           </div>
 
           {/* Middle: non-summoning action panels */}
