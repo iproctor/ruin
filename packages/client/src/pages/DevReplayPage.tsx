@@ -12,7 +12,7 @@ import GameBoard from '../components/GameBoard.js';
 import StatusBar from '../components/StatusBar.js';
 import './GamePage.css';
 
-function Inner({ seed, viewer }: { seed: number; viewer: Power[] }) {
+function Inner({ seed, viewer, auto }: { seed: number; viewer: Power[]; auto: boolean }) {
   const { settings } = useSettings();
   const demo = useMemo(() => generateDemoGame(seed), [seed]);
   const timing = useRef({ myPowers: viewer, cinematics: settings.cinematics, speed: SPEED_FACTOR[settings.animSpeed] });
@@ -32,6 +32,12 @@ function Inner({ seed, viewer }: { seed: number; viewer: Power[] }) {
     }
     if (ev.type === 'corruption_placement' || ev.type === 'ruination') setFocus(ev.regionId);
   }), [r.subscribe]);
+  // ?auto=1: continue past the battle pause by itself (soak testing).
+  useEffect(() => {
+    if (!auto || !r.paused) return;
+    const t = setTimeout(r.resume, 1500);
+    return () => clearTimeout(t);
+  }, [auto, r.paused, r.resume]);
   if (!state) return null;
 
   const btn: React.CSSProperties = { fontFamily: 'Cinzel', fontSize: 12, padding: '4px 10px', background: '#2a1a0c', color: '#f4e6cc', border: '1px solid #5a4028' };
@@ -60,12 +66,13 @@ export default function DevReplayPage() {
   const [params] = useSearchParams();
   const seed = Number(params.get('seed') ?? 11);
   const viewer = (params.get('as')?.split(',').filter(Boolean) ?? []) as Power[];
+  const auto = params.get('auto') === '1';
   const shakeRef = useRef<HTMLDivElement>(null);
   return (
     <SoundProvider>
       <FxProvider shakeRoot={shakeRef}>
         <div ref={shakeRef}>
-          <Inner seed={seed} viewer={viewer} />
+          <Inner seed={seed} viewer={viewer} auto={auto} />
         </div>
       </FxProvider>
     </SoundProvider>
