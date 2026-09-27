@@ -76,12 +76,15 @@ export interface GameStreamResult {
   resume: () => void;
   /** Called synchronously for every event as the queue applies it (never batched). */
   subscribe: (listener: EventListener) => () => void;
+  /** Fast-forward the animations currently queued (until the queue drains). */
+  hurry: () => void;
 }
 
 export function useGameStream(gameId: string, options?: GameStreamOptions): GameStreamResult {
   const durationRef = useRef(options?.eventDuration);
   durationRef.current = options?.eventDuration;
   const listeners = useRef(new Set<EventListener>());
+  const hurryRef = useRef(false);
   const [state, setState]         = useState<GameState | null>(null);
   const [events, setEvents]       = useState<GameEvent[]>([]);
   const [lastEvent, setLastEvent] = useState<GameEvent | null>(null);
@@ -105,6 +108,7 @@ export function useGameStream(gameId: string, options?: GameStreamOptions): Game
   const processNext = useCallback(() => {
     if (queue.current.length === 0) {
       processing.current = false;
+      hurryRef.current = false;
       return;
     }
 
@@ -149,7 +153,8 @@ export function useGameStream(gameId: string, options?: GameStreamOptions): Game
       try { l(event, stateRef.current); } catch (err) { console.error('[event] listener failed', err); }
     }
 
-    const delay = durationRef.current ? durationRef.current(event) : getEventDuration(event);
+    const base = durationRef.current ? durationRef.current(event) : getEventDuration(event);
+    const delay = hurryRef.current ? Math.round(base * 0.15) : base;
     if (delay > 0) {
       timerRef.current = setTimeout(processNext, delay);
     } else {
@@ -262,10 +267,14 @@ export function useGameStream(gameId: string, options?: GameStreamOptions): Game
     return cleanup;
   }, [gameId, handleEvent]);
 
+  const hurry = useCallback(() => {
+    if (processing.current) hurryRef.current = true;
+  }, []);
+
   const subscribe = useCallback((listener: EventListener) => {
     listeners.current.add(listener);
     return () => { listeners.current.delete(listener); };
   }, []);
 
-  return { state, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe };
+  return { state, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe, hurry };
 }

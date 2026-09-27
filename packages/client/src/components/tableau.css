@@ -283,3 +283,16 @@
 .hand-card.is-unplayable { filter: grayscale(0.75) brightness(0.55); }
 .hand-card.is-unplayable:hover { filter: grayscale(0.4) brightness(0.8); }
 .res-fig.is-unaffordable .res-fig-art { filter: grayscale(0.8) brightness(0.5); }
+
+.tab-waiting-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.tab-hurry {
+  padding: 4px 14px;
+  font: 700 0.62rem 'Cinzel', serif;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #c0ad90;
+  background: rgba(20,12,8,0.8);
+  border: 1px solid #5a4028;
+  border-radius: 2px;
+}
+.tab-hurry:hover { color: #f4e6cc; border-color: #c68c5a; }

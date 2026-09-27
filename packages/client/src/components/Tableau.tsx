@@ -25,6 +25,8 @@ interface TableauProps {
   submitError?: string;
   /** During your summoning turn: what you can legally play/summon right now. */
   playable?: { cards: Set<string>; classes: Set<FollowerClass> };
+  /** Fast-forward the other gods' animations. */
+  onHurry?: () => void;
 }
 
 // ── Draggable hand card ───────────────────────────────────────────────────────
@@ -160,7 +162,7 @@ function pendingLabel(action: Action): string {
 
 // ── Tableau ───────────────────────────────────────────────────────────────────
 
-export default function Tableau({ state, displayState, myPower, selectedCardId, onSelectCard, pendingAction, onUndo, onEndTurn, submitError, playable }: TableauProps) {
+export default function Tableau({ state, displayState, myPower, selectedCardId, onSelectCard, pendingAction, onUndo, onEndTurn, submitError, playable, onHurry }: TableauProps) {
   const [tooltip, setTooltip] = useState<{ cardId: string; x: number; y: number } | null>(null);
   const sound = useSound();
 
@@ -315,7 +317,16 @@ export default function Tableau({ state, displayState, myPower, selectedCardId, 
             </button>
           </div>
         )}
-        {!isSummoningTurn && <div className="tab-waiting">Awaiting the other gods…</div>}
+        {!isSummoningTurn && (
+          <div className="tab-waiting-wrap">
+            <div className="tab-waiting">Awaiting the other gods…</div>
+            {onHurry && (
+              <button className="tab-hurry" onClick={onHurry} title="Fast-forward the animations (Space)">
+                Hurry <span aria-hidden="true">»</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {tooltip && <CardTooltip cardId={tooltip.cardId} x={tooltip.x} y={tooltip.y} />}

@@ -175,7 +175,21 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
   const timingRef = useRef({ myPowers, cinematics: settings.cinematics, speed: SPEED_FACTOR[settings.animSpeed] });
   timingRef.current = { myPowers, cinematics: settings.cinematics, speed: SPEED_FACTOR[settings.animSpeed] };
   const durationFor = useCallback((ev: GameEvent) => eventDuration(ev, timingRef.current), []);
-  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe } = useGameStream(gameId, { eventDuration: durationFor });
+  const { state: streamState, events, lastEvent, chat, connected, syncAfterAction, paused, resume, subscribe, hurry } = useGameStream(gameId, { eventDuration: durationFor });
+
+  // Space / Escape fast-forwards whatever the other gods are doing.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== ' ' && e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      // Leave typing and focused buttons (Space activates them) alone.
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.isContentEditable)) return;
+      if (e.key === ' ') e.preventDefault();
+      hurry();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hurry]);
 
   const [pendingAction, setPendingAction]         = useState<Action | null>(null);
   const [pendingOnPlayChoice, setPendingOnPlayChoice] = useState<Action | null>(null);
@@ -807,6 +821,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
             onSelectCard={setSelectedCardId}
             pendingAction={pendingOnPlayChoice ?? pendingAction}
             playable={isSummoningTurn && !pendingAction && !pendingOnPlayChoice ? { cards: playableCardIds, classes: summonableClasses } : undefined}
+            onHurry={hurry}
             onUndo={handleUndo}
             onEndTurn={isSummoningTurn && (!needsOnPlayChoice || !!pendingOnPlayChoice) && !needsApprenticeChoice ? handleEndTurn : undefined}
             submitError={submitError}
