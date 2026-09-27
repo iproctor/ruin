@@ -33,7 +33,7 @@ import CinematicLayer from '../components/cinematics/CinematicLayer.js';
 import SafeBoundary from '../components/SafeBoundary.js';
 import LoadingScreen from '../components/LoadingScreen.js';
 import { allArtUrls } from '../lib/art.js';
-import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_DIM, PAPER_FADE, BRASS, BRASS_DIM, CARD_FACE, CARD_INK, RUINED, ERROR } from '../lib/gameColors.js';
+import { INK, SOOT, PARCHMENT, BORDER, BORDER_HI, PAPER, PAPER_FADE, ERROR } from '../lib/gameColors.js';
 import './GamePage.css';
 
 // ── Drag data types ────────────────────────────────────────────────────────────
