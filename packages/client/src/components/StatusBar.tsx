@@ -5,7 +5,9 @@ import type { GameState, Power, RegionId, GameEvent } from '@ruin/engine';
 import { WORLD_CARD_BY_ID, THREAT_DIALS, UPGRADES, RUINATION_CARDS, REGIONS, REGION_ORDER } from '@ruin/engine';
 import { POWER_COLORS, POWER_LABELS, PHASE_LABELS } from '../lib/display.js';
 import { RUINED_TEXT } from '../lib/gameColors.js';
+import { godArt, worldCardArt } from '../lib/art.js';
 import CardTooltip from './CardTooltip.js';
+import SettingsMenu from './SettingsMenu.js';
 
 import type { GamePlayerInfo } from '../api/client.js';
 
@@ -105,6 +107,8 @@ function WorldCardChip({ cardId, slot }: { cardId: string; slot: 1 | 2 | 'D' }) 
         onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY })}
         onMouseLeave={() => setTooltip(null)}
         className={classes}
+        data-anchor={`world-${slot}`}
+        style={worldCardArt(cardId) ? { backgroundImage: `linear-gradient(180deg, rgba(8,5,3,0.15), rgba(8,5,3,0.85)), url(${worldCardArt(cardId)})` } : undefined}
       >
         <div className="gsb-wc-slot">{isDiscard ? 'DISC' : `W${slot}`}</div>
         {def?.hasCometIcon && <div className="gsb-wc-comet">☄</div>}
@@ -131,6 +135,31 @@ function dialAdvancementCondition(power: Power): string {
   }
 }
 
+/** God portrait whose ring doubles as a threat-dial progress arc. */
+function GodMedallion({ power, progress, acting }: { power: Power; progress: number; acting: boolean }) {
+  const art = godArt(power);
+  const color = POWER_COLORS[power];
+  const r = 21;
+  const c = 2 * Math.PI * r;
+  return (
+    <div className={`gsb-medal ${acting ? 'is-acting' : ''}`} style={{ ['--accent' as string]: color }}>
+      <div className="gsb-medal-art" style={art ? { backgroundImage: `url(${art})` } : undefined} />
+      <svg className="gsb-medal-ring" viewBox="0 0 48 48">
+        <circle cx="24" cy="24" r={r} stroke="rgba(0,0,0,0.7)" strokeWidth="4" fill="none" />
+        <circle
+          cx="24" cy="24" r={r}
+          stroke={color}
+          strokeWidth="3"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${c * progress} ${c}`}
+          transform="rotate(-90 24 24)"
+        />
+      </svg>
+    </div>
+  );
+}
+
 function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, controller }: {
   power: Power;
   ps: PowerState;
@@ -141,6 +170,7 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
   dimmed: boolean;
   controller?: GamePlayerInfo;
 }) {
+  const dialMax = (THREAT_DIALS[power]?.length ?? 1) - 1;
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
 
   const classes = [
@@ -158,17 +188,20 @@ function PowerScore({ power, ps, isActing, isMe, color, ticksLeft, dimmed, contr
       onMouseMove={e => setTooltip({ x: e.clientX, y: e.clientY })}
       onMouseLeave={() => setTooltip(null)}
     >
-      <span className="gsb-pow-name">
-        {POWER_LABELS[power]}{isMe && <span className="gsb-pow-you">★</span>}
-      </span>
-      <span className="gsb-pow-vp">
-        {ps.victoryPoints}<span className="gsb-pow-vp-label">vp</span>
-      </span>
-      <div className="gsb-pow-stats">
-        <span>{ps.powerPoints}<em>pp</em></span>
-        <span>{ps.hand.length}<em>cards</em></span>
+      <GodMedallion power={power} progress={dialMax > 0 ? ps.dialPosition / dialMax : 0} acting={isActing} />
+      <div className="gsb-pow-body">
+        <span className="gsb-pow-name">
+          {POWER_LABELS[power]}{isMe && <span className="gsb-pow-you">★</span>}
+        </span>
+        <span className="gsb-pow-vp">
+          {ps.victoryPoints}<span className="gsb-pow-vp-label">vp</span>
+        </span>
+        <div className="gsb-pow-stats">
+          <span>{ps.powerPoints}<em>pp</em></span>
+          <span>{ps.hand.length}<em>cards</em></span>
+          <span title="Threat · dial ticks to victory">{ps.threatValue}<em>thr</em> {ticksLeft}<em>▸</em></span>
+        </div>
       </div>
-      <span className="gsb-pow-meta">{ps.threatValue} · {ticksLeft} ticks</span>
 
       {tooltip && createPortal(
         <div
@@ -542,6 +575,8 @@ export default function StatusBar({ state, myPower, players, events: eventLog, o
       <DialChip state={state} />
 
       <div className="gsb-spacer" />
+
+      <SettingsMenu />
 
       <div className="gsb-powers">
         {state.activePowers.map((power) => {

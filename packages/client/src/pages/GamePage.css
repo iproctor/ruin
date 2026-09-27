@@ -416,3 +416,115 @@
   letter-spacing: 0.15em;
   color: var(--game-brass);
 }
+
+/* ── God medallions (status bar) ─────────────────────────────────────────── */
+.gsb-pow {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 7px !important;
+  min-width: 0 !important;
+  padding: 2px 6px 2px 2px;
+  border-radius: 26px 4px 4px 26px;
+  transition: background 0.3s, opacity 0.2s;
+}
+.gsb-pow.is-acting { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, transparent), transparent); }
+.gsb-pow-body { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.gsb-pow-body .gsb-pow-vp { font-size: 1.05rem; }
+.gsb-pow-stats em { font-size: 0.6rem; }
+.gsb-medal {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.gsb-medal-art {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: #120d0a center 18% / cover;
+  box-shadow: inset 0 0 8px rgba(0,0,0,0.8);
+}
+.gsb-medal-ring { position: absolute; inset: 0; width: 100%; height: 100%; filter: drop-shadow(0 0 3px var(--accent)); }
+.gsb-medal.is-acting::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  animation: medal-pulse 1.3s ease-in-out infinite;
+}
+@keyframes medal-pulse { 0% { opacity: 0.9; transform: scale(0.94); } 100% { opacity: 0; transform: scale(1.25); } }
+
+/* World-track chips carry their painting */
+.gsb-wc {
+  width: 96px !important;
+  height: 40px !important;
+  background-size: cover !important;
+  background-position: center 35% !important;
+}
+.gsb-wc-name { text-shadow: 0 1px 3px #000, 0 0 6px #000; }
+
+/* ── Settings popover ───────────────────────────────────────────────────── */
+.gsb-gear { margin-right: 4px; }
+.gset {
+  position: fixed;
+  width: 280px;
+  z-index: 1000;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, var(--game-parchment), var(--game-ink));
+  border: 1px solid var(--game-border-hi);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.75);
+  font-family: 'Cinzel', serif;
+  color: var(--game-paper);
+}
+.gset-title {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--game-brass-hot);
+  margin-bottom: 6px;
+}
+.gset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+}
+.gset-row input[type="range"] { width: 130px; accent-color: var(--game-brass); }
+.gset-toggle {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  padding: 0;
+  border-radius: 10px;
+  background: #2a1d14;
+  border: 1px solid var(--game-border-hi);
+}
+.gset-toggle i {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--game-paper-fade);
+  transition: left 0.15s, background 0.15s;
+}
+.gset-toggle.is-on { background: #5a3a1c; border-color: var(--game-brass); }
+.gset-toggle.is-on i { left: 20px; background: #f4e6cc; }
+.gset-choice { display: flex; }
+.gset-choice button {
+  padding: 3px 9px;
+  font: 600 0.68rem 'Cinzel', serif;
+  letter-spacing: 0.08em;
+  border-radius: 0;
+  background: #1a120b;
+  color: var(--game-paper-dim);
+  border: 1px solid var(--game-border-hi);
+  margin-left: -1px;
+}
+.gset-choice button.is-on { background: #5a3a1c; color: #f4e6cc; border-color: var(--game-brass); position: relative; z-index: 1; }

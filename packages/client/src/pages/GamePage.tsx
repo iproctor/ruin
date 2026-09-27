@@ -17,7 +17,9 @@ import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
 import { useEventAnimation } from '../hooks/useEventAnimation.js';
 import { getGame, submitAction, submitActions, sendChat, leaveGame } from '../api/client.js';
-import Board from '../components/Board.js';
+import GameBoard from '../components/GameBoard.js';
+import GameCard from '../components/cards/GameCard.js';
+import { followerArt } from '../lib/art.js';
 import StatusBar from '../components/StatusBar.js';
 import Tableau from '../components/Tableau.js';
 import LogPanel from '../components/LogPanel.js';
@@ -76,36 +78,21 @@ function useClampedPopupPosition(anchorX: number | null, anchorY: number | null)
 function DragGhost({ item }: { item: DragItem }) {
   const color = POWER_COLORS[item.power];
   if (item.kind === 'hand_card') {
-    const def = CARD_BY_ID[item.cardId];
     return (
-      <div style={{
-        width: 52, height: 72, background: CARD_FACE,
-        border: `2px solid ${color}`, borderRadius: 6,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontFamily: "'Cinzel', serif",
-        fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.03em',
-        color: CARD_INK, padding: 4,
-        textAlign: 'center', boxShadow: `0 0 16px ${color}88`, opacity: 0.9,
-        pointerEvents: 'none',
-      }}>
-        {def?.name.split(' ').pop() ?? item.cardId}
+      <div style={{ pointerEvents: 'none', transform: 'rotate(-4deg) scale(1.05)', filter: `drop-shadow(0 12px 24px rgba(0,0,0,0.8)) drop-shadow(0 0 14px ${color})` }}>
+        <GameCard cardId={item.cardId} size="sm" />
       </div>
     );
   }
-  const shape = item.followerClass === 'incarnation' ? '■'
-              : item.followerClass === 'warrior'     ? '▲'
-              :                                        '▌';
+  const art = followerArt(item.power, item.followerClass);
+  const size = item.followerClass === 'incarnation' ? 60 : item.followerClass === 'warrior' ? 50 : 42;
   return (
     <div style={{
-      width: 32, height: 32,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: item.followerClass === 'warrior' ? '1.4rem' : '1.1rem',
-      color, opacity: 0.9,
-      filter: `drop-shadow(0 0 6px ${color})`,
+      width: size, height: size, borderRadius: '50%',
+      background: art ? `#120d0a url(${art}) center 25% / cover` : color,
+      boxShadow: `0 0 0 2px #0a0604, 0 0 0 4px ${color}, 0 0 22px ${color}, 0 10px 20px rgba(0,0,0,0.8)`,
       pointerEvents: 'none',
-    }}>
-      {shape}
-    </div>
+    }} />
   );
 }
 
@@ -645,6 +632,8 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       ? serverPending.waitingFor
       : null;
   const isMyTurn        = myPower !== null;
+  // The tableau stays up for the whole game so the board never jumps in size.
+  const tablePower: Power | null = myPower ?? myPowers[0] ?? null;
   const isSummoningTurn = isMyTurn && serverPending?.actionKind === 'summoning_action';
 
   // After applying pendingAction client-side, the engine may pause for a follow-up choice
@@ -672,7 +661,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: INK, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: INK, overflow: 'clip' }}>
 
         {/* Status bar shows committed state so Acting doesn't flicker ahead */}
         <StatusBar
@@ -685,11 +674,11 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
         />
 
         {/* Main area */}
-        <div style={{ display: 'flex', height: 'calc(100vh - 200px)', minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
+        <div style={{ display: 'flex', flex: 1, minHeight: 0, gap: 8, padding: '8px 0 8px 8px' }}>
 
           {/* Board */}
-          <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
-            <Board
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', display: 'flex', justifyContent: 'center' }}>
+            <GameBoard
               state={(anim.animationPhase ? anim.displayState : displayState) ?? displayState}
               highlightRegions={activeDrag ? highlightRegions : onPlayHighlight}
               dimmedRegions={activeDrag ? dimmedRegions : undefined}
@@ -786,11 +775,11 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
           />
         </div>
 
-        {!anim.animationPhase && myPower && (
+        {tablePower && (
           <Tableau
             state={serverState ?? displayState}
             displayState={displayState}
-            myPower={myPower}
+            myPower={tablePower}
             selectedCardId={selectedCardId}
             onSelectCard={setSelectedCardId}
             pendingAction={pendingOnPlayChoice ?? pendingAction}
@@ -1000,7 +989,7 @@ export default function GamePage() {
     <GameProvider gameId={id} myPower={myPowers[0] ?? null} initialState={initialState}>
       <SoundProvider>
         <FxProvider shakeRoot={shakeRef}>
-          <div ref={shakeRef} style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div ref={shakeRef} style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'clip' }}>
             <GameInner gameId={id} myPowers={myPowers} players={players} isMultiplayer={isMultiplayer} />
           </div>
         </FxProvider>

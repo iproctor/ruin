@@ -334,8 +334,12 @@ export default function LogPanel({ events, chat, onSendChat, connected, players 
                 : effectiveFilter === 'events' ? merged.filter((e) => e.kind === 'event')
                 :                                merged.filter((e) => e.kind === 'chat');
 
+  // Scroll only the log's own scroller — scrollIntoView would also scroll
+  // every overflow:hidden ancestor and shove the whole game screen upward.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView();
+    const el = bottomRef.current;
+    const scroller = el?.parentElement;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }, [visible.length]);
 
   async function handleSend() {

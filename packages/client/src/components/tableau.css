@@ -1,0 +1,255 @@
+/* ── Player tableau (bottom bar) ───────────────────────────────────────────── */
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 18px;
+  height: 172px;
+  padding: 10px 16px 10px 14px;
+  flex-shrink: 0;
+  background:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+    linear-gradient(180deg, #1a120c 0%, #0c0806 100%);
+  border-top: 1px solid #3a2a1e;
+  box-shadow: inset 0 1px 0 rgba(255,220,160,0.05), 0 -10px 30px rgba(0,0,0,0.6);
+  transition: box-shadow 0.4s;
+  z-index: 20;
+}
+.tab::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent-dim) 20%, var(--accent) 50%, var(--accent-dim) 80%, transparent);
+  opacity: 0.35;
+  transition: opacity 0.4s;
+}
+.tab.is-turn::before { opacity: 1; box-shadow: 0 0 16px var(--accent); }
+
+.tab-label {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: #8a7a64;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+.tab-label span { letter-spacing: 0.08em; text-transform: none; font-family: 'IM Fell English', serif; font-size: 0.78rem; font-weight: 400; color: #6b5c4c; }
+.tab-section { display: flex; flex-direction: column; justify-content: center; }
+
+/* God portrait + PP gem */
+.tab-god {
+  position: relative;
+  width: 118px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.tab-god-portrait {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #120d0a center 18% / cover;
+  box-shadow: 0 0 0 3px #0a0604, 0 0 0 5px var(--accent), 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 20px rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tab.is-turn .tab-god-portrait { animation: tab-god-glow 2s ease-in-out infinite; }
+@keyframes tab-god-glow {
+  50% { box-shadow: 0 0 0 3px #0a0604, 0 0 0 5px var(--accent), 0 0 40px var(--accent), inset 0 0 20px rgba(0,0,0,0.7); }
+}
+.tab-pp {
+  position: absolute;
+  right: -2px;
+  bottom: 20px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,255,255,0.5), transparent 40%),
+    radial-gradient(circle at 50% 60%, var(--accent), color-mix(in srgb, var(--accent) 35%, black) 85%);
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px #c68c5a, 0 4px 10px rgba(0,0,0,0.8);
+  line-height: 1;
+}
+.tab-pp-now { font: 900 1.35rem 'Cinzel', serif; color: #fff8ec; text-shadow: 0 1px 3px #000; }
+.tab-pp-max { font: 700 0.55rem 'Cinzel', serif; color: rgba(255,248,236,0.8); }
+.tab-god-name {
+  margin-top: 6px;
+  font: 800 0.72rem 'Cinzel', serif;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* Reserve followers */
+.tab-reserve-row { display: flex; gap: 12px; align-items: flex-end; }
+.res-fig {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  touch-action: none;
+  user-select: none;
+}
+.res-fig-art {
+  border-radius: 50%;
+  background: #120d0a center 25% / cover;
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px var(--ring), 0 4px 10px rgba(0,0,0,0.8);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.res-incarnation .res-fig-art { width: 64px; height: 64px; }
+.res-warrior .res-fig-art { width: 54px; height: 54px; }
+.res-cultist .res-fig-art { width: 46px; height: 46px; }
+.res-fig.is-live { cursor: grab; }
+.res-fig.is-live:hover .res-fig-art { transform: translateY(-4px) scale(1.06); box-shadow: 0 0 0 2px #0a0604, 0 0 0 3.5px var(--ring), 0 0 18px var(--ring); }
+.res-fig.is-empty .res-fig-art { filter: grayscale(1) brightness(0.35); }
+.res-fig-count {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  font: 800 0.72rem/20px 'Cinzel', serif;
+  text-align: center;
+  color: #fff;
+  background: #120b07;
+  box-shadow: 0 0 0 1.5px var(--ring);
+}
+.res-fig-name {
+  margin-top: 5px;
+  font: 600 0.56rem 'Cinzel', serif;
+  letter-spacing: 0.08em;
+  color: #9a8a74;
+  white-space: nowrap;
+}
+
+/* Deck + discard */
+.tab-decks { flex-direction: row; gap: 10px; align-items: center; }
+.tab-deck { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tab-deck .gc { box-shadow: 2px 2px 0 #1a120b, 4px 4px 0 #0f0a07, 0 6px 12px rgba(0,0,0,0.7); }
+.tab-deck.is-discard .gc { filter: grayscale(0.7) brightness(0.6); box-shadow: 0 4px 10px rgba(0,0,0,0.7); }
+.tab-deck span { font: 800 0.72rem 'Cinzel', serif; color: #c0ad90; }
+
+/* Hand */
+.tab-hand-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tab-hand-label {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  z-index: 200;
+  pointer-events: none;
+  text-shadow: 0 1px 3px #000;
+}
+.tab-hand-wrap { position: relative; }
+.tab-hand {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  /* Cards rise out of the bar over the table edge, like a hand held up. */
+  margin-top: -44px;
+}
+.hand-card {
+  position: relative;
+  margin: 0 -10px;
+  transform: rotate(var(--angle)) translateY(var(--drop));
+  transform-origin: 50% 160%;
+  transition: transform 0.22s cubic-bezier(.2,.8,.3,1), filter 0.2s;
+  touch-action: none;
+  cursor: pointer;
+}
+.hand-card.is-live { cursor: grab; }
+.hand-card:hover {
+  transform: rotate(0deg) translateY(-34px) scale(1.14);
+  z-index: 100 !important;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+.hand-card.is-selected { transform: rotate(0deg) translateY(-18px); filter: drop-shadow(0 0 12px var(--accent)); }
+.hand-card.is-pending { filter: drop-shadow(0 0 10px #22c55e) brightness(0.8); transform: rotate(var(--angle)) translateY(calc(var(--drop) + 26px)); }
+.hand-card.is-dragging { opacity: 0.25; }
+.hand-card-staged {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-12deg);
+  font: 900 0.7rem 'Cinzel', serif;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #b8f5c8;
+  background: rgba(10,40,20,0.85);
+  border: 1px solid #22c55e;
+  padding: 2px 8px;
+  pointer-events: none;
+}
+
+/* Commit buttons */
+.tab-actions {
+  width: 210px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+.tab-error { color: #f87171; font-size: 0.75rem; text-align: right; }
+.tab-buttons { display: flex; gap: 6px; align-items: stretch; height: 92px; }
+.tab-undo {
+  width: 58px;
+  padding: 0;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #2a1d14, #120b07);
+  border: 1px solid #5a4028;
+  color: #c0ad90;
+  font: 700 0.66rem 'Cinzel', serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.tab-undo:hover { color: #f4e6cc; border-color: #c68c5a; }
+.tab-commit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  color: #fff8ec;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, #000);
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.18), transparent 60%),
+    linear-gradient(180deg, var(--accent-dim), color-mix(in srgb, var(--accent-dim) 40%, #000));
+  box-shadow: 0 0 0 1px #000, 0 6px 18px rgba(0,0,0,0.7), 0 0 22px color-mix(in srgb, var(--accent) 35%, transparent);
+  transition: filter 0.15s, transform 0.15s, box-shadow 0.2s;
+}
+.tab-commit:hover { filter: brightness(1.2); transform: translateY(-1px); }
+.tab-commit.is-confirm { animation: commit-pulse 1.6s ease-in-out infinite; }
+@keyframes commit-pulse { 50% { box-shadow: 0 0 0 1px #000, 0 6px 18px rgba(0,0,0,0.7), 0 0 36px var(--accent); } }
+.tab-commit.is-pass { background: linear-gradient(180deg, #3a2a1e, #140e0a); border-color: #5a4028; box-shadow: 0 0 0 1px #000, 0 6px 18px rgba(0,0,0,0.7); }
+.tab-commit-main { font: 900 1rem 'Cinzel', serif; letter-spacing: 0.24em; text-transform: uppercase; text-shadow: 0 1px 3px #000; }
+.tab-commit-sub { font-family: 'IM Fell English', serif; font-size: 0.8rem; opacity: 0.85; line-height: 1.15; text-align: center; }
+.tab-waiting {
+  font: 600 0.72rem 'Cinzel', serif;
+  letter-spacing: 0.14em;
+  color: #6b5c4c;
+  text-align: center;
+  animation: waiting 2.4s ease-in-out infinite;
+}
+@keyframes waiting { 50% { color: #9a8a74; } }

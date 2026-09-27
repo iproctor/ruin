@@ -35,7 +35,7 @@ export const REGION_POSITIONS: Record<RegionId, { x: number; y: number; w: numbe
 
 // ── Token display ─────────────────────────────────────────────────────────────
 
-const TOKEN_COLORS: Record<TokenType, string> = {
+export const TOKEN_COLORS: Record<TokenType, string> = {
   event:       '#6366f1',
   hero:        '#f59e0b',
   noble:       '#eab308',
@@ -729,7 +729,7 @@ function RegionContent({ regionId, pos, state, isHighlighted, isDimmed, pendingC
 
 // ── World token tooltip ──────────────────────────────────────────────────────
 
-const TOKEN_NAMES: Record<TokenType, string> = {
+export const TOKEN_NAMES: Record<TokenType, string> = {
   event: 'Event Token',
   hero: 'Hero Token',
   noble: 'Noble Token',
@@ -747,7 +747,7 @@ const TOKEN_DESCRIPTIONS: Record<TokenType, string> = {
   chaos_stone: 'Counts as +1 corruption in this region during the corruption phase. Tenzen gains dial advancement when corrupting a region with 2 chaos stones/magic symbols.',
 };
 
-function TokenTooltip({ token, x, y }: { token: TokenType; x: number; y: number }) {
+export function TokenTooltip({ token, x, y }: { token: TokenType; x: number; y: number }) {
   const left = Math.min(x + 14, window.innerWidth - 240);
   const top  = Math.min(y + 14, window.innerHeight - 140);
   const color = TOKEN_COLORS[token];
@@ -775,7 +775,7 @@ const POWER_LABELS: Record<Power, string> = {
   xarm: 'Xarm', gormen: 'Gormen', tenzen: 'Tenzen', lasha: 'Lasha',
 };
 
-function RegionInfoTooltip({ state, regionId, x, y }: {
+export function RegionInfoTooltip({ state, regionId, x, y }: {
   state: GameState; regionId: RegionId; x: number; y: number;
 }) {
   const region = state.regions[regionId];
