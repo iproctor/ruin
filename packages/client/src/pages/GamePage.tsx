@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import type { Power, Action, RegionId, FollowerClass, GameState, GameEvent } from '@ruin/engine';
 import type { DragItem } from '../types/drag.js';
-import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID, CHAOS_CARDS, REGIONS } from '@ruin/engine';
+import { applyAction, applyActionForPreview, getLegalActions, CARD_BY_ID, CHAOS_CARDS, REGIONS, FOLLOWERS, UPGRADES } from '@ruin/engine';
 import { useAuth } from '../contexts/AuthContext.js';
 import { GameProvider, useGame } from '../contexts/GameContext.js';
 import { useGameStream } from '../hooks/useGameStream.js';
@@ -443,7 +443,7 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
       if (!fig) continue;
       // Reserve-only: don't show on-board figures being moved.
       if (fig.regionId !== null) continue;
-      const label = fig.class.charAt(0).toUpperCase() + fig.class.slice(1);
+      const label = fig.class;
       const cost = (a as { cost?: number }).cost
         ?? (displayState.powers[myPowerEarly!]!.powerPoints
             - (applyActionForPreview(displayState, a).state.powers[myPowerEarly!]!.powerPoints));
@@ -826,10 +826,14 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
                 <button
                   key={cardId}
                   onClick={() => stageFromSlotPopup(cardId)}
-                  className="gpopup-item"
+                  className="gpopup-item gpopup-rich"
                 >
-                  <span>{name}</span>
-                  <span className="gpopup-item-cost">PP {cost}</span>
+                  <GameCard cardId={cardId} size="xs" />
+                  <span className="gpopup-rich-text">
+                    <span className="gpopup-rich-name">{name}</span>
+                    <span className="gpopup-rich-sub">{def?.effect}</span>
+                  </span>
+                  <span className="gpopup-gem" style={{ ['--accent' as string]: myPowerEarly ? POWER_COLORS[myPowerEarly] : undefined }}>{cost}</span>
                 </button>
               );
             })}
@@ -859,16 +863,29 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
             {summonChoices.length === 0 && (
               <div className="gpopup-empty">No summon options.</div>
             )}
-            {summonChoices.map(({ action, label, cost }, i) => (
-              <button
-                key={`${action.followerId}-${i}`}
-                onClick={() => stageFromSummonPopup(action)}
-                className="gpopup-item"
-              >
-                <span>{label}</span>
-                <span className="gpopup-item-cost">PP {cost}</span>
-              </button>
-            ))}
+            {summonChoices.map(({ action, label, cost }, i) => {
+              const cls = label as FollowerClass;
+              const pw = action.power;
+              const art = followerArt(pw, cls);
+              const stats = FOLLOWERS[pw][cls];
+              const upId = UPGRADES.find((u) => u.power === pw && u.upgradeType === cls)?.id;
+              const up = !!upId && displayState.powers[pw]!.upgradesInPlay.includes(upId);
+              const st = up ? stats.upgraded : stats.base;
+              return (
+                <button
+                  key={`${action.followerId}-${i}`}
+                  onClick={() => stageFromSummonPopup(action)}
+                  className="gpopup-item gpopup-rich"
+                >
+                  <span className="gpopup-portrait" style={{ ['--ring' as string]: POWER_COLORS[pw], backgroundImage: art ? `url(${art})` : undefined }} />
+                  <span className="gpopup-rich-text">
+                    <span className="gpopup-rich-name">{stats.name}</span>
+                    <span className="gpopup-rich-sub">{cls} · attack {st.attack} · defense {st.defense}</span>
+                  </span>
+                  <span className="gpopup-gem" style={{ ['--accent' as string]: POWER_COLORS[pw] }}>{cost}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
