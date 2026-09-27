@@ -25,3 +25,6 @@ packages/ai/data/demos.jsonl
 # CPU profile dumps
 *.cpuprofile
 .claude/settings.local.json
+
+# Raw generated art (processed webp lives in packages/client/src/assets/art)
+packages/client/art-src/

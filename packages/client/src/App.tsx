@@ -6,6 +6,7 @@ import NewGamePage from './pages/NewGamePage.js';
 import GamePage from './pages/GamePage.js';
 import HomePage from './pages/HomePage.js';
 import MultiplayerLobbyPage from './pages/MultiplayerLobbyPage.js';
+import DevGalleryPage from './pages/DevGalleryPage.js';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuth();
@@ -74,6 +75,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       />
+      {import.meta.env.DEV && <Route path="/dev" element={<DevGalleryPage />} />}
       <Route path="/" element={<RootEntry />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
