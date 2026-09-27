@@ -138,4 +138,13 @@
   color: #ff5a4a;
   text-shadow: 0 0 8px #000;
 }
-.ap-target-name { font: 600 0.52rem 'Cinzel', serif; color: #c0ad90; text-align: center; line-height: 1.1; }
+.ap-target-name {
+  font: 600 0.5rem 'Cinzel', serif;
+  color: #c0ad90;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 58px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -186,10 +186,10 @@
   box-shadow: 0 0 12px rgba(80,170,255,0.8), inset 0 0 10px rgba(80,170,255,0.5);
 }
 .bs-fig.is-killed {
-  filter: grayscale(1) brightness(0.45) sepia(0.4);
   transform: translateY(8px) rotate(-14deg) scale(0.9);
-  opacity: 0.75;
+  box-shadow: 0 0 0 2px #0a0604, 0 0 0 4px #5a1010, 0 6px 12px rgba(0,0,0,0.7);
 }
+.bs-fig.is-killed .bs-fig-art { filter: grayscale(1) brightness(0.4) sepia(0.4); }
 .bs-fig-slash {
   position: absolute;
   left: -15%;
@@ -209,9 +209,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.4rem;
-  color: #ff5a4a;
-  text-shadow: 0 0 8px #000, 0 0 12px #c21818;
+  font-size: 1.9rem;
+  color: #ff6a5a;
+  text-shadow: 0 0 3px #000, 0 0 8px #000, 0 0 14px #c21818;
+  filter: none;
   animation: skull-in 0.4s 0.25s cubic-bezier(.2,1.6,.4,1) both;
 }
 @keyframes skull-in { from { transform: scale(2.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
