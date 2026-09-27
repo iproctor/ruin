@@ -72,7 +72,7 @@ describe('SoundEngine', () => {
       s.diceExplode(); s.hit(); s.kill(); s.miss(); s.battleHorn(); s.ruination(); s.vp(); s.worldCard();
       s.yourTurn(); s.victory(true); s.victory(false);
       for (const p of powers) { s.cardPlay(p); s.spellImpact(p); s.summon(p); s.corruption(p); s.domination(p); s.dial(p); }
-      for (const ph of phases) { s.phase(ph); s.setMusicPhase(ph); }
+      for (const ph of phases) s.phase(ph);
       s.setVolume(0.3);
       s.setEnabled(false);
       s.setEnabled(true);

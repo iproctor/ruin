@@ -1,8 +1,18 @@
 import type { Phase, Power } from '@ruin/engine';
 
+export interface MusicTrack {
+  url: string;
+  /** Seconds into the decoded buffer where the seamless loop begins/ends. */
+  loopStart: number;
+  loopEnd: number;
+}
+
+/** Background music level relative to the master volume. */
+const MUSIC_GAIN = 0.55;
+
 /**
- * Procedural sound engine — every effect is synthesized with WebAudio, so the
- * game ships no audio assets. One instance per game page (see SoundContext).
+ * Sound engine: every effect is synthesized with WebAudio; the only asset is
+ * the looping background track. One instance per game page (see SoundContext).
  *
  * Signal chain:  voices → dry bus ─┐
  *                        → reverb ─┴→ master gain → compressor → out
@@ -14,10 +24,14 @@ export class SoundEngine {
   private wet!: GainNode;
   private noise!: AudioBuffer;
   private musicBus!: GainNode;
-  private musicNodes: AudioNode[] = [];
-  private musicTimer: ReturnType<typeof setInterval> | null = null;
-  private musicPhase: Phase | null = null;
-  private musicFilter: BiquadFilterNode | null = null;
+  private music: MusicTrack | null;
+  private musicBuffer: Promise<AudioBuffer> | null = null;
+  private musicSource: AudioBufferSourceNode | null = null;
+  private musicWanted = false;
+
+  constructor(music: MusicTrack | null = null) {
+    this.music = music;
+  }
 
   enabled = true;
   musicEnabled = true;
@@ -555,86 +569,54 @@ export class SoundEngine {
     });
   }
 
-  // ── Ambient music ─────────────────────────────────────────────────────────
+  // ── Background music ──────────────────────────────────────────────────────
 
-  setMusicPhase(phase: Phase) {
-    this.musicPhase = phase;
-    if (!this.ctx || !this.musicFilter) return;
-    const target = phase === 'battle' ? 900 : phase === 'corruption' ? 420 : 600;
-    this.musicFilter.frequency.setTargetAtTime(target, this.ctx.currentTime, 1.5);
+  /** Fetch + decode the track once; later calls reuse the same promise. */
+  private loadMusic(ctx: AudioContext): Promise<AudioBuffer> | null {
+    if (!this.music) return null;
+    if (!this.musicBuffer) {
+      const url = this.music.url;
+      this.musicBuffer = fetch(url)
+        .then((r) => r.arrayBuffer())
+        .then((data) => ctx.decodeAudioData(data));
+      this.musicBuffer.catch(() => { this.musicBuffer = null; });
+    }
+    return this.musicBuffer;
   }
 
   private startMusic() {
     const ctx = this.ctx;
-    if (!ctx || this.musicNodes.length > 0) return;
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 600;
-    f.Q.value = 2;
-    this.musicFilter = f;
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.05;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 250;
-    lfo.connect(lfoGain);
-    lfoGain.connect(f.frequency);
-    f.connect(this.musicBus);
-    const nodes: AudioNode[] = [f, lfo, lfoGain];
-    for (const [fr, dt] of [[36.7, 0], [36.7, 7], [55, -4], [73.4, 3]] as const) {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = fr;
-      o.detune.value = dt;
-      o.connect(f);
-      o.start();
-      nodes.push(o);
-    }
-    lfo.start();
-    this.musicNodes = nodes;
-    this.musicBus.gain.setTargetAtTime(0.09, ctx.currentTime, 3);
-
-    // Sparse funeral bells and low choir tones in D minor.
-    const notes = [146.8, 174.6, 196, 220, 261.6, 293.7];
-    this.musicTimer = setInterval(() => {
-      if (!this.ctx || !this.enabled || !this.musicEnabled) return;
-      const t = this.ctx.currentTime + 0.05;
-      const r = Math.random();
-      if (r < 0.35) {
-        const fr = notes[Math.floor(Math.random() * notes.length)]!;
-        [1, 2.0, 2.76].forEach((m, i) => {
-          const o = this.ctx!.createOscillator();
-          o.frequency.value = fr * m;
-          const g = this.ctx!.createGain();
-          this.env(g, t, 0.025 / (i + 1), 0.005, 4);
-          o.connect(g);
-          g.connect(this.musicBus);
-          const w = this.ctx!.createGain();
-          w.gain.value = 0.4;
-          g.connect(w);
-          w.connect(this.wet);
-          o.start(t);
-          o.stop(t + 4.2);
-        });
-      } else if (r < 0.5 && this.musicPhase === 'battle') {
-        for (let i = 0; i < 2; i++) this.thump(t + i * 0.5, 70, 35, 0.5, 0.2);
-      }
-    }, 3500);
+    this.musicWanted = true;
+    if (!ctx || this.musicSource || !this.music) return;
+    const loading = this.loadMusic(ctx);
+    if (!loading) return;
+    const track = this.music;
+    loading.then((buffer) => {
+      // Settings may have changed while decoding.
+      if (!this.musicWanted || this.musicSource || this.ctx !== ctx) return;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      src.loopStart = track.loopStart;
+      src.loopEnd = Math.min(track.loopEnd, buffer.duration);
+      src.connect(this.musicBus);
+      src.start();
+      this.musicSource = src;
+      this.musicBus.gain.cancelScheduledValues(ctx.currentTime);
+      this.musicBus.gain.setTargetAtTime(MUSIC_GAIN, ctx.currentTime, 1.5);
+    }).catch(() => { /* no music on decode/network failure */ });
   }
 
   private stopMusic() {
-    if (this.musicTimer) clearInterval(this.musicTimer);
-    this.musicTimer = null;
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    this.musicBus.gain.setTargetAtTime(0, t, 0.5);
-    const nodes = this.musicNodes;
-    this.musicNodes = [];
-    this.musicFilter = null;
+    this.musicWanted = false;
+    const ctx = this.ctx;
+    const src = this.musicSource;
+    this.musicSource = null;
+    if (!ctx || !src) return;
+    this.musicBus.gain.setTargetAtTime(0, ctx.currentTime, 0.4);
     setTimeout(() => {
-      for (const n of nodes) {
-        try { (n as OscillatorNode).stop?.(); } catch { /* already stopped */ }
-        n.disconnect();
-      }
-    }, 2500);
+      try { src.stop(); } catch { /* already stopped */ }
+      src.disconnect();
+    }, 2000);
   }
 }

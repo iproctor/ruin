@@ -13,7 +13,7 @@ React + Vite frontend. Game rules live in `@ruin/engine`; this package is presen
 | 3D tabletop | `components/board3d/` | react-three-fiber diorama (lazy-loaded). The canvas is purely visual; every interaction (drop zones, slot clicks, summon buttons, figure drags, tooltips) is an HTML overlay projected from 3D each frame by `ProjectionRegistry`, so dnd-kit and the FX anchors work unchanged. Falls back to the 2D map on error or without WebGL. |
 | 2D map | `components/Board.tsx` | Original SVG board, now with portrait tokens and card art. Selectable in settings. |
 | Cards | `components/cards/GameCard.tsx` | Painted chaos/world/upgrade card at any size (`xs`–`xl`), all dimensions derived from `--cw`. |
-| Sound | `lib/sfx.ts`, `contexts/SoundContext.tsx` | Fully procedural WebAudio (no audio files): god-specific spell timbres, dice, impacts, bells, ruination, an ambient drone. Unlocked on first user gesture. |
+| Sound | `lib/sfx.ts`, `contexts/SoundContext.tsx` | Effects are procedural WebAudio (god-specific spell timbres, dice, impacts, bells, ruination). Background music is one track (`lib/music.ts`) looped seamlessly from a decoded buffer. Unlocked on first user gesture. |
 | Settings | `contexts/SettingsContext.tsx`, `components/SettingsMenu.tsx` | Board view, tabletop detail, cinematics, pace, sound, ambience, volume (plus a one-click mute). Stored per browser in localStorage. Honours `prefers-reduced-motion`. |
 | Hurry | `useGameStream().hurry` | Space / Esc or the tableau's Hurry button plays queued animations at ~15% duration until the queue drains. |
 
@@ -35,3 +35,7 @@ Prompts are in `scripts/art/manifest.mjs`. To redo an image, delete its `art-src
 
 - `/dev`: every card at every size, plus a preview of the upgrade ("boon") modal.
 - `/dev/replay?seed=N&as=xarm`: plays a locally generated AI game through the full board, cinematics and sound pipeline, with skip-to-battle, ruin and ending controls. Seeds 1, 5, 33 and 40 include a ruination; seeds 4, 14 and 36 end with no winner.
+
+## Music
+
+`src/assets/music/crypt-of-ash.mp3` is baked from the source track so it loops seamlessly: cut before the fade-out at 230 s, the last 8 s crossfaded into the intro (222 s body), turned down 7.7 dB to about −20 LUFS, and 0.5 s of the body's start appended so the loop points (`lib/music.ts`: 0.25 s → 222.25 s) sit safely inside the decoded buffer. If you replace the track, redo those steps with ffmpeg and update the loop points.

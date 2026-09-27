@@ -1,12 +1,13 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
 import { SoundEngine } from '../lib/sfx.js';
+import { MUSIC_TRACK } from '../lib/music.js';
 import { useSettings } from './SettingsContext.js';
 
 const SoundContext = createContext<SoundEngine | null>(null);
 
 export function SoundProvider({ children }: { children: ReactNode }) {
   const engineRef = useRef<SoundEngine | null>(null);
-  if (!engineRef.current) engineRef.current = new SoundEngine();
+  if (!engineRef.current) engineRef.current = new SoundEngine(MUSIC_TRACK);
   const engine = engineRef.current;
   const { settings } = useSettings();
 

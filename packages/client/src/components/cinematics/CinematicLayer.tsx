@@ -124,7 +124,6 @@ export default function CinematicLayer({ subscribe, state, events, myPowers, pau
           setBanner({ id, phase: ev.phase, round: ev.round });
           later(() => setBanner((b) => (b?.id === id ? null : b)), 1800 * sp);
           sound.phase(ev.phase);
-          sound.setMusicPhase(ev.phase);
           if (ev.phase === 'battle') setAftermath([]);
           if (ev.phase !== 'battle') setBattle(null);
           break;
