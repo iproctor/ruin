@@ -31,6 +31,19 @@ export default function Board3D(props: GameBoardProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [zoomed, setZoomed] = useState(false);
   const [hoverRegion, setHoverRegion] = useState<RegionId | null>(null);
+  // Region plaques scale with the board's rendered size so small screens don't crowd.
+  const [uiScale, setUiScale] = useState(1);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      const h = entry!.contentRect.height;
+      const w = entry!.contentRect.width;
+      setUiScale(Math.max(0.68, Math.min(1.15, Math.min(h / 700, w / 1000))));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const clampPan = useCallback(() => {
     const room = (1 - view.zoom) * 0.9;
     view.panX = Math.max(-BOARD_W / 2 * room, Math.min(BOARD_W / 2 * room, view.panX));
@@ -110,6 +123,7 @@ export default function Board3D(props: GameBoardProps) {
     <div
       className={`b3 ${zoomed ? 'is-zoomed' : ''}`}
       ref={rootRef}
+      style={{ ['--b3-scale' as string]: uiScale }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

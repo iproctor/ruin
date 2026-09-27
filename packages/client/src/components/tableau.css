@@ -263,3 +263,18 @@
 @media (prefers-reduced-motion: reduce) {
   .hand-card-deal { animation: none; }
 }
+
+/* Short screens: a tighter tableau so the table keeps its room. */
+@media (max-height: 820px) {
+  .tab { height: 140px; padding-top: 6px; padding-bottom: 6px; }
+  .tab-god { width: 96px; }
+  .tab-god-portrait { width: 74px; height: 74px; }
+  .tab-pp { width: 42px; height: 42px; bottom: 16px; }
+  .tab-pp-now { font-size: 1.1rem; }
+  .res-incarnation .res-fig-art { width: 52px; height: 52px; }
+  .res-warrior .res-fig-art { width: 44px; height: 44px; }
+  .res-cultist .res-fig-art { width: 38px; height: 38px; }
+  .tab-buttons { height: 76px; }
+  .hand-card .gc { --cw: 92px !important; }
+  .tab-god-name { font-size: 0.62rem; letter-spacing: 0.14em; }
+}
