@@ -217,6 +217,48 @@ export class TextureBank {
     }, tokenArt(type));
   }
 
+  /** Glowing runic circle (white; tinted by the material colour). */
+  magicCircle(): THREE.Texture {
+    const S = 512;
+    return this.make('magic-circle', S, S, (g) => {
+      const c = S / 2;
+      g.strokeStyle = '#ffffff';
+      g.fillStyle = '#ffffff';
+      g.shadowColor = '#ffffff';
+      g.shadowBlur = 12;
+      const ring = (r: number, w: number) => { g.beginPath(); g.arc(c, c, r, 0, Math.PI * 2); g.lineWidth = w; g.stroke(); };
+      ring(c - 12, 6);
+      ring(c - 34, 2);
+      ring(c * 0.52, 3);
+      ring(c * 0.18, 2);
+      // Heptagram — seven points, deliberately not any faction's star.
+      const pts = Array.from({ length: 7 }, (_, i) => {
+        const a = (i / 7) * Math.PI * 2 - Math.PI / 2;
+        return [c + Math.cos(a) * (c - 36), c + Math.sin(a) * (c - 36)] as const;
+      });
+      g.lineWidth = 3;
+      g.beginPath();
+      for (let i = 0; i <= 7; i++) {
+        const [x, y] = pts[(i * 3) % 7]!;
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+      // Runes around the band.
+      const runes = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟ';
+      g.font = '26px serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        g.save();
+        g.translate(c + Math.cos(a) * (c - 23), c + Math.sin(a) * (c - 23));
+        g.rotate(a + Math.PI / 2);
+        g.fillText(runes[i % runes.length]!, 0, 0);
+        g.restore();
+      }
+    });
+  }
+
   /** Top face of a corruption token: owner's colour with an engraved skull. */
   corruptionFace(power: Power): THREE.Texture {
     const S = 96;

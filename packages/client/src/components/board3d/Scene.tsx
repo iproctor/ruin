@@ -288,14 +288,16 @@ function useBlobTexture() {
   }, []);
 }
 
-function Standee({ slot, bank, registry, blob, killed, appearing }: {
+function Standee({ slot, bank, registry, blob, killed, appearing, sceneStart }: {
   slot: StandeeSlot;
   bank: TextureBank;
   registry: ProjectionRegistry;
   blob: THREE.Texture;
   killed: boolean;
   appearing: boolean;
+  sceneStart: number;
 }) {
+  const fresh = useFreshMount(sceneStart);
   const f = slot.figure;
   const h = STANDEE_H[f.class];
   const w = h * STANDEE_ASPECT;
@@ -305,7 +307,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing }: {
   const pos = useRef(new THREE.Vector3(slot.x, 0, slot.z));
   const from = useRef(new THREE.Vector3(slot.x, 0, slot.z));
   const hop = useRef(1);           // 0..1 progress of a move arc
-  const spawn = useRef(appearing ? 0 : 0.999);
+  const spawn = useRef(appearing || fresh ? 0 : 0.999);
   const fall = useRef(0);
   const target = useMemo(() => new THREE.Vector3(slot.x, 0, slot.z), [slot.x, slot.z]);
 
@@ -372,6 +374,7 @@ function Standee({ slot, bank, registry, blob, killed, appearing }: {
           <meshStandardMaterial map={tex} alphaTest={0.5} side={THREE.DoubleSide} roughness={0.7} emissive="#ffffff" emissiveMap={tex} emissiveIntensity={0.18} />
         </mesh>
       </group>
+      {fresh && <MagicCircle bank={bank} color={POWER_COLORS[f.power]} size={h * 2.2} duration={1.2} />}
       {f.protected && (
         <mesh position={[0, h * 0.55, 0]}>
           <sphereGeometry args={[h * 0.62, 24, 16]} />
@@ -382,14 +385,48 @@ function Standee({ slot, bank, registry, blob, killed, appearing }: {
   );
 }
 
+// ── Magic circles (spell landings, summon portals) ────────────────────────
+
+function MagicCircle({ bank, color, size, duration = 1.8 }: { bank: TextureBank; color: string; size: number; duration?: number }) {
+  const tex = useMemo(() => bank.magicCircle(), [bank]);
+  const mesh = useRef<THREE.Mesh>(null);
+  const mat = useRef<THREE.MeshBasicMaterial>(null);
+  const t = useRef(0);
+  useFrame((_, dt) => {
+    t.current += dt / duration;
+    const k = Math.min(1, t.current);
+    if (mesh.current) {
+      const s = size * (0.35 + 1.1 * (1 - Math.pow(1 - k, 3)));
+      mesh.current.scale.set(s, s, s);
+      mesh.current.rotation.z += dt * 1.6;
+      mesh.current.visible = k < 1;
+    }
+    if (mat.current) mat.current.opacity = k < 0.15 ? k / 0.15 : Math.max(0, 1 - (k - 0.15) / 0.85);
+  });
+  return (
+    <mesh ref={mesh} rotation-x={-Math.PI / 2} position={[0, 0.006, 0]} renderOrder={4}>
+      <planeGeometry args={[1, 1]} />
+      <meshBasicMaterial ref={mat} map={tex} color={color} transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} toneMapped={false} />
+    </mesh>
+  );
+}
+
+/** True if this component mounted after the scene finished its first load. */
+function useFreshMount(sceneStart: number) {
+  const fresh = useRef<boolean | null>(null);
+  if (fresh.current === null) fresh.current = performance.now() - sceneStart > 1500;
+  return fresh.current;
+}
+
 // ── Cards on the table ─────────────────────────────────────────────────────
 
-function TableCard({ cardId, x, z, bank, pending, appearing }: {
-  cardId: string; x: number; z: number; bank: TextureBank; pending: boolean; appearing: boolean;
+function TableCard({ cardId, x, z, bank, pending, appearing, sceneStart }: {
+  cardId: string; x: number; z: number; bank: TextureBank; pending: boolean; appearing: boolean; sceneStart: number;
 }) {
   const tex = useMemo(() => bank.card(cardId), [bank, cardId]);
   const ref = useRef<THREE.Group>(null);
-  const t0 = useRef(appearing ? 0 : 1);
+  const fresh = useFreshMount(sceneStart);
+  const t0 = useRef(appearing || (fresh && !pending) ? 0 : 1);
   const def = CARD_BY_ID[cardId];
   const glow = def ? POWER_COLORS[def.power] : '#8fa6c4';
   useFrame(({ clock }, dt) => {
@@ -403,6 +440,12 @@ function TableCard({ cardId, x, z, bank, pending, appearing }: {
     g.rotation.set(-Math.PI / 2, 0, (1 - s) * 1.6 + (cardId.length % 5 - 2) * 0.03);
   });
   return (
+    <>
+    {fresh && !pending && (
+      <group position={[x, BOARD_TOP, z]}>
+        <MagicCircle bank={bank} color={glow} size={0.95} />
+      </group>
+    )}
     <group ref={ref} position={[x, BOARD_TOP + 0.012, z]} rotation-x={-Math.PI / 2}>
       <mesh castShadow receiveShadow>
         <planeGeometry args={[CARD_W, CARD_D]} />
@@ -413,6 +456,7 @@ function TableCard({ cardId, x, z, bank, pending, appearing }: {
         <meshBasicMaterial color={pending ? '#22c55e' : glow} transparent opacity={pending ? 0.8 : def?.timing === 'persistent' ? 0.45 : 0.15} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
     </group>
+    </>
   );
 }
 
@@ -494,7 +538,7 @@ function CorruptionStack({ power, count, x, z, bank }: { power: Power; count: nu
 
 // ── Region contents ────────────────────────────────────────────────────────
 
-function RegionPieces({ regionId, props }: { regionId: RegionId; props: SceneProps }) {
+function RegionPieces({ regionId, props, sceneStart }: { regionId: RegionId; props: SceneProps; sceneStart: number }) {
   const { state, bank, pendingAction, slotPlayable, appearingCards } = props;
   const f = regionFrame(regionId);
   const region = state.regions[regionId]!;
@@ -528,6 +572,7 @@ function RegionPieces({ regionId, props }: { regionId: RegionId; props: ScenePro
               bank={bank}
               pending={!!pending && pending.slotIndex === si}
               appearing={!!appearingCards?.has(`${regionId}-${si}`)}
+              sceneStart={sceneStart}
             />
           );
         }
@@ -552,6 +597,7 @@ export function standeeLayout(state: GameState, killedIds: Set<string> | undefin
 export default function Scene(props: SceneProps) {
   const { state, bank, registry, highlight, dimmed, focusRegion, killedIds, hideKilled, appearingFigures } = props;
   const blob = useBlobTexture();
+  const sceneStart = useMemo(() => performance.now(), []);
   const standees = useMemo(() => standeeLayout(state, killedIds, hideKilled), [state, killedIds, hideKilled]);
 
   return (
@@ -573,7 +619,7 @@ export default function Scene(props: SceneProps) {
           bank={bank}
         />
       ))}
-      {REGION_ORDER.map((id) => <RegionPieces key={id} regionId={id} props={props} />)}
+      {REGION_ORDER.map((id) => <RegionPieces key={id} regionId={id} props={props} sceneStart={sceneStart} />)}
       {standees.map((s) => (
         <Standee
           key={s.figure.id}
@@ -583,6 +629,7 @@ export default function Scene(props: SceneProps) {
           blob={blob}
           killed={!!killedIds?.has(s.figure.id)}
           appearing={!!appearingFigures?.has(s.figure.id)}
+          sceneStart={sceneStart}
         />
       ))}
       <Sparkles count={70} scale={[BOARD_W + 2, 2.4, BOARD_D + 2]} position={[0, 1.2, 0]} size={2.2} speed={0.25} color="#ffb070" opacity={0.45} />
