@@ -80,7 +80,10 @@ export function layoutStandees(figures: FollowerInstance[], frame: RegionFrame):
     const row = Math.floor(i / perRow);
     const col = i % perRow;
     const x = areaX0 + col * step + (rows === 2 && row === 1 ? step / 2 : 0);
-    const z = rowZ[row]!;
+    // Neighbouring portraits overlap when a region is crowded; at the same depth
+    // they're coplanar and z-fight. Stagger alternate columns back into a loose
+    // formation, plus a small per-column step so no two columns ever share a plane.
+    const z = rowZ[row]! - (col % 2) * 0.09 - col * 0.006;
     members.forEach((f, j) => {
       out.push({
         figure: f,

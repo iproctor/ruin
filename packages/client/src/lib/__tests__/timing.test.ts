@@ -42,6 +42,15 @@ describe('layoutStandees', () => {
     expect(slots.every((s) => s.groupSize === 6)).toBe(true);
   });
 
+  it('never puts two portraits on the same plane (z-fighting)', () => {
+    const f = regionFrame('mittelreich');
+    const figures = ['xarm', 'gormen', 'tenzen', 'lasha'].flatMap((p) =>
+      (['incarnation', 'warrior', 'cultist'] as const).map((c) => fig(`${p}-${c}`, p as FollowerInstance['power'], c)),
+    );
+    const zs = layoutStandees(figures, f).filter((s) => s.visible).map((s) => s.z.toFixed(4));
+    expect(new Set(zs).size).toBe(zs.length);
+  });
+
   it('keeps every standee inside its region', () => {
     const f = regionFrame('mittelreich');
     const figures = [
