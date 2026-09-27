@@ -700,7 +700,16 @@ function GameInner({ gameId, myPowers, players, isMultiplayer }: GameInnerProps)
               onSummonClick={isSummoningTurn && !pendingAction && !anim.animationPhase ? handleSummonClick : undefined}
               canSummon={isSummoningTurn && !pendingAction && !anim.animationPhase ? canSummon : undefined}
             />
-            <SafeBoundary label="cinematics" resetKey={(serverState ?? displayState).round}>
+            <SafeBoundary
+              label="cinematics"
+              resetKey={(serverState ?? displayState).round}
+              fallback={paused ? (
+                // Never strand the player behind a crashed overlay at the battle pause.
+                <div style={{ position: 'absolute', left: 0, right: 0, bottom: 16, display: 'flex', justifyContent: 'center', zIndex: 90 }}>
+                  <button className="primary" onClick={resume}>Continue to Corruption</button>
+                </div>
+              ) : null}
+            >
               <CinematicLayer
                 subscribe={subscribe}
                 state={serverState ?? displayState}
