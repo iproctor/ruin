@@ -44,21 +44,28 @@ def target(D, pi, kind):
     return 0.5 * D["T"][:, pi] + 0.5 * D["Q"][:, pi]
 
 
-def load_group(files, pi, kind, holdout):
+def load_group(files, pi, kind, holdout, adv=None):
+    """adv: None, or 'td' / 'mc' / 'mix' to also return (advantage, taken move)
+    from the <shard>.adv.npz sidecar written by adv_prep.py."""
     parts = []
     for f in files:
         try:
             D = np.load(f)
+            S = np.load(f[:-4] + ".adv.npz") if adv else None
         except Exception:
             continue
         keep = (D["GID"] % HOLDOUT_MOD == 0) if holdout else (D["GID"] % HOLDOUT_MOD != 0)
         if not keep.any():
             continue
-        parts.append((D["X"][keep], target(D, pi, kind)[keep], D["POL"][keep],
-                      D["HP"][keep] & (D["PI"][keep] == pi), D["W"][keep, pi], D["R"][keep, pi]))
+        part = [D["X"][keep], target(D, pi, kind)[keep], D["POL"][keep],
+                D["HP"][keep] & (D["PI"][keep] == pi), D["W"][keep, pi], D["R"][keep, pi]]
+        if adv:
+            A = S["A_TD"] if adv == "td" else S["A_MC"] if adv == "mc" else 0.5 * (S["A_TD"] + S["A_MC"])
+            part += [A[keep], S["ATAKEN"][keep]]
+        parts.append(part)
     if not parts:
         return None
-    return [np.concatenate([p[i] for p in parts]) for i in range(6)]
+    return [np.concatenate([p[i] for p in parts]) for i in range(len(parts[0]))]
 
 
 def metrics(model, H, alpha):
@@ -89,10 +96,13 @@ def main():
     ap.add_argument("--l2", type=float, default=1e-5)
     ap.add_argument("--max-shards", type=int, default=0, help="use only the first N shards (data-scale runs)")
     ap.add_argument("--holdout-max-shards", type=int, default=400)
+    ap.add_argument("--pg-weight", type=float, default=0.0,
+                    help="policy-gradient term weight: raise log-prob of the played move by its (batch-standardized) advantage")
+    ap.add_argument("--adv", default="td", choices=["td", "mc", "mix"])
     a = ap.parse_args()
     pi = P.index(a.power)
     alpha = 1.0 if a.power == "xarm" else 2.0
-    files = sorted(f for f in glob.glob(a.shards) if not f.endswith('.tmp.npz'))
+    files = sorted(f for f in glob.glob(a.shards) if not f.endswith('.tmp.npz') and not f.endswith('.adv.npz'))
     rng = np.random.default_rng(1)
     if a.max_shards:
         files = list(rng.permutation(files)[:a.max_shards])
@@ -113,7 +123,7 @@ def main():
         t0 = time.time()
         order = rng.permutation(files)
         for gi in range(0, len(order), a.group):
-            G = load_group(order[gi:gi + a.group], pi, a.target, holdout=False)
+            G = load_group(order[gi:gi + a.group], pi, a.target, holdout=False, adv=a.adv if a.pg_weight > 0 else None)
             if G is None:
                 continue
             X, tv, pol, hp = G[0], G[1].astype(np.float32)[:, None], G[2], G[3]
@@ -121,7 +131,19 @@ def main():
             for i in range(0, len(perm), a.batch):
                 b = perm[i:i + a.batch]
                 v, p, c = model.forward(X[b].astype(np.float32))
-                grads = model.backward(c, tv[b], pol[b].astype(np.float32), hp[b], a.l2, alpha, None)
+                tp = pol[b].astype(np.float32)
+                if a.pg_weight > 0:
+                    # Policy gradient folded into the target: backward uses (p - tp),
+                    # so tp += w*A*(onehot(played) - p) adds -w*A*grad log p(played).
+                    taken = G[7][b]; ok = hp[b] & (taken >= 0)
+                    if ok.sum() > 1:
+                        A = G[6][b][ok]
+                        An = np.clip((A - A.mean()) / (A.std() + 1e-6), -3, 3)
+                        rows = np.where(ok)[0]
+                        onehot = np.zeros((len(rows), tp.shape[1]), np.float32)
+                        onehot[np.arange(len(rows)), taken[ok]] = 1
+                        tp[rows] += a.pg_weight * An[:, None] * (onehot - p[rows])
+                grads = model.backward(c, tv[b], tp, hp[b], a.l2, alpha, None)
                 model.adam_step(grads, a.lr)
             rows_seen += len(X)
         m = metrics(model, H, alpha)
