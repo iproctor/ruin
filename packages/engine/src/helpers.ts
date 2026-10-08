@@ -45,6 +45,14 @@ export function totalCorruption(region: RegionState): number {
   return tokens + chaosStones;
 }
 
+/** Tenzen Fatespinner upgrade: the Fatespinner counts as two Chaos Stone
+ *  tokens (for ruination and dial advancement) in the region it occupies. */
+export function fatespinnerStoneBonus(state: GameState, regionId: RegionId): number {
+  if (!state.powers['tenzen']?.upgradesInPlay.includes('tenzen_fatespinner_up')) return 0;
+  return followersInRegion(state, regionId)
+    .some(f => f.class === 'incarnation' && f.power === 'tenzen') ? 2 : 0;
+}
+
 export function countToken(region: RegionState, type: RegionState['tokens'][number]): number {
   return region.tokens.filter(t => t === type).length;
 }
