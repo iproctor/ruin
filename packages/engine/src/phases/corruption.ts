@@ -6,7 +6,7 @@ import {
 } from '../constants.js';
 import {
   isWorldCardActive, isRuined, countToken,
-  magicSymbolCount, totalCorruption, followersInRegion,
+  magicSymbolCount, totalCorruption, followersInRegion, fatespinnerStoneBonus,
 } from '../helpers.js';
 import { GameLog } from '../gameLog.js';
 
@@ -90,11 +90,7 @@ export function previewDialAdvancementEarners(
       case 'tenzen': {
         const magicCount = magicSymbolCount(state, regionId);
         const chaosStones = countToken(region, 'chaos_stone');
-        const hasFatespinnerInRegion = followersInRegion(state, regionId)
-          .some(f => f.class === 'incarnation' && f.power === 'tenzen');
-        const fatespinnerBonus = hasFatespinnerInRegion &&
-          state.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') ? 2 : 0;
-        qualifies = magicCount + chaosStones + fatespinnerBonus >= 2;
+        qualifies = magicCount + chaosStones + fatespinnerStoneBonus(state, regionId) >= 2;
         break;
       }
       case 'lasha':
@@ -391,7 +387,7 @@ function resolveCorruption(
     // snapshot). This correctly credits Heartrippers (battle), Depraved
     // Infiltration (summoning), Death's Perfume (domination), normal cultists,
     // and Plague Bloom — any source.
-    const total = totalCorruption(s.regions[regionId]!);
+    const total = totalCorruption(s.regions[regionId]!) + fatespinnerStoneBonus(s, regionId);
     if (total >= CORRUPTION_RUIN_THRESHOLD) {
       const snap = corruptionSnapshot[regionId]!;
       const current = s.regions[regionId]!.corruptionTokens;
@@ -468,10 +464,7 @@ function checkDialAdvancement(
       // Tenzen: 2+ tokens in region with 2+ combined magic symbols + chaos stones
       const magicCount = magicSymbolCount(s, regionId);
       const chaosStones = region.tokens.filter(t => t === 'chaos_stone').length;
-      // Tenzen Fatespinner upgrade: counts as 2 chaos stones
-      const fatespinnerBonus = s.powers['tenzen']!.upgradesInPlay.includes('tenzen_fatespinner_up') &&
-        followersInRegion(s, regionId).some(f => f.class === 'incarnation' && f.power === 'tenzen') ? 2 : 0;
-      if (magicCount + chaosStones + fatespinnerBonus >= 2) earnedCounter = true;
+      if (magicCount + chaosStones + fatespinnerStoneBonus(s, regionId) >= 2) earnedCounter = true;
       break;
     }
     case 'lasha': {

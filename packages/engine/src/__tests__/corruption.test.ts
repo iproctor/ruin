@@ -455,6 +455,18 @@ describe('Tenzen Fatespinner upgrade (counts as 2 chaos stones for dial)', () =>
     const { state } = resolveCorruptionPhase(s);
     expect(state.powers.tenzen!.dialCounters).toBeGreaterThan(countersBefore);
   });
+
+  test('Fatespinner counts as 2 chaos stones toward ruination', () => {
+    // 9 tokens + 1 Tenzen cultist = 10; the Fatespinner's +2 reaches 12.
+    let s = makeState({ phase: 'corruption', pendingAction: null });
+    s = addCorruption(s, 'norrsund', 'gormen', 9);
+    s = placeFollower(s, 'tenzen', 'incarnation', 'norrsund');
+    s = placeFollower(s, 'tenzen', 'cultist', 'norrsund');
+    const without = resolveCorruptionPhase(s).state;
+    expect(without.regions.norrsund!.ruinationCardIndex).toBeNull();
+    const withUp = resolveCorruptionPhase(withUpgrade(s, 'tenzen', 'tenzen_fatespinner_up')).state;
+    expect(withUp.regions.norrsund!.ruinationCardIndex).not.toBeNull();
+  });
 });
 
 // ─── previewDialAdvancementEarners (client stat-line helper) ─────────────────
